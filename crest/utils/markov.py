@@ -106,8 +106,10 @@ def modify_24hr_occupancy_probabilities(
 
     if occupied_prob_sum <= 0:
         # No probability for occupied states: force transition to first occupied+active state
-        # State (num_residents + 1) + 1 in 0-based indexing = num_residents + 1
-        modified[num_residents + 1] = 1.0
+        # VBA: aTPR(1, (intResidents + 1) + 2) = column (n+1)+2 in 1-based
+        # Python: index (n+1)+2-1 = n+2 in 0-based indexing
+        # This is state "11" (1 at home, 1 active) for 2 residents
+        modified[num_residents + 2] = 1.0
     else:
         # Proportionally adjust occupied state probabilities
         modified[num_unoccupied_states:] /= occupied_prob_sum

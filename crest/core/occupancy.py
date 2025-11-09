@@ -184,12 +184,17 @@ class Occupancy:
         """
         # Get uplift factor from 24hr occupancy data
         # VBA: ws24hrOccupancy.Cells(intResidents + 3, IIf(blnWeekend = False, 6, 7))
-        # Rows are 1-indexed in VBA, so row = residents + 3 means index = residents + 2 in 0-based
-        row_idx = self.config.num_residents + 2
-        col_idx = 6 if not self.config.is_weekend else 7  # Columns are 1-indexed, so adjust
+        # VBA row numbering (1-based, with 3 header rows):
+        #   Row 4 = resident 1, Row 5 = resident 2, ..., Row 9 = resident 6
+        # Python after skiprows=2: Row 0 = header, Row 1-6 = residents 1-6
+        # So: VBA row (residents + 3) → Python iloc[residents - 1]
+        row_idx = self.config.num_residents - 1
 
-        # pandas uses 0-based indexing
-        uplift_factor = self.occupancy_24hr_df.iloc[row_idx, col_idx - 1]
+        # VBA columns 6 (weekday) and 7 (weekend) are the uplift factors (1-based)
+        # Python iloc columns: 5 (weekday) and 6 (weekend) (0-based)
+        col_idx = 5 if not self.config.is_weekend else 6
+
+        uplift_factor = self.occupancy_24hr_df.iloc[row_idx, col_idx]
 
         # Random decision based on uplift factor
         return self.rng.random() < uplift_factor

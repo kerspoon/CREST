@@ -105,6 +105,7 @@ class Building:
         # References to other system components (set externally)
         self.local_climate = None
         self.heating_system = None
+        self.heating_controls = None
         self.cooling_system = None
         self.occupancy = None
         self.lighting = None
@@ -244,6 +245,10 @@ class Building:
         """Set reference to heating system."""
         self.heating_system = heating_system
 
+    def set_heating_controls(self, heating_controls):
+        """Set reference to heating controls."""
+        self.heating_controls = heating_controls
+
     def set_cooling_system(self, cooling_system):
         """Set reference to cooling system."""
         self.cooling_system = cooling_system
@@ -287,3 +292,91 @@ class Building:
     def get_external_temperature(self, timestep: int) -> float:
         """Get external building node temperature at specified timestep (1-based)."""
         return self.theta_b[timestep - 1]
+
+    def get_target_heat_space(self, timestep: int) -> float:
+        """
+        Calculate target heat demand for space heating (W).
+
+        Matches VBA GetPhi_hSpace property (clsBuilding.cls lines 158-194).
+        Calculates heat needed for emitters to reach target temperature.
+
+        Parameters
+        ----------
+        timestep : int
+            Current timestep (1-based, 1-1440)
+
+        Returns
+        -------
+        float
+            Target heat demand in Watts
+        """
+        if self.heating_controls is None:
+            return 0.0
+
+        # Get previous timestep temperatures (or initial if timestep=1)
+        if timestep == 1:
+            theta_em = self.theta_em[0]
+            theta_i = self.theta_i[0]
+        else:
+            theta_em = self.theta_em[timestep - 2]
+            theta_i = self.theta_i[timestep - 2]
+
+        # Get thermostat setpoint
+        setpoint = self.heating_controls.get_space_thermostat_setpoint()
+
+        # Emitter deadband and target (VBA lines 175-177)
+        emitter_deadband = 5.0
+        theta_em_target = setpoint + emitter_deadband
+
+        # Calculate target heat delivery to emitters (VBA lines 189-190)
+        # Capacitance term + heat transfer to room
+        phi_h_space_target = (
+            (self.c_em / self.timestep_seconds) * (theta_em_target - theta_em) +
+            self.h_em * (theta_em - theta_i)
+        )
+
+        return phi_h_space_target
+
+    def get_target_heat_water(self, timestep: int) -> float:
+        """
+        Calculate target heat demand for hot water heating (W).
+
+        Matches VBA GetPhi_hWater property (clsBuilding.cls lines 124-155).
+        Calculates heat needed to maintain cylinder at setpoint.
+
+        Parameters
+        ----------
+        timestep : int
+            Current timestep (1-based, 1-1440)
+
+        Returns
+        -------
+        float
+            Target heat demand in Watts
+        """
+        if self.heating_controls is None or self.hot_water is None:
+            return 0.0
+
+        # Get hot water thermostat setpoint (VBA line 132)
+        theta_target = self.heating_controls.get_hot_water_thermostat_setpoint()
+
+        # Get previous timestep temperatures (or initial if timestep=1) (VBA lines 137-143)
+        if timestep == 1:
+            theta_cyl = self.theta_cyl[0]
+            theta_i = self.theta_i[0]
+        else:
+            theta_cyl = self.theta_cyl[timestep - 2]
+            theta_i = self.theta_i[timestep - 2]
+
+        # Get variable hot water demand heat transfer coefficient (VBA line 145)
+        h_dhw = self.hot_water.get_h_demand(timestep)
+
+        # Calculate target heat input (VBA lines 150-152)
+        # Capacitance term + hot water draw losses + standing losses
+        phi_target = (
+            (self.c_cyl / self.timestep_seconds) * (theta_target - theta_cyl) +
+            h_dhw * (theta_cyl - self.theta_cw) +
+            self.h_loss * (theta_cyl - theta_i)
+        )
+
+        return phi_target

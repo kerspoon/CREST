@@ -115,12 +115,14 @@ class Dwelling:
             dwelling_index=config.dwelling_index,
             building_index=config.building_index,
             heating_system_index=config.heating_system_index,
-            cooling_system_index=config.cooling_system_index
+            cooling_system_index=config.cooling_system_index,
+            is_weekend=config.is_weekend
         )
         self.heating_controls = HeatingControls(controls_config, data_loader, self.rng)
         self.heating_controls.set_building(self.building)
         self.heating_controls.set_hot_water(self.hot_water)
         self.heating_system.set_heating_controls(self.heating_controls)
+        self.building.set_heating_controls(self.heating_controls)
 
         # Create appliances
         app_config = AppliancesConfig(dwelling_index=config.dwelling_index)

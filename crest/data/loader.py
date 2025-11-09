@@ -86,22 +86,43 @@ class CRESTDataLoader:
         Returns
         -------
         pd.DataFrame
-            Transition probability matrix
+            Transition probability matrix with state labels in row 0
         """
         if not 1 <= num_residents <= 6:
             raise ValueError(f"num_residents must be 1-6, got {num_residents}")
 
         day_type = "we" if is_weekend else "wd"
         filename = f"tpm{num_residents}_{day_type}.csv"
-        return self._load_csv(filename, header=None)
+        # Skip 9 header/description rows (lines 1-9), keep state labels (line 10) as row 0
+        # Use dtype=str to preserve state labels as strings (e.g., "00", "01", "10")
+        df = self._load_csv(filename, skiprows=9, header=None, dtype=str)
+
+        # Convert data rows (all except row 0) back to float for probabilities
+        for i in range(1, len(df)):
+            df.iloc[i, :] = pd.to_numeric(df.iloc[i, :], errors='coerce')
+
+        # Fix state labels in row 0: convert "1.0" → "01", "2.0" → "02", etc.
+        for col in range(2, len(df.columns)):
+            label = df.iloc[0, col]
+            if label and label != 'nan':
+                # Convert float strings to proper 2-digit format
+                try:
+                    val = float(label)
+                    df.iloc[0, col] = f"{int(val):02d}"
+                except:
+                    pass
+
+        return df
 
     def load_starting_states(self) -> pd.DataFrame:
         """Load initial occupancy state probabilities."""
-        return self._load_csv("Starting_states.csv")
+        # Skip 4 header rows, use row 5 as column headers
+        return self._load_csv("Starting_states.csv", skiprows=4, header=0)
 
     def load_24hr_occupancy(self) -> pd.DataFrame:
         """Load 24-hour occupancy correction factors."""
-        return self._load_csv("24hr_occupancy.csv")
+        # Skip 2 header rows, use row 3 as column headers
+        return self._load_csv("24hr_occupancy.csv", skiprows=2, header=0)
 
     # ===============================================================================================
     # ACTIVITY AND APPLIANCE DATA
@@ -109,11 +130,13 @@ class CRESTDataLoader:
 
     def load_activity_stats(self) -> pd.DataFrame:
         """Load time-use survey activity probability profiles."""
-        return self._load_csv("ActivityStats.csv")
+        # Skip 3 header rows, use row 4 as column headers
+        return self._load_csv("ActivityStats.csv", skiprows=3, header=0)
 
     def load_appliances_and_fixtures(self) -> pd.DataFrame:
         """Load appliance and water fixture specifications."""
-        return self._load_csv("AppliancesAndWaterFixtures.csv")
+        # Skip 3 header rows, use row 4 as column headers
+        return self._load_csv("AppliancesAndWaterFixtures.csv", skiprows=3, header=0)
 
     # ===============================================================================================
     # BUILDING AND HEATING SYSTEM DATA
@@ -121,23 +144,39 @@ class CRESTDataLoader:
 
     def load_buildings(self) -> pd.DataFrame:
         """Load building thermal parameter specifications."""
-        return self._load_csv("Buildings.csv")
+        # Skip 2 title rows, use row 3 (symbol names) as column headers, skip row 4 (units)
+        df = self._load_csv("Buildings.csv", skiprows=[0, 1, 3], header=0)
+
+        # Rename columns to match Python naming convention (add underscores)
+        # VBA uses: Hob, Hbi, Cb, Ci, As, Hv, Hem, Cem, etc.
+        # Python expects: H_ob, H_bi, C_b, C_i, A_s, H_v, H_em, C_em, etc.
+        rename_map = {
+            'Hob': 'H_ob', 'Hbi': 'H_bi', 'Cb': 'C_b', 'Ci': 'C_i',
+            'As': 'A_s', 'Hv': 'H_v', 'Hem': 'H_em', 'Cem': 'C_em',
+            'mem': 'm_em'
+        }
+        df = df.rename(columns=rename_map)
+        return df
 
     def load_primary_heating_systems(self) -> pd.DataFrame:
         """Load heating system specifications (boilers, etc.)."""
-        return self._load_csv("PrimaryHeatingSystems.csv")
+        # Skip 4 header rows, use row 5 as column headers
+        return self._load_csv("PrimaryHeatingSystems.csv", skiprows=4, header=0)
 
     def load_cooling_systems(self) -> pd.DataFrame:
         """Load cooling system specifications."""
-        return self._load_csv("CoolingSystems.csv")
+        # Skip 4 header rows, use row 5 as column headers
+        return self._load_csv("CoolingSystems.csv", skiprows=4, header=0)
 
     def load_heating_controls(self) -> pd.DataFrame:
         """Load heating control specifications (thermostats, timers)."""
-        return self._load_csv("HeatingControls.csv")
+        # Skip 4 header rows, use row 5 as column headers
+        return self._load_csv("HeatingControls.csv", skiprows=4, header=0)
 
     def load_heating_controls_tpm(self) -> pd.DataFrame:
         """Load transition probability matrix for heating timer states."""
-        return self._load_csv("HeatingControlsTPM.csv", header=None)
+        # Skip 7 header rows, don't use any row as header (all numeric data)
+        return self._load_csv("HeatingControlsTPM.csv", skiprows=7, header=None)
 
     # ===============================================================================================
     # CLIMATE DATA
@@ -145,19 +184,23 @@ class CRESTDataLoader:
 
     def load_global_climate(self) -> pd.DataFrame:
         """Load historical climate data (temperature, irradiance)."""
-        return self._load_csv("GlobalClimate.csv")
+        # Skip 4 header rows, use row 5 as column headers
+        return self._load_csv("GlobalClimate.csv", skiprows=4, header=0)
 
     def load_irradiance(self) -> pd.DataFrame:
         """Load solar irradiance data."""
-        return self._load_csv("Irradiance.csv")
+        # Skip 2 header rows, use row 3 as column headers
+        return self._load_csv("Irradiance.csv", skiprows=2, header=0)
 
     def load_clearness_index_tpm(self) -> pd.DataFrame:
         """Load transition probability matrix for clearness index."""
-        return self._load_csv("ClearnessIndexTPM.csv", header=None)
+        # Skip 9 header rows (lines 1-9), data starts at line 10
+        return self._load_csv("ClearnessIndexTPM.csv", skiprows=9, header=None)
 
     def load_climate_data_and_cooling_tech(self) -> pd.DataFrame:
         """Load regional climate data and cooling technology info."""
-        return self._load_csv("ClimateDataandCoolingTech.csv")
+        # Skip 3 header rows, use row 4 as column headers
+        return self._load_csv("ClimateDataandCoolingTech.csv", skiprows=3, header=0)
 
     # ===============================================================================================
     # LIGHTING DATA
@@ -165,11 +208,13 @@ class CRESTDataLoader:
 
     def load_lighting_config(self) -> pd.DataFrame:
         """Load lighting configuration parameters."""
-        return self._load_csv("light_config.csv")
+        # Skip 2 header rows, use row 3 as column headers
+        return self._load_csv("light_config.csv", skiprows=2, header=0)
 
     def load_bulbs(self) -> pd.DataFrame:
         """Load example bulb configurations for dwellings."""
-        return self._load_csv("bulbs.csv")
+        # Skip 3 header rows, use row 4 as column headers
+        return self._load_csv("bulbs.csv", skiprows=3, header=0)
 
     # ===============================================================================================
     # HOT WATER DATA
@@ -177,7 +222,8 @@ class CRESTDataLoader:
 
     def load_water_usage(self) -> pd.DataFrame:
         """Load hot water volume probability distributions."""
-        return self._load_csv("WaterUsage.csv")
+        # Skip 5 header rows, use row 6 as column headers
+        return self._load_csv("WaterUsage.csv", skiprows=5, header=0)
 
     # ===============================================================================================
     # RENEWABLE SYSTEMS DATA
@@ -185,11 +231,13 @@ class CRESTDataLoader:
 
     def load_pv_systems(self) -> pd.DataFrame:
         """Load PV system specifications."""
-        return self._load_csv("PV_systems.csv")
+        # Skip 4 header rows, use row 5 as column headers
+        return self._load_csv("PV_systems.csv", skiprows=4, header=0)
 
     def load_solar_thermal_systems(self) -> pd.DataFrame:
         """Load solar thermal system specifications."""
-        return self._load_csv("SolarThermalSystems.csv")
+        # Skip 3 header rows, use row 4 as column headers
+        return self._load_csv("SolarThermalSystems.csv", skiprows=3, header=0)
 
     # ===============================================================================================
     # DWELLING CONFIGURATION
@@ -197,7 +245,8 @@ class CRESTDataLoader:
 
     def load_dwellings(self) -> pd.DataFrame:
         """Load dwelling configuration and assignments."""
-        return self._load_csv("Dwellings.csv")
+        # Skip 3 header rows, use row 4 as column headers
+        return self._load_csv("Dwellings.csv", skiprows=3, header=0)
 
     # ===============================================================================================
     # UTILITY FUNCTIONS

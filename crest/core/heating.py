@@ -64,13 +64,13 @@ class HeatingSystem:
         self.heating_system_type = int(heating_params.get('HeatingSystemType', 1))
         self.fuel_type = heating_params.get('FuelType', 'Gas')
         self.fuel_flow_rate = heating_params.get('FuelFlowRate', 0.5)  # m³/min for gas, kW for electric
-        self.phi_h = heating_params.get('Phi_h', 12000.0)  # W, max heat output
+        self.phi_h_max = heating_params.get('Phi_h', 12000.0)  # W, max heat output
         self.p_standby = heating_params.get('P_standby', 5.0)  # W, standby power
         self.p_pump = heating_params.get('P_pump', 60.0)  # W, pump power
         self.eta_h = heating_params.get('Eta_h', BOILER_THERMAL_EFFICIENCY)  # Thermal efficiency
 
         # Storage arrays (1440 timesteps)
-        self.phi_h = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Total heat output (W)
+        self.phi_h_output = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Total heat output (W)
         self.phi_h_water = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Heat to hot water (W)
         self.phi_h_space = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Heat to space (W)
         self.m_fuel = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Fuel flow rate (m³/min for gas)
@@ -115,7 +115,7 @@ class HeatingSystem:
         idx = timestep - 1
         self.phi_h_water[idx] = 0.0
         self.phi_h_space[idx] = 0.0
-        self.phi_h[idx] = 0.0
+        self.phi_h_output[idx] = 0.0
         self.m_fuel[idx] = 0.0
         self.heating_electricity[idx] = 0.0
 
@@ -136,7 +136,7 @@ class HeatingSystem:
                 phi_h_water_target = self.building.get_target_heat_water(timestep) if hasattr(self.building, 'get_target_heat_water') else 0.0
 
                 # Allocate heat to water (bounded by max output)
-                phi_h_water = max(0.0, min(self.phi_h, phi_h_water_target))
+                phi_h_water = max(0.0, min(self.phi_h_max, phi_h_water_target))
                 self.phi_h_water[idx] = phi_h_water
 
                 # If space heating is also required, allocate remaining capacity
@@ -144,7 +144,7 @@ class HeatingSystem:
                     phi_h_space_target = self.building.get_target_heat_space(timestep) if hasattr(self.building, 'get_target_heat_space') else 0.0
 
                     # Allocate remaining capacity to space
-                    phi_h_space = max(0.0, min(self.phi_h - phi_h_water, phi_h_space_target))
+                    phi_h_space = max(0.0, min(self.phi_h_max - phi_h_water, phi_h_space_target))
                     self.phi_h_space[idx] = phi_h_space
 
             else:
@@ -153,16 +153,16 @@ class HeatingSystem:
                     phi_h_space_target = self.building.get_target_heat_space(timestep) if hasattr(self.building, 'get_target_heat_space') else 0.0
 
                     # Allocate heat to space (bounded by max output)
-                    phi_h_space = max(0.0, min(self.phi_h, phi_h_space_target))
+                    phi_h_space = max(0.0, min(self.phi_h_max, phi_h_space_target))
                     self.phi_h_space[idx] = phi_h_space
 
             # Total heat output
             phi_h_total = self.phi_h_space[idx] + self.phi_h_water[idx]
-            self.phi_h[idx] = phi_h_total
+            self.phi_h_output[idx] = phi_h_total
 
             # Calculate fuel/electricity consumption
-            if self.phi_h > 0:
-                utilization = phi_h_total / self.phi_h
+            if self.phi_h_max > 0:
+                utilization = phi_h_total / self.phi_h_max
 
                 # Heating systems 1-3 are gas boilers (use fuel)
                 # Heating systems 4+ are electric (use electricity)
@@ -179,7 +179,7 @@ class HeatingSystem:
 
     def get_phi_h(self, timestep: int) -> float:
         """Get total heat output at specified timestep (1-based)."""
-        return self.phi_h[timestep - 1]
+        return self.phi_h_output[timestep - 1]
 
     def get_heat_to_space(self, timestep: int) -> float:
         """Get heat to space at specified timestep (1-based)."""

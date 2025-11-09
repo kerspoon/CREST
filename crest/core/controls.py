@@ -30,6 +30,7 @@ class HeatingControlsConfig:
     building_index: int
     heating_system_index: int
     cooling_system_index: int = 0
+    is_weekend: bool = False
     run_number: int = 0
 
 
@@ -143,6 +144,12 @@ class HeatingControls:
         # Load timer TPM
         timer_tpm = self.data_loader.load_heating_controls_tpm().values
 
+        # TPM structure:
+        # Col 0: Period (1-48)
+        # Col 1: Current state (0 or 1)
+        # Col 2-3: Weekday transitions [state→0, state→1]
+        # Col 4-5: Weekend transitions [state→0, state→1]
+
         # Generate 30-minute resolution timer schedule (48 periods)
         timer_schedule_30min = np.zeros(48, dtype=int)
 
@@ -150,12 +157,19 @@ class HeatingControls:
         current_state = 0
 
         for period in range(48):
-            # Get transition probabilities for current state
-            # TPM has 2 states: 0 (OFF), 1 (ON)
-            row_idx = current_state
-            transition_probs = timer_tpm[row_idx, 2:].astype(float)  # Skip label columns
+            # Find row for (period+1, current_state) in TPM
+            # TPM has 2 rows per period: one for state 0, one for state 1
+            row_idx = period * 2 + current_state
 
-            # Normalize
+            # Select transition probability columns based on weekday/weekend
+            if self.config.is_weekend:
+                # Weekend: columns 4-5
+                transition_probs = timer_tpm[row_idx, 4:6].astype(float)
+            else:
+                # Weekday: columns 2-3
+                transition_probs = timer_tpm[row_idx, 2:4].astype(float)
+
+            # Normalize (should already be normalized, but be safe)
             transition_probs = markov.normalize_probabilities(transition_probs)
 
             # Select next state
