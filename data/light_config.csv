@@ -1,0 +1,63 @@
+,Lighting Model Configuration,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,1. General configuration,,,,Mean,S.D.,,,,,,,,,,,,,
+,,,House external global irradiance threshold,,60,10,W/m2,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,"Random variable, X",Relative bulb use,Calibrated
+,2. Relative bulb use weighting,,This represents the concept that some bulbs are used more frequently than others in a house.,,,,,,,,,,,,,,,weighting,Relative Use
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,0.01,4.605170185988091,0.03754911349987382
+,,,,,,,,,,,,,,,,,0.05,2.995732273553991,0.02442626148696359
+,,,,,,,,,,,,,,,,,0.1,2.3025850929940455,0.01877455674993691
+,,,,,,,,,,,,,,,,,0.15,1.8971199848858813,0.015468521413628183
+,,,,,,,,,,,,,,,,,0.2,1.6094379124341003,0.013122852012910234
+,,,,,,,,,,,,,,,,,0.25,1.3862943611198906,0.011303409474053354
+,,,,,,,,,,,,,,,,,0.3,1.2039728043259361,0.009816816676601507
+,,,,,,,,,,,,,,,,,0.35,1.0498221244986778,0.008559920375455471
+,,,,,,,,,,,,,,,,,0.4,0.916290731874155,0.0074711472758835565
+,,,Curve is of the form: h(t) = - Ln(X),,,,,,,,,,,,,,0.45,0.7985076962177716,0.006510781340292775
+,,,,,,,,,,,,,,,,,0.5,0.6931471805599453,0.005651704737026677
+,,,,,,,,,,,,,,,,,0.55,0.5978370007556204,0.00487457542049131
+,3. Calibration scalar,,This calibration scaler is used to calibrate the model to so that it provides a particular average output over a large number of runs.,,,,,,,,,,,,,,0.6,0.5108256237659907,0.004165111939574828
+,,,,,,,,,,,,,,,,,0.65,0.4307829160924542,0.0035124688028639155
+,,,Calibration scalar,z,0.00815368639667705,0.275,,Assumption: India has fewer light bulbs per house but as more are added their efficiency,,,,,,,,,0.7,0.35667494393873245,0.0029082156384287925
+,,,,,UK,India,,improves. Hence total lighting electricity remains constant at about 27.5% of UK.,,,,,,,,,0.75,0.2876820724517809,0.002345669400717948
+,,,,,,relative to UK,,,,,,,,,,,0.8,0.2231435513142097,0.0018194425388568791
+,,,,,,,,,,,,,,,,,0.85,0.16251892949777494,0.0013251283846485243
+,,,,,,,,,,,,,,,,,0.9,0.10536051565782628,0.0008590766032660975
+,4. Effective occupancy,,Effective occupancy represents the sharing of light use.,,,,,,,,,,,,,,0.95,0.05129329438755058,0.00041822943668852247
+,,,,,,,,,,,,,,,,,1,0,0
+,,,Derived from:,"U.S. Department of Energy, Energy Information Administration, 1993 Residential Energy Consumption Survey, ",,,,,,,,,,,,,,,
+,,,,"Mean Annual Electricity Consumption for Lighting, by Family Income by Number of Household Members",,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,Number of ,Effective,,,,,,,,,,,,,,,
+,,,active occupants,occupancy,,,,,,,,,,,,,,,
+,,,0,0,,,,,,,,,,,,,,,
+,,,1,1,,,,,,,,,,,,,,,
+,,,2,1.5281456953642385,,,,,,,,,,,,,,,
+,,,3,1.6937086092715232,,,,,,,,,,,,,,,
+,,,4,1.9834437086092715,,,,,,,,,,,,,,,
+,,,5,2.0943708609271523,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,5. Lighting event duration model,,"This model defines how long a bulb will stay on for, if a switch-on event occurs.",,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,Source:,"M. Stokes, M. Rylatt, K. Lomas, A simple model of domestic lighting demand, Energy and Buildings 36 (2004) 103-116",,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,
+,range of equal,lower value,upper value,cumulative,,,,,,,,,,,,,,,
+,probability number,(minutes),(minutes),probability,,,,,,,,,,,,,,,
+,1,1,1,0.1111111111111111,,,,,,,,,,,,,,,
+,2,2,2,0.2222222222222222,,,,,,,,,,,,,,,
+,3,3,4,0.3333333333333333,,,,,,,,,,,,,,,
+,4,5,8,0.4444444444444444,,,,,,,,,,,,,,,
+,5,9,16,0.5555555555555556,,,,,,,,,,,,,,,
+,6,17,27,0.6666666666666666,,,,,,,,,,,,,,,
+,7,28,49,0.7777777777777778,,,,,,,,,,,,,,,
+,8,50,91,0.8888888888888888,,,,,,,,,,,,,,,
+,9,92,259,1,,,,,,,,,,,,,,,
