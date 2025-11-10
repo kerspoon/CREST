@@ -265,19 +265,36 @@ class GlobalClimate:
         # Load monthly temperature data from CSV
         climate_data = self.data_loader.load_climate_data_and_cooling_tech()
 
-        # Extract England monthly temps (Mean, Min, Max)
-        # CSV structure after skiprows=3, header=0:
-        # Row 2 onwards contains month data, columns 1-3 are England Mean/Min/Max
+        # City to column index mapping (VBA lines 608-632)
+        # After skiprows=3, header=0, data starts at row 2
+        # Column indices for (Mean, Min, Max) for each city
+        city_columns = {
+            City.ENGLAND: (1, 2, 3),
+            City.N_DELHI: (6, 7, 8),
+            City.MUMBAI: (12, 13, 14),
+            City.BENGALURU: (17, 18, 19),
+            City.CHENNAI: (25, 26, 27),
+            City.KOLKATA: (31, 32, 33),
+            City.ITANAGAR: (37, 38, 39)
+        }
+
+        # Get column indices for selected city
+        mean_col, min_col, max_col = city_columns.get(
+            self.config.city,
+            (1, 2, 3)  # Default to England if city not found
+        )
+
+        # Extract monthly temps for selected city
         monthly_mean = []
         monthly_min = []
         monthly_max = []
 
-        # Extract 12 months of data for England (rows 2-13, columns 1-3)
+        # Extract 12 months of data (rows 2-13 after loading)
         for month_idx in range(2, 14):  # Rows 2-13 in loaded DataFrame
             if month_idx < len(climate_data):
-                monthly_mean.append(float(climate_data.iloc[month_idx, 1]))
-                monthly_min.append(float(climate_data.iloc[month_idx, 2]))
-                monthly_max.append(float(climate_data.iloc[month_idx, 3]))
+                monthly_mean.append(float(climate_data.iloc[month_idx, mean_col]))
+                monthly_min.append(float(climate_data.iloc[month_idx, min_col]))
+                monthly_max.append(float(climate_data.iloc[month_idx, max_col]))
             else:
                 # Fallback defaults
                 monthly_mean.append(10.0)

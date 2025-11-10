@@ -17,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from crest.data.loader import CRESTDataLoader
 from crest.core.climate import GlobalClimate, ClimateConfig
 from crest.simulation.dwelling import Dwelling, DwellingConfig
+from crest.simulation.config import Country, City, UrbanRural
 from crest.output.writer import ResultsWriter, OutputConfig
 from crest.utils import random as rng_module
 import numpy as np
@@ -115,13 +116,41 @@ def main():
         default=None,
         help="JSON file with per-dwelling configurations (overrides --residents and other dwelling params)"
     )
+    parser.add_argument(
+        "--country",
+        type=str,
+        default="UK",
+        choices=["UK", "India"],
+        help="Country for appliance ownership and water temperature (default: UK)"
+    )
+    parser.add_argument(
+        "--city",
+        type=str,
+        default="England",
+        choices=["England", "N Delhi", "Mumbai", "Bengaluru", "Chennai", "Kolkata", "Itanagar"],
+        help="City/region for climate temperature profiles (default: England)"
+    )
+    parser.add_argument(
+        "--urban-rural",
+        type=str,
+        default="Urban",
+        choices=["Urban", "Rural"],
+        help="Urban or rural location for appliance ownership (default: Urban)"
+    )
 
     args = parser.parse_args()
+
+    # Convert string arguments to enums
+    country = Country(args.country)
+    city = City(args.city)
+    urban_rural = UrbanRural(args.urban_rural)
 
     # Set random seed if specified
     if args.seed is not None:
         rng_module.set_seed(args.seed)
         print(f"Using random seed: {args.seed}")
+
+    print(f"Location: {city.value}, {country.value} ({urban_rural.value})")
 
     # Load data
     print("Loading data...")
@@ -135,7 +164,8 @@ def main():
     print(f"Simulating climate for {args.month}/{args.day}...")
     climate_config = ClimateConfig(
         day_of_month=args.day,
-        month_of_year=args.month
+        month_of_year=args.month,
+        city=city
     )
     global_climate = GlobalClimate(climate_config, data_loader)
     global_climate.run_all()
@@ -181,6 +211,8 @@ def main():
                 num_residents=cfg['num_residents'],
                 building_index=cfg['building_index'],
                 heating_system_index=cfg['heating_system_index'],
+                country=country,  # Use CLI-specified country
+                urban_rural=urban_rural,  # Use CLI-specified urban/rural
                 cooling_system_index=cfg.get('cooling_system_index', 0),
                 is_weekend=args.weekend,
                 has_pv=cfg.get('has_pv', False),
@@ -193,6 +225,8 @@ def main():
                 num_residents=args.residents,
                 building_index=0,  # Simplified: use first building type
                 heating_system_index=0,  # Simplified: use first heating system
+                country=country,  # Use CLI-specified country
+                urban_rural=urban_rural,  # Use CLI-specified urban/rural
                 is_weekend=args.weekend,
                 has_pv=False,
                 has_solar_thermal=False
