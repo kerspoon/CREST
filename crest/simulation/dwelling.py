@@ -18,7 +18,11 @@ from ..core.lighting import Lighting, LightingConfig
 from ..core.renewables import PVSystem, SolarThermal, CoolingSystem, PVConfig, SolarThermalConfig, CoolingConfig
 from ..data.loader import CRESTDataLoader
 from ..utils.random import RandomGenerator
-from ..simulation.config import TIMESTEPS_PER_DAY_1MIN
+from ..simulation.config import (
+    TIMESTEPS_PER_DAY_1MIN,
+    Country,
+    UrbanRural
+)
 
 
 @dataclass
@@ -28,6 +32,8 @@ class DwellingConfig:
     num_residents: int
     building_index: int
     heating_system_index: int
+    country: Country = Country.UK  # Country for appliance/water/lighting behavior
+    urban_rural: UrbanRural = UrbanRural.URBAN  # Urban/Rural for appliance ownership
     cooling_system_index: int = 0
     is_weekend: bool = False
     has_pv: bool = False
@@ -96,7 +102,8 @@ class Dwelling:
         hw_config = HotWaterConfig(
             dwelling_index=config.dwelling_index,
             heating_system_index=config.heating_system_index,
-            num_residents=config.num_residents
+            num_residents=config.num_residents,
+            country=config.country
         )
         self.hot_water = HotWater(hw_config, data_loader, activity_statistics, config.is_weekend, self.rng)
         self.hot_water.set_occupancy(self.occupancy)
@@ -126,13 +133,20 @@ class Dwelling:
         self.building.set_heating_controls(self.heating_controls)
 
         # Create appliances
-        app_config = AppliancesConfig(dwelling_index=config.dwelling_index)
+        app_config = AppliancesConfig(
+            dwelling_index=config.dwelling_index,
+            country=config.country,
+            urban_rural=config.urban_rural
+        )
         self.appliances = Appliances(app_config, data_loader, activity_statistics, config.is_weekend, self.rng)
         self.appliances.set_occupancy(self.occupancy)
         self.building.set_appliances(self.appliances)
 
         # Create lighting
-        light_config = LightingConfig(dwelling_index=config.dwelling_index)
+        light_config = LightingConfig(
+            dwelling_index=config.dwelling_index,
+            country=config.country
+        )
         self.lighting = Lighting(light_config, data_loader, self.rng)
         self.lighting.set_occupancy(self.occupancy)
         self.lighting.set_local_climate(self.local_climate)

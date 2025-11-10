@@ -11,7 +11,9 @@ from typing import Optional, Dict
 
 from ..simulation.config import (
     TIMESTEPS_PER_DAY_1MIN,
-    MAX_APPLIANCE_TYPES
+    MAX_APPLIANCE_TYPES,
+    Country,
+    UrbanRural
 )
 from ..utils.random import RandomGenerator
 from ..data.loader import CRESTDataLoader
@@ -35,6 +37,8 @@ class ApplianceSpec:
 class AppliancesConfig:
     """Configuration for appliances model."""
     dwelling_index: int
+    country: Country = Country.UK  # Country for appliance ownership
+    urban_rural: UrbanRural = UrbanRural.URBAN  # Urban/Rural for appliance ownership
     run_number: int = 0
 
 

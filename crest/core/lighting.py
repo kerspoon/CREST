@@ -11,7 +11,8 @@ from typing import Optional
 
 from ..simulation.config import (
     TIMESTEPS_PER_DAY_1MIN,
-    MAX_BULBS_PER_DWELLING
+    MAX_BULBS_PER_DWELLING,
+    Country
 )
 from ..utils.random import RandomGenerator
 from ..data.loader import CRESTDataLoader
@@ -21,6 +22,7 @@ from ..data.loader import CRESTDataLoader
 class LightingConfig:
     """Configuration for lighting model."""
     dwelling_index: int
+    country: Country = Country.UK  # Country for lighting behavior
     run_number: int = 0
 
 
