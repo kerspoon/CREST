@@ -8,6 +8,7 @@ AUDIT STATUS: ✅ COMPLETE - Full VBA implementation (clsLighting.cls)
 """
 
 import numpy as np
+import pandas as pd
 from dataclasses import dataclass
 from typing import Optional
 
@@ -84,22 +85,27 @@ class Lighting:
         self.occupancy = None
         self.local_climate = None
 
+        # BUG FIX #1: Bulb relative use will be generated in run_simulation()
+        # to match VBA's RNG sequence (generated per-bulb, interleaved with simulation)
+        self.bulb_relative_use = None
+
     def _load_lighting_config(self):
         """
         Load lighting configuration from CSV files.
 
         VBA Reference: InitialiseLighting (lines 74-102)
         """
-        # VBA: Determine irradiance threshold using Monte Carlo (lines 81-84)
-        # intIrradianceThreshold = GetMonteCarloNormalDistGuess(mean, sd)
-        # From light_config.csv: Mean=60, SD=10 (row 4, columns F and G)
-        lighting_config = self.data_loader.load_lighting_config()
+        # Load raw CSV for parameter extraction
+        # BUG FIX #5: Load from CSV instead of hardcoding
+        light_config_raw = pd.read_csv(
+            self.data_loader.data_dir / "light_config.csv",
+            header=None
+        )
 
-        # Get irradiance threshold parameters from CSV
-        # VBA: wsLightConfig.Range("iIrradianceThresholdMean").Value = 60
-        # VBA: wsLightConfig.Range("iIrradianceThresholdSd").Value = 10
-        irradiance_mean = 60.0  # W/m²
-        irradiance_sd = 10.0     # W/m²
+        # VBA: Determine irradiance threshold using Monte Carlo (lines 81-84)
+        # BUG FIX #5: Load from CSV row 4 (0-indexed: 3), columns F-G (5-6)
+        irradiance_mean = float(light_config_raw.iloc[3, 5])  # Row 4, Col F
+        irradiance_sd = float(light_config_raw.iloc[3, 6])     # Row 4, Col G
 
         self.irradiance_threshold = self._get_monte_carlo_normal_dist_guess(
             irradiance_mean,
@@ -134,56 +140,44 @@ class Lighting:
         # VBA: Get bulb ratings from columns 3+ (line 134)
         # intRating = aBulbArray(1, i + 2)  where i = 1 to intNumBulbs
         self.bulb_powers = np.zeros(self.num_bulbs)
+
+        # BUG FIX #5: Load India scaling factor from CSV row 24 (0-indexed: 23), column G (6)
+        india_scaling_factor = float(light_config_raw.iloc[23, 6])  # Row 24, Col G = 0.275
+
         for i in range(self.num_bulbs):
             # Column index: i + 2 (VBA) = i + 2 (0-indexed)
             rating = float(bulb_row.iloc[i + 2])
 
             # VBA: Scale down bulb power for India (lines 136-140)
-            # blnIndia = IIf(wsMain.Range("rCountry").Value = "India", True, False)
-            # If blnIndia Then intRating = intRating * wsLightConfig.Range("G24").Value
-            # From light_config.csv: India scalar = 0.275 (row 24, column G)
             if self.config.country == Country.INDIA:
-                rating = rating * 0.275
+                rating = rating * india_scaling_factor
 
             self.bulb_powers[i] = rating
 
         # VBA: Get calibration scalar (lines 99-100)
         # dblCalibrationScalar = wsLightConfig.Range("F24").Value
-        # From light_config.csv: UK = 0.00815368639667705 (row 24, column F)
-        self.calibration_scalar = 0.00815368639667705
+        # BUG FIX #5: Load from CSV row 24 (0-indexed: 23), column F (5)
+        self.calibration_scalar = float(light_config_raw.iloc[23, 5])  # Row 24, Col F
 
-        # VBA: Relative use weighting per bulb (lines 149-152)
-        # dblCalibratedRelativeUseWeighting = -dblCalibrationScalar * Application.WorksheetFunction.Ln(Rnd())
-        # Store for each bulb
-        self.bulb_relative_use = np.zeros(self.num_bulbs)
-        for i in range(self.num_bulbs):
-            self.bulb_relative_use[i] = -self.calibration_scalar * np.log(self.rng.random())
+        # BUG FIX #1: DO NOT generate relative use weightings here!
+        # VBA generates them in RunLightingSimulation (line 151), interleaved with bulb simulation
+        # We'll generate them in run_simulation() to match VBA's RNG sequence
 
-        # Load effective occupancy lookup table (wsLightConfig rows 38-43)
-        # VBA: dblEffectiveOccupancy = wsLightConfig.Range("E" + CStr(37 + intActiveOccupants)).Value
-        # Rows 38-43 in CSV → occupancy 0-5
-        self.effective_occupancy = np.array([
-            0.0,                  # 0 active occupants
-            1.0,                  # 1 active occupant
-            1.5281456953642385,   # 2 active occupants
-            1.6937086092715232,   # 3 active occupants
-            1.9834437086092715,   # 4 active occupants
-            2.0943708609271523    # 5 active occupants
-        ])
+        # BUG FIX #5: Load effective occupancy from CSV rows 38-42 (0-indexed: 37-41), column E (4)
+        self.effective_occupancy = np.zeros(6)  # 0-5 occupants
+        self.effective_occupancy[0] = 0.0  # 0 occupants (row 37 is header, no data)
+        for occ in range(1, 6):
+            row_idx = 37 + occ - 1  # Row 38-42 (0-indexed: 37-41)
+            self.effective_occupancy[occ] = float(light_config_raw.iloc[row_idx, 4])
 
-        # Load lighting duration model (wsLightConfig rows 55-63)
-        # VBA: Cumulative probability and duration ranges (lines 187-209)
-        self.duration_ranges = [
-            (1, 1, 0.1111111111111111),      # Range 1: 1 min
-            (2, 2, 0.2222222222222222),      # Range 2: 2 min
-            (3, 4, 0.3333333333333333),      # Range 3: 3-4 min
-            (5, 8, 0.4444444444444444),      # Range 4: 5-8 min
-            (9, 16, 0.5555555555555556),     # Range 5: 9-16 min
-            (17, 27, 0.6666666666666666),    # Range 6: 17-27 min
-            (28, 49, 0.7777777777777778),    # Range 7: 28-49 min
-            (50, 91, 0.8888888888888888),    # Range 8: 50-91 min
-            (92, 259, 1.0)                   # Range 9: 92-259 min
-        ]
+        # BUG FIX #5: Load duration ranges from CSV rows 55-63 (0-indexed: 54-62)
+        self.duration_ranges = []
+        for range_idx in range(9):  # 9 ranges
+            row_idx = 54 + range_idx  # Rows 55-63 (0-indexed: 54-62)
+            lower_dur = int(float(light_config_raw.iloc[row_idx, 2]))  # Col C
+            upper_dur = int(float(light_config_raw.iloc[row_idx, 3]))  # Col D
+            cumulative_prob = float(light_config_raw.iloc[row_idx, 4])  # Col E
+            self.duration_ranges.append((lower_dur, upper_dur, cumulative_prob))
 
     def _get_monte_carlo_normal_dist_guess(self, mean: float, std_dev: float) -> float:
         """
@@ -217,6 +211,11 @@ class Lighting:
         # intActiveOccupancy = aOccupancy(intRunNumber).GetActiveOccupancy
         active_occupancy_10min = self.occupancy.active_occupancy
 
+        # BUG FIX #1: Generate bulb relative use weightings HERE, not in __init__
+        # VBA generates them in RunLightingSimulation (line 151), one per bulb,
+        # interleaved with simulation logic. This ensures correct RNG sequence.
+        self.bulb_relative_use = np.zeros(self.num_bulbs)
+
         # VBA: For each bulb (line 131)
         # For i = 1 To intNumBulbs
         for bulb_idx in range(self.num_bulbs):
@@ -224,8 +223,11 @@ class Lighting:
             # VBA: Get the bulb rating (already loaded in __init__)
             bulb_rating = self.bulb_powers[bulb_idx]
 
-            # VBA: Get calibrated relative use weighting (already calculated in __init__)
-            calibrated_relative_use = self.bulb_relative_use[bulb_idx]
+            # VBA: Assign random bulb use weighting (lines 149-152)
+            # THIS HAPPENS HERE, not in __init__!
+            # dblCalibratedRelativeUseWeighting = -dblCalibrationScalar * Application.WorksheetFunction.Ln(Rnd())
+            calibrated_relative_use = -self.calibration_scalar * np.log(self.rng.random())
+            self.bulb_relative_use[bulb_idx] = calibrated_relative_use
 
             # VBA: Calculate the bulb usage at each minute of the day (lines 154-240)
             # intTime = 1, Do While (intTime <= 1440)
@@ -242,8 +244,13 @@ class Lighting:
                 ten_min_idx = minute // 10
                 active_occupants = active_occupancy_10min[ten_min_idx]
 
-                # Clamp to 0-5 for effective occupancy lookup
-                active_occupants = min(active_occupants, 5)
+                # BUG FIX #4: Use assert instead of clamping to match VBA exactly
+                # VBA has no bounds checking - it just accesses the array
+                # If >5 occupants exist, VBA would read beyond array (undefined behavior)
+                # We assert this never happens to catch bugs while matching VBA behavior
+                assert 0 <= active_occupants <= 5, \
+                    f"Active occupants ({active_occupants}) out of range [0,5]. " \
+                    f"Occupancy model should never generate >5 active occupants."
 
                 # VBA: Determine if bulb switch-on condition is passed (lines 169-173)
                 # blnLowIrradiance = ((intIrradiance < intIrradianceThreshold) Or (Rnd() < 0.05))
@@ -268,7 +275,10 @@ class Lighting:
                         if r1 < cumulative_prob:
                             # VBA: Get another random number and pick duration in range (lines 200-203)
                             r2 = self.rng.random()
-                            light_duration = int(r2 * (upper_dur - lower_dur) + lower_dur)
+                            # BUG FIX #2: Use round() instead of int()
+                            # VBA assigns Double to Integer, which ROUNDS to nearest integer
+                            # Python int() truncates (floors), which is different behavior
+                            light_duration = round(r2 * (upper_dur - lower_dur) + lower_dur)
                             break
 
                     # VBA: Light stays on for duration (lines 211-228)
@@ -346,10 +356,13 @@ class Lighting:
 
     def get_daily_energy(self) -> float:
         """
-        Get total daily lighting energy in Wh.
+        Get total daily lighting sum (matches VBA units exactly).
 
         VBA Reference: GetDailySumLighting property (lines 63-65)
+
+        Note: VBA returns raw sum without unit conversion. Units are technically
+        W summed over 1440 minutes.
         """
         # VBA: GetDailySumLighting = WorksheetFunction.Sum(aTotalLightingDemand)
-        # Note: VBA sum is in W, need to convert W·min to Wh
-        return np.sum(self.total_demand) / 60.0
+        # BUG FIX #3: Removed /60.0 conversion - VBA does NOT convert units
+        return np.sum(self.total_demand)

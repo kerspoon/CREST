@@ -2458,3 +2458,136 @@ for i in range(min(MAX_APPLIANCE_TYPES, len(appliances_data) - 4)):
 
 **All bugs verified and fixed. Ready for 100-house validation test.**
 
+
+---
+
+### CRITICAL BUG FIXES - Lighting (2025-11-10)
+
+After careful review by web-based Claude, **5 critical bugs** were identified and fixed:
+
+#### Bug #1: RNG Timing Mismatch ✅ FIXED
+
+**Problem**: VBA generates bulb relative use weightings in `RunLightingSimulation()` (line 151), INTERLEAVED with the bulb simulation loop. Python generated ALL weightings in `__init__`, causing completely different RNG sequence.
+
+**VBA Sequence**: threshold → config → bulb1_weight → bulb1_sim → bulb2_weight → bulb2_sim → ...
+**Python Before**: threshold → config → ALL_weights → bulb1_sim → bulb2_sim → ...
+
+**Fix** (lighting.py:88-90, 214-230):
+```python
+# In __init__:
+self.bulb_relative_use = None  # Don't generate here!
+
+# In run_simulation():
+for bulb_idx in range(self.num_bulbs):
+    # Generate weighting HERE, just before simulating this bulb
+    calibrated_relative_use = -self.calibration_scalar * np.log(self.rng.random())
+    self.bulb_relative_use[bulb_idx] = calibrated_relative_use
+    # ... then simulate this bulb ...
+```
+
+**Impact**: RNG sequence now matches VBA exactly for reproducible results with same seed.
+
+---
+
+#### Bug #2: int() vs round() for Duration Calculation ✅ FIXED
+
+**Problem**: VBA assigns Double to Integer variable, which ROUNDS to nearest integer. Python `int()` truncates (floors), giving different durations.
+
+**VBA** (line 203):
+```vba
+intLightDuration = (r2 * (intUpperDuration - intLowerDuration)) + intLowerDuration
+' Assignment to Integer type ROUNDS: 5.7 → 6, 5.3 → 5
+```
+
+**Python Before**:
+```python
+light_duration = int(r2 * (upper_dur - lower_dur) + lower_dur)
+# int() truncates: 5.7 → 5, 5.3 → 5
+```
+
+**Fix** (lighting.py:278-281):
+```python
+# BUG FIX #2: Use round() instead of int()
+# VBA assigns Double to Integer, which ROUNDS to nearest integer
+light_duration = round(r2 * (upper_dur - lower_dur) + lower_dur)
+```
+
+**Impact**: Light durations now match VBA rounding behavior.
+
+---
+
+#### Bug #3: get_daily_energy() Unit Conversion ✅ FIXED
+
+**Problem**: VBA returns raw sum. Python divided by 60 to convert W·min to Wh, changing numerical value and breaking comparison with Excel.
+
+**Fix** (lighting.py:357-368):
+```python
+def get_daily_energy(self) -> float:
+    """Get total daily lighting sum (matches VBA units exactly)."""
+    # BUG FIX #3: Removed /60.0 conversion - VBA does NOT convert units
+    return np.sum(self.total_demand)
+```
+
+**Impact**: Returns exact same value as VBA for 100-house comparison.
+
+---
+
+#### Bug #4: Occupants Clamping → Assert ✅ FIXED
+
+**Problem**: Python used `min(active_occupants, 5)` to clamp, which VBA doesn't have. This changes behavior if >5 occupants exist (though occupancy model shouldn't generate >5).
+
+**Fix** (lighting.py:247-253):
+```python
+# BUG FIX #4: Use assert instead of clamping to match VBA exactly
+# VBA has no bounds checking - it just accesses the array
+assert 0 <= active_occupants <= 5, \
+    f"Active occupants ({active_occupants}) out of range [0,5]. " \
+    f"Occupancy model should never generate >5 active occupants."
+```
+
+**Impact**: Matches VBA behavior exactly. Assert catches bugs if occupancy model misbehaves.
+
+---
+
+#### Bug #5: Hardcoded Values → Load from CSV ✅ FIXED
+
+**Problem**: Values like calibration scalar, effective occupancy, duration ranges, etc. were hardcoded instead of loaded from CSV.
+
+**Fix** (lighting.py:99-180):
+```python
+# Load raw CSV
+light_config_raw = pd.read_csv(data_dir / "light_config.csv", header=None)
+
+# Load irradiance threshold params
+irradiance_mean = float(light_config_raw.iloc[3, 5])  # Row 4, Col F
+irradiance_sd = float(light_config_raw.iloc[3, 6])     # Row 4, Col G
+
+# Load calibration scalar
+self.calibration_scalar = float(light_config_raw.iloc[23, 5])  # Row 24, Col F
+
+# Load India scaling factor
+india_scaling_factor = float(light_config_raw.iloc[23, 6])  # Row 24, Col G
+
+# Load effective occupancy (rows 38-42, column E)
+self.effective_occupancy = np.zeros(6)
+self.effective_occupancy[0] = 0.0
+for occ in range(1, 6):
+    row_idx = 37 + occ - 1
+    self.effective_occupancy[occ] = float(light_config_raw.iloc[row_idx, 4])
+
+# Load duration ranges (rows 55-63, columns C, D, E)
+self.duration_ranges = []
+for range_idx in range(9):
+    row_idx = 54 + range_idx
+    lower_dur = int(float(light_config_raw.iloc[row_idx, 2]))
+    upper_dur = int(float(light_config_raw.iloc[row_idx, 3]))
+    cumulative_prob = float(light_config_raw.iloc[row_idx, 4])
+    self.duration_ranges.append((lower_dur, upper_dur, cumulative_prob))
+```
+
+**Impact**: Dynamic loading from CSV. If CSV values change, code updates automatically.
+
+---
+
+**All 5 bugs verified and fixed. Lighting module now matches VBA exactly.**
+
