@@ -207,8 +207,43 @@ class CRESTDataLoader:
 
     def load_heating_controls(self) -> pd.DataFrame:
         """Load heating control specifications (thermostats, timers)."""
-        # Skip 4 header rows, use row 5 as column headers
-        return self._load_csv("HeatingControls.csv", skiprows=4, header=0)
+        # CSV structure:
+        # Rows 0-2: Titles
+        # Row 3: "Demand temperature,Percentage of homes" (space heating header)
+        # Rows 4-18: Space heating data (15 rows)
+        # Row 19: blank
+        # Rows 20-22: Hot water titles
+        # Row 23: "Hot water delivery temperature,Percentage of homes" (hot water header)
+        # Rows 24-35: Hot water data (12 rows)
+        # Rows 36-40: Cooling offset info
+
+        # Load without header to get raw data
+        df = self._load_csv("HeatingControls.csv", header=None)
+
+        # Extract space heating setpoints (rows 4-18, columns 0-1)
+        space_heating = df.iloc[4:19, 0:2].copy()
+        space_heating.columns = ['temperature', 'probability']
+        space_heating = space_heating.reset_index(drop=True)
+
+        # Extract hot water setpoints (rows 24-35, columns 0-1)
+        hot_water = df.iloc[24:36, 0:2].copy()
+        hot_water.columns = ['temperature', 'probability']
+        hot_water = hot_water.reset_index(drop=True)
+
+        # Extract cooling offset (row 37, column 2)
+        # Row 37 (0-based) = "Adapted higher than the heating settings, shifted by:",,5.0,degrees
+        cooling_offset = float(df.iloc[37, 2])
+
+        # Store in dict for easy access
+        result = pd.DataFrame({
+            'space_heating_temps': [space_heating['temperature'].values],
+            'space_heating_probs': [space_heating['probability'].values],
+            'hot_water_temps': [hot_water['temperature'].values],
+            'hot_water_probs': [hot_water['probability'].values],
+            'cooling_offset': [cooling_offset]
+        })
+
+        return result
 
     def load_heating_controls_tpm(self) -> pd.DataFrame:
         """Load transition probability matrix for heating timer states."""

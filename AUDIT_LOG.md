@@ -651,3 +651,341 @@ dblPhi_c = dblPhi_cOccupancy + dblPhi_cLighting + dblPhi_cAppliances
 
 ---
 
+### 4. HeatingControls (clsHeatingControls.cls → controls.py)
+
+**Status**: ✅ PASS - Full VBA implementation complete after fixes
+
+**VBA File**: `original/clsHeatingControls.cls` (690 lines)
+**Python File**: `crest/core/controls.py` (~413 lines after fixes)
+
+**MAJOR ISSUES FOUND AND FIXED:**
+
+#### Issue 4.1: Thermostat Setpoints Using Hardcoded Values Instead of CSV ❌ → ✅ FIXED
+**VBA** (lines 205-259): Loads space and hot water thermostat setpoints from `HeatingControls.csv` using probability distributions
+- Space heating: 15 temperature options (13-27°C) with associated probabilities
+- Hot water: 12 temperature options (42-62°C) with associated probabilities
+- Uses cumulative probability method for selection
+
+**Python (Before)**:
+```python
+space_setpoints = [18.0, 19.0, 20.0, 21.0, 22.0]  # Hardcoded!
+space_probs = [0.1, 0.2, 0.4, 0.2, 0.1]
+water_setpoints = [55.0, 60.0, 65.0]  # Hardcoded!
+water_probs = [0.2, 0.6, 0.2]
+```
+
+**Fix** (loader.py:208-245, controls.py:120-161):
+```python
+# Load from CSV with exact VBA structure
+controls_data = self.data_loader.load_heating_controls()
+space_temps = controls_data['space_heating_temps'].iloc[0].astype(float)
+space_probs = controls_data['space_heating_probs'].iloc[0].astype(float)
+
+# Use cumulative probability (VBA-style)
+rand_val = self.rng.random()
+cumulative_p = 0.0
+for i in range(len(space_temps)):
+    cumulative_p += space_probs[i]
+    if rand_val < cumulative_p:
+        self.space_heating_setpoint = float(space_temps[i])
+        break
+```
+
+**Impact**: Thermostat setpoints now match real UK housing survey data from Huebner et al. (2013)
+
+#### Issue 4.2: Emitter Setpoints Calculated Instead of Loaded from CSV ❌ → ✅ FIXED
+**VBA** (lines 197, 200):
+```vba
+dblEmitterThermostatSetpoint = wsBuildings.Cells(intOffset + intBuildingIndex, 14).Value
+dblCoolerEmitterSetpoint = wsBuildings.Cells(intOffset + intBuildingIndex, 18).Value
+```
+Loads from Buildings.csv column 14 (theta_em, typically 50°C) and column 18 (theta_cool)
+
+**Python (Before)**:
+```python
+self.emitter_setpoint = self.space_heating_setpoint + 10.0  # Wrong!
+self.cooler_emitter_setpoint = self.space_cooling_setpoint - 5.0  # Wrong!
+```
+
+**Fix** (controls.py:163-172):
+```python
+buildings_data = self.data_loader.load_buildings()
+building_params = buildings_data.iloc[self.config.building_index]
+self.emitter_setpoint = float(building_params['theta_em'])
+self.cooler_emitter_setpoint = float(building_params['theta_cool'])
+```
+
+**Impact**: Emitter targets now match building-specific nominal temperatures from Buildings.csv
+
+#### Issue 4.3: Hot Water Timer Wrong Initialization ❌ → ✅ FIXED
+**VBA** (lines 389-395):
+```vba
+' NOTE: hot water timer settings will be always on, except for the first half-hour,
+' to introduce some diversity to the initial hot water heating spike
+For intRow = 1 To 48
+    If intRow = 1 Then
+        aHotWaterTimerSettings(intRow, 1) = 0  ' First period OFF
+    Else
+        aHotWaterTimerSettings(intRow, 1) = 1  ' Rest ON
+    End If
+Next intRow
+```
+
+**Python (Before)**:
+```python
+self.hot_water_timer = self._expand_to_1min(timer_schedule_30min)  # Same as space heating!
+```
+
+**Fix** (controls.py:250-253):
+```python
+# Generate hot water schedule (VBA lines 389-395)
+# First period OFF (for diversity), rest ON
+hot_water_schedule_30min = np.ones(48, dtype=int)
+hot_water_schedule_30min[0] = 0
+```
+
+**Impact**: Hot water heating now has diversity in startup time (avoids simultaneous morning spike)
+
+#### Issue 4.4: Timer Initial State Not Probabilistic ❌ → ✅ FIXED
+**VBA** (lines 329-335):
+```vba
+' Probability of heating being on at 00:00 is 9% for weekdays, 10% for weekends
+' from Huebner et al. (2013)
+dblRand = Rnd()
+If blnWeekend Then
+    aSpaceHeatingTimerSettings(1, 1) = IIf(dblRand < 0.1, 1, 0)
+Else
+    aSpaceHeatingTimerSettings(1, 1) = IIf(dblRand < 0.09, 1, 0)
+End If
+```
+
+**Python (Before)**:
+```python
+current_state = 0  # Always starts OFF!
+```
+
+**Fix** (controls.py:189-197):
+```python
+# Determine initial state probabilistically (VBA lines 329-335)
+# Weekday: 9% chance of starting ON, Weekend: 10% chance
+rand_val = self.rng.random()
+if self.config.is_weekend:
+    current_state = 1 if rand_val < 0.10 else 0
+else:
+    current_state = 1 if rand_val < 0.09 else 0
+
+space_schedule_30min[0] = current_state
+```
+
+**Impact**: Adds realistic diversity to initial heating states across dwellings
+
+#### Issue 4.5: Heating Not Disabled for Electric-Only Systems ❌ → ✅ FIXED
+**VBA** (lines 230-235):
+```vba
+If intHeatingSystemType > 3 Then
+    ' Set space heating thermostat to -99 so heating is never used
+    ' with simple air conditioning or simple electric water heating
+    dblSpaceHeatingThermostatSetpoint = -99
+End If
+```
+System types: 1=regular boiler, 2=combi, 3=system, 4=no heating, 5=electric water heater
+
+**Python (Before)**: Missing this check entirely
+
+**Fix** (controls.py:144-147):
+```python
+# Check if heating should be disabled (VBA lines 230-235)
+# For heating_system_type > 3 (no gas heating), set to -99
+if self.heating_system_type > 3:
+    self.space_heating_setpoint = -99.0
+```
+
+**Impact**: Electric-only systems now correctly avoid gas heating attempts
+
+#### Issue 4.6: Timer TPM Column Reading Incorrect ❌ → ✅ FIXED
+**VBA** (lines 316-317, 344-350):
+```vba
+' Get the transition probabilities for heating and cooling timer settings
+aTPM = wsHeatingTPM.Range("C8:F103")  ' Columns C-F for heating
+aCoolingTPM = wsHeatingTPM.Range("K8:N103")  ' Columns K-N for cooling
+
+' Determine the appropriate row
+intRow = (intHH - 1) * 2 + intCurrentState + 1
+
+' Select column based on day type
+intColumn = IIf(blnWeekend, 3, 1)  ' 1=weekday col C, 3=weekend col E
+
+' Determine next state
+intNextState = IIf(dblRand < aTPM(intRow, intColumn), 0, 1)
+```
+
+**Python (Before)**: Unclear column mapping, potentially wrong indices
+
+**Fix** (controls.py:174-248):
+```python
+# TPM range C8:F103 = columns 2-5 (0-based), rows 7-102 (after skiprows=7)
+# Columns: Period (0), State (1), Weekday→0 (2), Weekday→1 (3), Weekend→0 (4), Weekend→1 (5)
+timer_tpm = self.data_loader.load_heating_controls_tpm().values
+
+for period in range(1, 48):
+    # Row index: (period - 1) * 2 + current_state
+    row_idx = (period - 1) * 2 + current_state
+
+    # Select probability of transitioning to state 0
+    if self.config.is_weekend:
+        prob_state_0 = timer_tpm[row_idx, 4]  # Weekend→0
+    else:
+        prob_state_0 = timer_tpm[row_idx, 2]  # Weekday→0
+
+    # Determine next state
+    rand_val = self.rng.random()
+    next_state = 0 if rand_val < prob_state_0 else 1
+```
+
+**Impact**: Timer schedules now use correct Markov transition probabilities
+
+#### Issue 4.9: Time Shift Uses int() Instead of round() ❌ → ✅ FIXED
+**VBA** (line 654):
+```vba
+intShift = Round((Rnd() * intShiftInterval) - (intShiftInterval / 2), 0)
+' intShiftInterval = 30, so shift range is [-15, +15]
+```
+`Round()` rounds to nearest integer, giving symmetric range [-15, 15]
+
+**Python (Before)**:
+```python
+shift = int(self.rng.uniform(-TIMER_RANDOM_SHIFT_MINUTES, TIMER_RANDOM_SHIFT_MINUTES))
+# int() truncates, giving asymmetric range [-15, 14]
+```
+
+**Fix** (controls.py:299-308):
+```python
+# VBA line 654: intShift = Round((Rnd() * intShiftInterval) - (intShiftInterval / 2), 0)
+shift_interval = 30
+shift = round(self.rng.random() * shift_interval - (shift_interval / 2))
+# round() gives symmetric range [-15, 15] matching VBA
+```
+
+**Impact**: Time shifts now have correct symmetric distribution
+
+#### Algorithm Equivalence Verification ✅
+
+**AssignToOneMinute** (VBA lines 423-431 vs Python lines 265-281):
+```vba
+For intMinute = 1 To 1440
+    intHalfHour = WorksheetFunction.RoundUp(intMinute / 30, 0)
+    oneMinuteVector(intMinute, 1) = halfHourVector(intHalfHour, 1)
+Next intMinute
+```
+✅ **Python Equivalent**: `np.repeat(schedule_30min, 30)`
+- VBA minute 1-30 → period 1 (Python index 0)
+- VBA minute 31-60 → period 2 (Python index 1)
+- **VERIFIED: Exact match**
+
+**TimeShiftVector** (VBA lines 633-688 vs Python lines 283-308):
+```vba
+' Circular shift with wraparound
+If intShift > 0 Then
+    For intMinute = 1 To 1440
+        NewIndex = intMinute
+        OldIndex = NewIndex - intShift
+        If OldIndex < 1 Then
+            aNewOneMinuteVector(NewIndex, 1) = aOldOneMinuteVector(OldIndex + 1440, 1)
+        Else
+            aNewOneMinuteVector(NewIndex, 1) = aOldOneMinuteVector(OldIndex, 1)
+        End If
+    Next intMinute
+End If
+```
+✅ **Python Equivalent**: `np.roll(schedule, shift)`
+- Tested positive and negative shifts
+- Wraparound logic matches exactly
+- **VERIFIED: Exact match**
+
+#### Component Verification: Hysteresis Thermostats ✅
+
+**Hot Water Thermostat** (VBA lines 467-476):
+```vba
+If aHotWaterThermostatState(currentTimeStep - 1, 1) = True _
+    And dblTheta_cyl < (dblHotWaterThermostatSetpoint + dblHotWaterThermostatDeadband) _
+    Or _
+    aHotWaterThermostatState(currentTimeStep - 1, 1) = False _
+    And dblTheta_cyl <= (dblHotWaterThermostatSetpoint - dblHotWaterThermostatDeadband) Then
+    aHotWaterThermostatState(currentTimeStep, 1) = True
+Else
+    aHotWaterThermostatState(currentTimeStep, 1) = False
+End If
+```
+✅ **Python** (controls.py:296-301): Exact logic match with deadband = 5°C
+
+**Space Heating Thermostat** (VBA lines 479-487):
+✅ **Python** (controls.py:304-309): Exact logic match with deadband = 2°C
+
+**Space Cooling Thermostat** (VBA lines 490-498):
+✅ **Python** (controls.py:312-317): Exact logic match (reverse logic for cooling)
+
+**Emitter Thermostat** (VBA lines 501-510):
+✅ **Python** (controls.py:320-323): Exact logic match with deadband = 5°C
+
+**Cooler Emitter Thermostat** (VBA lines 513-522):
+✅ **Python** (controls.py:326-329): Exact logic match (reverse logic)
+
+#### Component Verification: Control Signals ✅
+
+**Hot Water Control** (VBA lines 529-542):
+```vba
+' If it's a combi system then hot water control signal is determined by hot water demand
+If intHeatingSystemType = 2 Then
+    If aHotWater(intRunNumber).GetH_demand(currentTimeStep) > 0 Then
+        aHeatWaterOnOff(currentTimeStep, 1) = True
+    Else
+        aHeatWaterOnOff(currentTimeStep, 1) = False
+    End If
+    aHotWaterTimerState(currentTimeStep, 1) = True  ' Override timer
+Else
+    ' Regular/system boiler: timer AND thermostat
+    aHeatWaterOnOff(currentTimeStep, 1) = aHotWaterTimerState(currentTimeStep, 1) _
+        * aHotWaterThermostatState(currentTimeStep, 1)
+End If
+```
+✅ **Python** (controls.py:346-358): Exact match
+
+**Main Heater Control** (VBA lines 546-554):
+```vba
+' Heater ON if hot water OR space heating needed
+If aHeatWaterOnOff(currentTimeStep, 1) _
+    Or _
+    (aSpaceHeatingTimerState(currentTimeStep, 1) _
+        * aSpaceHeatingThermostatState(currentTimeStep, 1) _
+        * aEmitterThermostatState(currentTimeStep, 1)) Then
+    aHeaterOnOff(currentTimeStep, 1) = True
+Else
+    aHeaterOnOff(currentTimeStep, 1) = False
+End If
+```
+✅ **Python** (controls.py:362-368): Exact match
+
+**Constants Verification:**
+- `THERMOSTAT_DEADBAND_SPACE = 2` (config.py) = VBA line 262 ✅
+- `THERMOSTAT_DEADBAND_WATER = 5` (config.py) = VBA line 264 ✅
+- `THERMOSTAT_DEADBAND_EMITTER = 5` (config.py) = VBA lines 265-266 ✅
+- `TIMER_RANDOM_SHIFT_MINUTES = 15` (config.py) = VBA line 651 (shift_interval/2) ✅
+
+**Summary of Changes:**
+1. ✅ Fixed HeatingControls.csv loader to extract all thermostat distributions (loader.py:208-245)
+2. ✅ Fixed thermostat setpoint assignment from CSV with cumulative probability (controls.py:120-161)
+3. ✅ Fixed emitter setpoints to load from Buildings.csv (controls.py:163-172)
+4. ✅ Fixed timer initial state to be probabilistic 9%/10% (controls.py:189-197)
+5. ✅ Fixed hot water timer to start with first period OFF (controls.py:250-253)
+6. ✅ Added heating disable logic for system types > 3 (controls.py:144-147)
+7. ✅ Fixed TPM column mapping for heating and cooling (controls.py:174-248)
+8. ✅ Fixed time shift to use round() not int() (controls.py:299-308)
+9. ✅ Verified hysteresis thermostat logic matches VBA exactly
+10. ✅ Verified control signal logic matches VBA exactly
+
+**Testing**: All fixes verified, code imports and runs successfully
+
+**Important Note on Time Shift**: After the random time shift is applied (VBA line 402-404), the specific values at any given index are unpredictable. For example, the hot water timer is generated with the first 30-minute period OFF, but after a random shift of ±15 minutes, that OFF period may appear at any position in the 1440-minute array. This is correct VBA behavior for introducing diversity across dwellings.
+
+---
+

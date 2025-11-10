@@ -112,81 +112,155 @@ class HeatingControls:
         self.hot_water = None
 
     def _assign_thermostat_setpoints(self):
-        """Assign thermostat setpoints stochastically from distributions."""
+        """
+        Assign thermostat setpoints stochastically from distributions.
+
+        Matches VBA InitialiseHeatingControls (lines 205-259).
+        """
         controls_data = self.data_loader.load_heating_controls()
 
-        # Space heating thermostat setpoint
-        # Draw from distribution in HeatingControls.csv
-        # Simplified: use typical UK value
-        space_setpoints = [18.0, 19.0, 20.0, 21.0, 22.0]
-        space_probs = [0.1, 0.2, 0.4, 0.2, 0.1]
-        setpoint_idx = markov.select_next_state(np.array(space_probs), self.rng.random())
-        self.space_heating_setpoint = space_setpoints[setpoint_idx]
+        # Space heating thermostat setpoint (VBA lines 205-224)
+        # Draw from distribution in HeatingControls.csv using cumulative probability
+        space_temps = controls_data['space_heating_temps'].iloc[0].astype(float)
+        space_probs = controls_data['space_heating_probs'].iloc[0].astype(float)
 
-        # Space cooling setpoint (offset from heating setpoint)
-        cooling_offset = 5.0  # Cooling starts 5°C above heating setpoint
+        # Use cumulative probability method (VBA-style)
+        rand_val = self.rng.random()
+        cumulative_p = 0.0
+        for i in range(len(space_temps)):
+            cumulative_p += space_probs[i]
+            if rand_val < cumulative_p:
+                self.space_heating_setpoint = float(space_temps[i])
+                break
+        else:
+            # Fallback to last value if probabilities don't sum to 1.0
+            self.space_heating_setpoint = float(space_temps[-1])
+
+        # Space cooling setpoint (VBA line 228)
+        # Offset from heating setpoint to avoid "thermostat fights"
+        cooling_offset = controls_data['cooling_offset'].iloc[0]
         self.space_cooling_setpoint = self.space_heating_setpoint + cooling_offset
 
-        # Hot water setpoint
-        water_setpoints = [55.0, 60.0, 65.0]
-        water_probs = [0.2, 0.6, 0.2]
-        setpoint_idx = markov.select_next_state(np.array(water_probs), self.rng.random())
-        self.hot_water_setpoint = water_setpoints[setpoint_idx]
+        # Check if heating should be disabled (VBA lines 230-235)
+        # For heating_system_type > 3 (no gas heating), set to -99
+        if self.heating_system_type > 3:
+            self.space_heating_setpoint = -99.0
 
-        # Emitter setpoint (typically higher than room setpoint)
-        self.emitter_setpoint = self.space_heating_setpoint + 10.0
+        # Hot water setpoint (VBA lines 237-255)
+        water_temps = controls_data['hot_water_temps'].iloc[0].astype(float)
+        water_probs = controls_data['hot_water_probs'].iloc[0].astype(float)
 
-        # Cooler emitter setpoint
-        self.cooler_emitter_setpoint = self.space_cooling_setpoint - 5.0
+        rand_val = self.rng.random()
+        cumulative_p = 0.0
+        for i in range(len(water_temps)):
+            cumulative_p += water_probs[i]
+            if rand_val < cumulative_p:
+                self.hot_water_setpoint = float(water_temps[i])
+                break
+        else:
+            self.hot_water_setpoint = float(water_temps[-1])
+
+        # Emitter setpoints from Buildings.csv (VBA lines 197, 200)
+        buildings_data = self.data_loader.load_buildings()
+        if self.config.building_index < len(buildings_data):
+            building_params = buildings_data.iloc[self.config.building_index]
+            self.emitter_setpoint = float(building_params['theta_em'])
+            self.cooler_emitter_setpoint = float(building_params['theta_cool'])
+        else:
+            # Fallback values
+            self.emitter_setpoint = 50.0
+            self.cooler_emitter_setpoint = 20.0
 
     def _generate_timer_schedules(self):
-        """Generate timer schedules using Markov chain transitions."""
-        # Load timer TPM
+        """
+        Generate timer schedules using Markov chain transitions.
+
+        Matches VBA InitialiseHeatingControls (lines 307-404).
+        """
+        # Load timer TPM (VBA lines 315-317)
+        # TPM range C8:F103 = columns 2-5 (0-based), rows 7-102 (0-based after skiprows=7)
+        # Columns: Period (0), State (1), Weekday→0 (2), Weekday→1 (3), Weekend→0 (4), Weekend→1 (5)
         timer_tpm = self.data_loader.load_heating_controls_tpm().values
 
-        # TPM structure:
-        # Col 0: Period (1-48)
-        # Col 1: Current state (0 or 1)
-        # Col 2-3: Weekday transitions [state→0, state→1]
-        # Col 4-5: Weekend transitions [state→0, state→1]
+        # Generate space heating 30-minute schedule (48 periods)
+        # VBA lines 329-355
+        space_schedule_30min = np.zeros(48, dtype=int)
 
-        # Generate 30-minute resolution timer schedule (48 periods)
-        timer_schedule_30min = np.zeros(48, dtype=int)
+        # Determine initial state probabilistically (VBA lines 329-335)
+        # Weekday: 9% chance of starting ON, Weekend: 10% chance
+        rand_val = self.rng.random()
+        if self.config.is_weekend:
+            current_state = 1 if rand_val < 0.10 else 0
+        else:
+            current_state = 1 if rand_val < 0.09 else 0
 
-        # Start in OFF state (state 0)
-        current_state = 0
+        space_schedule_30min[0] = current_state
 
-        for period in range(48):
-            # Find row for (period+1, current_state) in TPM
-            # TPM has 2 rows per period: one for state 0, one for state 1
-            row_idx = period * 2 + current_state
+        # Generate remaining periods using Markov chain (VBA lines 339-355)
+        for period in range(1, 48):  # periods 1-47 (VBA intHH = 1 To 47)
+            # Row index in TPM (VBA line 344)
+            # intRow = (intHH - 1) * 2 + intCurrentState + 1
+            # For Python 0-based: row = (period - 1) * 2 + current_state
+            row_idx = (period - 1) * 2 + current_state
 
-            # Select transition probability columns based on weekday/weekend
+            # Select column based on weekday/weekend (VBA line 320, 350)
+            # VBA: intColumn = IIf(blnWeekend, 3, 1) → 1-based columns
+            # TPM columns: 0=period, 1=state, 2=wd→0, 3=wd→1, 4=we→0, 5=we→1
             if self.config.is_weekend:
-                # Weekend: columns 4-5
-                transition_probs = timer_tpm[row_idx, 4:6].astype(float)
+                # Weekend: column 3 in VBA (1-based) = column 2 in Python (0-based after accounting for labels)
+                # Actually VBA uses aTPM(intRow, intColumn) where intColumn=3 for weekend
+                # aTPM = wsHeatingTPM.Range("C8:F103"), so column 1 of aTPM = column C = column 2 (0-based)
+                # intColumn=1 → column C, intColumn=3 → column E
+                prob_state_0 = timer_tpm[row_idx, 4]  # Weekend→0
             else:
-                # Weekday: columns 2-3
-                transition_probs = timer_tpm[row_idx, 2:4].astype(float)
+                # Weekday: column 1 in VBA → column C in Excel → column 2 (0-based)
+                prob_state_0 = timer_tpm[row_idx, 2]  # Weekday→0
 
-            # Normalize (should already be normalized, but be safe)
-            transition_probs = markov.normalize_probabilities(transition_probs)
+            # Determine next state (VBA line 350)
+            # intNextState = IIf(dblRand < aTPM(intRow, intColumn), 0, 1)
+            rand_val = self.rng.random()
+            next_state = 0 if rand_val < prob_state_0 else 1
 
-            # Select next state
-            next_state = markov.select_next_state(transition_probs, self.rng.random())
-            timer_schedule_30min[period] = next_state
+            space_schedule_30min[period] = next_state
             current_state = next_state
 
-        # Convert to 1-minute resolution
-        self.space_heating_timer = self._expand_to_1min(timer_schedule_30min)
-        self.hot_water_timer = self._expand_to_1min(timer_schedule_30min)  # Same schedule
+        # Generate space cooling schedule (VBA lines 358-385)
+        # Only for cooling_system_type > 1
+        cooling_schedule_30min = np.zeros(48, dtype=int)
+        if self.cooling_system_type > 1:
+            # Initial state: 90% chance of starting ON (VBA lines 359-364)
+            rand_val = self.rng.random()
+            current_state = 1 if rand_val < 0.90 else 0
+            cooling_schedule_30min[0] = current_state
 
-        # Apply random time shift for diversity (±15 minutes)
-        self.space_heating_timer = self._time_shift_schedule(self.space_heating_timer)
-        self.hot_water_timer = self._time_shift_schedule(self.hot_water_timer)
+            # Generate using cooling TPM (columns 10-13 in Excel = K-N)
+            # After skiprows=7, these are columns 10-13 (0-based)
+            for period in range(1, 48):
+                row_idx = (period - 1) * 2 + current_state
+                if self.config.is_weekend:
+                    prob_state_0 = timer_tpm[row_idx, 12]  # Cooling weekend→0
+                else:
+                    prob_state_0 = timer_tpm[row_idx, 10]  # Cooling weekday→0
 
-        # Cooling timer (typically off in UK, can use reverse schedule)
-        self.space_cooling_timer = np.zeros(TIMESTEPS_PER_DAY_1MIN, dtype=bool)
+                rand_val = self.rng.random()
+                next_state = 0 if rand_val < prob_state_0 else 1
+                cooling_schedule_30min[period] = next_state
+                current_state = next_state
+
+        # Generate hot water schedule (VBA lines 389-395)
+        # First period OFF (for diversity), rest ON
+        hot_water_schedule_30min = np.ones(48, dtype=int)
+        hot_water_schedule_30min[0] = 0
+
+        # Expand to 1-minute resolution (VBA line 398-400)
+        space_1min = self._expand_to_1min(space_schedule_30min)
+        cooling_1min = self._expand_to_1min(cooling_schedule_30min)
+        hot_water_1min = self._expand_to_1min(hot_water_schedule_30min)
+
+        # Apply time shift (VBA lines 402-404)
+        self.space_heating_timer = self._time_shift_schedule(space_1min)
+        self.space_cooling_timer = self._time_shift_schedule(cooling_1min)
+        self.hot_water_timer = self._time_shift_schedule(hot_water_1min)
 
     def _expand_to_1min(self, schedule_30min: np.ndarray) -> np.ndarray:
         """
@@ -210,6 +284,8 @@ class HeatingControls:
         """
         Apply random time shift to schedule for diversity.
 
+        Matches VBA TimeShiftVector (lines 633-688).
+
         Parameters
         ----------
         schedule : np.ndarray
@@ -220,10 +296,14 @@ class HeatingControls:
         np.ndarray
             Time-shifted schedule
         """
-        # Random shift within ±15 minutes
-        shift = int(self.rng.uniform(-TIMER_RANDOM_SHIFT_MINUTES, TIMER_RANDOM_SHIFT_MINUTES))
+        # VBA line 654: intShift = Round((Rnd() * intShiftInterval) - (intShiftInterval / 2), 0)
+        # intShiftInterval = 30, so shift range is [-15, 15]
+        # Python: round(uniform(0, 1) * 30 - 15) = round(uniform(-15, 15))
+        shift_interval = 30
+        shift = round(self.rng.random() * shift_interval - (shift_interval / 2))
 
-        # Circular shift
+        # Circular shift (VBA lines 656-682)
+        # np.roll() is equivalent to VBA's wraparound logic
         shifted = np.roll(schedule, shift)
         return shifted
 
