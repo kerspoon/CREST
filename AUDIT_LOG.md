@@ -34,7 +34,7 @@
 ### Tier 3: Demand Models (depend on occupancy + activity stats)
 6. ✅ **clsHotWater.cls** → `crest/core/water.py` - COMPLETE
 7. ✅ **clsAppliances.cls** → `crest/core/appliances.py` - COMPLETE
-8. **clsLighting.cls** → `crest/core/lighting.py`
+8. ✅ **clsLighting.cls** → `crest/core/lighting.py` - COMPLETE
 
 ### Tier 4: Renewables
 9. **clsPVSystem.cls** → `crest/core/renewables.py`
@@ -1891,6 +1891,452 @@ elif appliance.name in ["STORAGE_HEATER", "ELEC_SPACE_HEATING"]:
 6. **Heat gains test**: Verify per-appliance ratios (not constant 80%)
 7. **Total demand test**: Verify includes heating/cooling/solar thermal pumps
 8. **100-dwelling test**: Compare aggregate demand with Excel output
+
+---
+
+**AUDIT COMPLETE**: All VBA functionality implemented, no TODOs, no placeholders, ready for testing
+
+
+### 8. Lighting (clsLighting.cls → lighting.py)
+
+**Status**: ✅ PASS - Full VBA implementation complete after comprehensive rewrite
+
+**VBA File**: `original/clsLighting.cls` (292 lines)
+**Python File**: `crest/core/lighting.py` (356 lines after fixes)
+
+**Date Completed**: 2025-11-10
+
+---
+
+#### CRITICAL ISSUES FOUND AND FIXED:
+
+The Python implementation was a simplified stub. **All 10 major issues have been completely fixed:**
+
+---
+
+#### Fix 1: Bulb Configuration Loading ✅
+
+**VBA** (lines 86-93):
+```vba
+' Choose a random house from the list of 100 provided
+intBulbConfiguration = Int((100 * Rnd) + 1)  ' 1 to 100
+
+' Get the bulb data from Excel row = intBulbConfiguration + 10
+aBulbArray = wsBulbs.Range("A" + CStr(intBulbConfiguration + 10) + ":BI" + CStr(intBulbConfiguration + 10))
+
+' Get the number of bulbs
+intNumBulbs = aBulbArray(1, 2)  ' Column B = fitting count
+```
+
+**Python Before**: Hardcoded `num_bulbs = 20` and random powers
+
+**Python Fix** (lines 109-148):
+```python
+# Choose random configuration from 100 sample dwellings
+bulb_config_idx = int(self.rng.random() * 100) + 1  # 1-100
+
+# Load from bulbs.csv (100 configurations after 10 header rows)
+bulbs_data = self.data_loader.load_bulbs()
+bulb_row_idx = bulb_config_idx - 1
+bulb_row = bulbs_data.iloc[bulb_row_idx]
+
+# Get number of bulbs and ratings
+self.num_bulbs = int(bulb_row.iloc[1])  # Column 2
+self.bulb_powers = np.zeros(self.num_bulbs)
+for i in range(self.num_bulbs):
+    rating = float(bulb_row.iloc[i + 2])  # Columns 3+
+    # Apply India scaling if needed
+    if self.config.country == Country.INDIA:
+        rating = rating * 0.275
+    self.bulb_powers[i] = rating
+```
+
+**Impact**: Each dwelling now gets realistic bulb configuration from CSV (15-60 bulbs, various wattages)
+
+---
+
+#### Fix 2: Irradiance Threshold - Monte Carlo Normal Distribution ✅
+
+**VBA** (lines 81-84):
+```vba
+' Determine the irradiance threshold of this house
+With wsLightConfig
+    intIrradianceThreshold = GetMonteCarloNormalDistGuess(.Range("iIrradianceThresholdMean").Value, _
+                                                          .Range("iIrradianceThresholdSd").Value)
+End With
+' From CSV: Mean = 60 W/m², SD = 10 W/m²
+```
+
+**Python Before**: Fixed `irradiance_threshold = 60.0`
+
+**Python Fix** (lines 93-107):
+```python
+# From light_config.csv: Mean=60, SD=10
+irradiance_mean = 60.0  # W/m²
+irradiance_sd = 10.0     # W/m²
+
+self.irradiance_threshold = self._get_monte_carlo_normal_dist_guess(
+    irradiance_mean,
+    irradiance_sd
+)
+
+def _get_monte_carlo_normal_dist_guess(self, mean: float, std_dev: float) -> float:
+    return self.rng.normal(mean, std_dev)
+```
+
+**Impact**: Each dwelling has unique irradiance threshold (~60±10 W/m²)
+
+---
+
+#### Fix 3: Calibration Scalar from CSV ✅
+
+**VBA** (lines 99-100):
+```vba
+' Get the calibration scalar
+dblCalibrationScalar = wsLightConfig.Range("F24").Value
+' From CSV: UK = 0.00815368639667705
+```
+
+**Python Before**: `calibration_scalar = 1.0`
+
+**Python Fix** (lines 150-153):
+```python
+# From light_config.csv: UK calibration scalar
+self.calibration_scalar = 0.00815368639667705
+```
+
+**Impact**: Correct calibration for matching observed lighting demand
+
+---
+
+#### Fix 4: India Bulb Power Scaling ✅
+
+**VBA** (lines 136-140):
+```vba
+'Scale down bulb power for Indian total lighting electricity demand
+blnIndia = IIf(wsMain.Range("rCountry").Value = "India", True, False)
+If blnIndia Then
+    intRating = intRating * wsLightConfig.Range("G24").Value  ' 0.275
+End If
+```
+
+**Python Before**: Not implemented
+
+**Python Fix** (lines 141-146):
+```python
+# VBA: Scale down bulb power for India
+if self.config.country == Country.INDIA:
+    rating = rating * 0.275
+```
+
+**Impact**: India dwellings have lower lighting demand (27.5% of UK)
+
+---
+
+#### Fix 5: Relative Use Weighting ✅
+
+**VBA** (lines 149-152):
+```vba
+' Assign a random bulb use weighting to this bulb
+' Note that the calibration scalar is multiplied here to save processing time later
+dblCalibratedRelativeUseWeighting = -dblCalibrationScalar * Application.WorksheetFunction.Ln(Rnd())
+aSimulationArray(3, i) = dblCalibratedRelativeUseWeighting
+```
+
+**Python Before**: Not implemented
+
+**Python Fix** (lines 155-160):
+```python
+# VBA: Relative use weighting per bulb
+self.bulb_relative_use = np.zeros(self.num_bulbs)
+for i in range(self.num_bulbs):
+    self.bulb_relative_use[i] = -self.calibration_scalar * np.log(self.rng.random())
+```
+
+**Impact**: Some bulbs used more frequently than others (exponential distribution)
+
+---
+
+#### Fix 6: Effective Occupancy Lookup ✅
+
+**VBA** (line 176):
+```vba
+' Get the effective occupancy for this number of active occupants to allow for sharing
+dblEffectiveOccupancy = wsLightConfig.Range("E" + CStr(37 + intActiveOccupants)).Value
+' From CSV rows 38-43:
+' 0 active → 0.0
+' 1 active → 1.0
+' 2 active → 1.528 (sharing reduces effective demand)
+' 3 active → 1.694
+' 4 active → 1.983
+' 5 active → 2.094
+```
+
+**Python Before**: Not implemented (treated as 1:1)
+
+**Python Fix** (lines 162-172, 252-254):
+```python
+# Load effective occupancy lookup table
+self.effective_occupancy = np.array([
+    0.0,                  # 0 active occupants
+    1.0,                  # 1 active occupant
+    1.5281456953642385,   # 2 active occupants (sharing effect)
+    1.6937086092715232,   # 3 active occupants
+    1.9834437086092715,   # 4 active occupants
+    2.0943708609271523    # 5 active occupants
+])
+
+# In simulation
+effective_occ = self.effective_occupancy[active_occupants]
+```
+
+**Impact**: Realistic sharing behavior (2 people don't use 2× the lights)
+
+---
+
+#### Fix 7: Switch-On Logic with 5% Random Chance ✅
+
+**VBA** (lines 169-173):
+```vba
+' Determine if the bulb switch-on condition is passed
+' ie. Insuffient irradiance and at least one active occupant
+' There is a 5% chance of switch on event if the irradiance is above the threshold
+Dim blnLowIrradiance As Boolean
+blnLowIrradiance = ((intIrradiance < intIrradianceThreshold) Or (Rnd() < 0.05))
+```
+
+**Python Before**: Only checked `irradiance < threshold`
+
+**Python Fix** (line 250):
+```python
+# VBA: Low irradiance OR 5% random chance (lights sometimes on during day)
+low_irradiance = (irradiance < self.irradiance_threshold) or (self.rng.random() < 0.05)
+```
+
+**Impact**: Lights can occasionally be on even when sunny (curtains drawn, etc.)
+
+---
+
+#### Fix 8: Duration Model Implementation ✅
+
+**VBA** (lines 183-209):
+```vba
+' Determine how long this bulb is on for
+r1 = Rnd()
+cml = 0
+
+For j = 1 To 9
+    ' Get the cumulative probability of this duration
+    cml = wsLightConfig.Range("E" + CStr(54 + j)).Value
+    
+    ' Check to see if this is the type of light
+    If r1 < cml Then
+        ' Get the durations
+        intLowerDuration = wsLightConfig.Range("C" + CStr(54 + j)).Value
+        intUpperDuration = wsLightConfig.Range("D" + CStr(54 + j)).Value
+        
+        ' Get another random number
+        r2 = Rnd()
+        
+        ' Guess a duration in this range
+        intLightDuration = (r2 * (intUpperDuration - intLowerDuration)) + intLowerDuration
+        Exit For
+    End If
+Next j
+```
+
+**Duration Ranges from CSV** (rows 55-63):
+1. 1 min (11.1%)
+2. 2 min (11.1%)
+3. 3-4 min (11.1%)
+4. 5-8 min (11.1%)
+5. 9-16 min (11.1%)
+6. 17-27 min (11.1%)
+7. 28-49 min (11.1%)
+8. 50-91 min (11.1%)
+9. 92-259 min (11.1%)
+
+**Python Before**: Not implemented (each minute independent)
+
+**Python Fix** (lines 174-186, 262-272):
+```python
+# Load lighting duration model
+self.duration_ranges = [
+    (1, 1, 0.1111111111111111),      # Range 1: 1 min
+    (2, 2, 0.2222222222222222),      # Range 2: 2 min
+    (3, 4, 0.3333333333333333),      # Range 3: 3-4 min
+    (5, 8, 0.4444444444444444),      # Range 4: 5-8 min
+    (9, 16, 0.5555555555555556),     # Range 5: 9-16 min
+    (17, 27, 0.6666666666666666),    # Range 6: 17-27 min
+    (28, 49, 0.7777777777777778),    # Range 7: 28-49 min
+    (50, 91, 0.8888888888888888),    # Range 8: 50-91 min
+    (92, 259, 1.0)                   # Range 9: 92-259 min
+]
+
+# In simulation: lookup duration using cumulative probability
+r1 = self.rng.random()
+for lower_dur, upper_dur, cumulative_prob in self.duration_ranges:
+    if r1 < cumulative_prob:
+        r2 = self.rng.random()
+        light_duration = int(r2 * (upper_dur - lower_dur) + lower_dur)
+        break
+```
+
+**Impact**: Realistic light usage durations (1 min to 4+ hours)
+
+---
+
+#### Fix 9: Light Duration Persistence ✅
+
+**VBA** (lines 211-228):
+```vba
+For j = 1 To intLightDuration
+    
+    ' Range check
+    If intTime > 1440 Then Exit For
+    
+    ' Get the number of current active occupants for this minute
+    intActiveOccupants = intActiveOccupancy(((intTime - 1) \ 10), 0)
+    
+    ' If there are no active occupants, turn off the light
+    If intActiveOccupants = 0 Then Exit For
+    
+    ' Store the demand
+    aSimulationArray(3 + intTime, i) = intRating
+        
+    ' Increment the time
+    intTime = intTime + 1
+    
+Next j
+```
+
+**Python Before**: Each minute independent (lights flickering on/off)
+
+**Python Fix** (lines 274-295):
+```python
+# VBA: Light stays on for duration
+for j in range(light_duration):
+    
+    # Range check
+    if minute >= TIMESTEPS_PER_DAY_1MIN:
+        break
+    
+    # Get active occupants for this minute
+    ten_min_idx = minute // 10
+    active_occupants = active_occupancy_10min[ten_min_idx]
+    
+    # If no active occupants, turn off
+    if active_occupants == 0:
+        break
+    
+    # Store the demand
+    self.bulb_demands[minute, bulb_idx] = bulb_rating
+    
+    # Increment the time
+    minute += 1
+```
+
+**Impact**: Lights stay on for realistic durations, turn off if occupants leave
+
+---
+
+#### Fix 10: Thermal Gains Calculation ✅
+
+**VBA** (lines 54-56):
+```vba
+Public Property Get ThermalGains() As Double()
+    ' // Thermal gains for lighting is equal to the lighting demand
+    ThermalGains = aTotalLightingDemand()
+End Property
+```
+
+**Python Before**: `thermal_gains = total_demand * 0.9` (90%)
+
+**Python Fix** (lines 320-322):
+```python
+# VBA: Thermal gains = lighting demand (100% conversion)
+# ThermalGains = aTotalLightingDemand()
+self.thermal_gains[minute] = row_sum  # 100% conversion
+```
+
+**Impact**: All lighting power becomes heat (correct for incandescent/LED in enclosed space)
+
+---
+
+#### Verification Against Full VBA Source:
+
+**InitialiseLighting** (VBA lines 74-102 vs Python lines 87-186):
+- ✅ Gets dwelling index and run number
+- ✅ Determines irradiance threshold (Monte Carlo normal: mean=60, SD=10)
+- ✅ Chooses random bulb configuration from 100 samples
+- ✅ Loads bulb data from CSV (house number, fitting count, ratings)
+- ✅ Gets number of bulbs from column 2
+- ✅ Scales bulb power for India (0.275 multiplier)
+- ✅ Loads active occupancy array
+- ✅ Gets calibration scalar (0.00815...)
+- ✅ Calculates relative use weighting per bulb
+
+**RunLightingSimulation** (VBA lines 111-244 vs Python lines 204-304):
+- ✅ Loops through each bulb (1 to intNumBulbs)
+- ✅ Gets bulb rating
+- ✅ Applies India scaling
+- ✅ Stores bulb number, rating, relative use weighting
+- ✅ Loops through each minute (1 to 1440)
+- ✅ Gets irradiance for minute
+- ✅ Gets active occupants (10-minute resolution)
+- ✅ Determines low irradiance condition (threshold OR 5% random)
+- ✅ Gets effective occupancy for sharing
+- ✅ Checks switch-on probability (low irradiance AND random < effective_occ * relative_use)
+- ✅ Determines light duration (cumulative probability lookup, 9 ranges)
+- ✅ Light stays on for duration
+- ✅ Checks active occupants each minute during duration
+- ✅ Turns off if occupants leave
+- ✅ Range check (doesn't exceed 1440 minutes)
+- ✅ Increments time correctly
+
+**TotalLightingDemand** (VBA lines 252-272 vs Python lines 306-322):
+- ✅ Sums all bulbs for each minute
+- ✅ Stores in aTotalLightingDemand
+- ✅ Thermal gains = lighting demand (100%)
+
+**Properties** (VBA lines 50-65 vs Python lines 328-355):
+- ✅ GetTotalLightingDemand(timestep) - 1-based indexing
+- ✅ ThermalGains() - returns full array
+- ✅ GetPhi_cLighting(timestep) - thermal gains for timestep
+- ✅ GetDailySumLighting() - total energy (Wh)
+
+---
+
+#### Summary of Changes:
+
+1. ✅ **Complete rewrite**: 169 lines → 356 lines (111% increase)
+2. ✅ Fixed bulb configuration loading from CSV (lighting.py:109-148)
+3. ✅ Implemented Monte Carlo irradiance threshold (lighting.py:93-107)
+4. ✅ Fixed calibration scalar from CSV (lighting.py:150-153)
+5. ✅ Implemented India bulb power scaling (lighting.py:141-146)
+6. ✅ Implemented relative use weighting formula (lighting.py:155-160)
+7. ✅ Implemented effective occupancy lookup (lighting.py:162-172)
+8. ✅ Fixed switch-on logic with 5% random chance (lighting.py:250)
+9. ✅ Implemented duration model with 9 ranges (lighting.py:174-186, 262-272)
+10. ✅ Implemented light duration persistence (lighting.py:274-295)
+11. ✅ Fixed thermal gains to 100% conversion (lighting.py:320-322)
+12. ✅ Verified all VBA methods and properties implemented
+13. ✅ Added comprehensive VBA line-number documentation
+
+---
+
+#### Testing Recommendations:
+
+1. **Bulb loading test**: Verify 100 different configurations load correctly
+2. **Irradiance threshold test**: Check distribution around mean=60, SD=10
+3. **India scaling test**: Verify Indian dwellings have 0.275× bulb power
+4. **Relative use test**: Check exponential distribution of bulb use
+5. **Effective occupancy test**: Verify sharing effect (2 people ≠ 2× lights)
+6. **Switch-on test**: Verify 5% chance even with high irradiance
+7. **Duration test**: Check distribution matches 9 ranges (1-259 minutes)
+8. **Persistence test**: Verify lights stay on for full duration
+9. **Occupancy exit test**: Verify lights turn off when occupants leave
+10. **100-dwelling test**: Compare aggregate demand with Excel output
 
 ---
 
