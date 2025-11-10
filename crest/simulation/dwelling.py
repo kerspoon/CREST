@@ -85,6 +85,7 @@ class Dwelling:
         # Create building thermal model
         building_config = BuildingConfig(
             building_index=config.building_index,
+            heating_system_index=config.heating_system_index,
             dwelling_index=config.dwelling_index
         )
         self.building = Building(building_config, data_loader)
@@ -187,7 +188,7 @@ class Dwelling:
 
         # 6. Initialize building temperatures
         initial_outdoor_temp = self.local_climate.get_temperature(0)
-        self.building.initialize_temperatures(initial_outdoor_temp)
+        self.building.initialize_temperatures(initial_outdoor_temp, random_gen=self.rng)
 
         # 7. Initialize heating controls
         self.heating_controls.initialize_thermostat_states(
