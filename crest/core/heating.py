@@ -133,7 +133,7 @@ class HeatingSystem:
             # Hot water has priority (for regular boilers)
             if heat_water_on_off:
                 # Get target heat for hot water from building
-                phi_h_water_target = self.building.get_target_heat_water(timestep) if hasattr(self.building, 'get_target_heat_water') else 0.0
+                phi_h_water_target = self.building.get_target_heat_water(timestep)
 
                 # Allocate heat to water (bounded by max output)
                 phi_h_water = max(0.0, min(self.phi_h_max, phi_h_water_target))
@@ -141,7 +141,7 @@ class HeatingSystem:
 
                 # If space heating is also required, allocate remaining capacity
                 if space_heating_on_off:
-                    phi_h_space_target = self.building.get_target_heat_space(timestep) if hasattr(self.building, 'get_target_heat_space') else 0.0
+                    phi_h_space_target = self.building.get_target_heat_space(timestep)
 
                     # Allocate remaining capacity to space
                     phi_h_space = max(0.0, min(self.phi_h_max - phi_h_water, phi_h_space_target))
@@ -150,7 +150,7 @@ class HeatingSystem:
             else:
                 # Only space heating required
                 if space_heating_on_off:
-                    phi_h_space_target = self.building.get_target_heat_space(timestep) if hasattr(self.building, 'get_target_heat_space') else 0.0
+                    phi_h_space_target = self.building.get_target_heat_space(timestep)
 
                     # Allocate heat to space (bounded by max output)
                     phi_h_space = max(0.0, min(self.phi_h_max, phi_h_space_target))
@@ -159,6 +159,9 @@ class HeatingSystem:
             # Total heat output
             phi_h_total = self.phi_h_space[idx] + self.phi_h_water[idx]
             self.phi_h_output[idx] = phi_h_total
+
+            # When heater is firing, pump always runs at full power (VBA line 243)
+            self.p_h[idx] = self.p_pump
 
             # Calculate fuel/electricity consumption
             if self.phi_h_max > 0:
@@ -199,17 +202,17 @@ class HeatingSystem:
         return self.heating_system_type
 
     def get_daily_thermal_energy_space(self) -> float:
-        """Get total daily thermal energy for space heating (Wh)."""
-        return np.sum(self.phi_h_space) / 60.0  # Convert W·min to Wh
+        """Get total daily thermal energy for space heating (W·min, VBA units)."""
+        return np.sum(self.phi_h_space)
 
     def get_daily_thermal_energy_water(self) -> float:
-        """Get total daily thermal energy for hot water (Wh)."""
-        return np.sum(self.phi_h_water) / 60.0  # Convert W·min to Wh
+        """Get total daily thermal energy for hot water (W·min, VBA units)."""
+        return np.sum(self.phi_h_water)
 
     def get_daily_fuel_consumption(self) -> float:
         """Get total daily fuel consumption (m³ for gas)."""
         return np.sum(self.m_fuel)
 
     def get_daily_heating_electricity(self) -> float:
-        """Get total daily heating electricity (Wh)."""
-        return np.sum(self.heating_electricity) / 60.0  # Convert W·min to Wh
+        """Get total daily heating electricity (W·min, VBA units)."""
+        return np.sum(self.heating_electricity)
