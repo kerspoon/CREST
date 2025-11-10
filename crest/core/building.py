@@ -27,6 +27,7 @@ from ..data.loader import CRESTDataLoader
 class BuildingConfig:
     """Configuration for building thermal model."""
     building_index: int
+    heating_system_index: int
     dwelling_index: int = 0
     run_number: int = 0
 
@@ -72,18 +73,35 @@ class Building:
         self.h_bi = building_params['H_bi']      # Building fabric to internal air
         self.h_v = building_params['H_v']        # Ventilation losses
         self.h_em = building_params['H_em']      # Internal air to heating emitters
-        self.h_cool = building_params.get('H_cool', 0.0)  # Internal air to cooling emitters
-        self.h_loss = building_params.get('H_loss', 2.0)  # Cylinder standing losses
+        self.h_cool = building_params['H_emcool']  # Internal air to cooling emitters
 
         # Thermal capacitances (J/K)
         self.c_b = building_params['C_b']        # External building node
         self.c_i = building_params['C_i']        # Internal building node
         self.c_em = building_params['C_em']      # Heating emitters
-        self.c_cool = building_params.get('C_cool', 10000.0)  # Cooling emitters
-        self.c_cyl = building_params.get('C_cyl', 150000.0)   # Hot water cylinder
+        self.c_cool = building_params['C_emcool']  # Cooling emitters
 
         # Solar aperture (m²)
         self.a_s = building_params['A_s']
+
+        # Nominal emitter temperatures (°C)
+        self.theta_em_nominal = building_params['theta_em']   # Heating emitters nominal temp
+        self.theta_cool_nominal = building_params['theta_cool']  # Cooling emitters nominal temp
+
+        # Load heating system parameters from PrimaryHeatingSystems.csv
+        heating_systems_data = data_loader.load_primary_heating_systems()
+        if config.heating_system_index >= len(heating_systems_data):
+            raise ValueError(f"Heating system index {config.heating_system_index} out of range")
+
+        heating_params = heating_systems_data.iloc[config.heating_system_index]
+
+        # Cylinder standing losses (W/K)
+        self.h_loss = heating_params['H_loss']
+
+        # Hot water cylinder volume (litres) and thermal capacitance (J/K)
+        v_cyl = heating_params['V_cyl']
+        from ..simulation.config import SPECIFIC_HEAT_CAPACITY_WATER
+        self.c_cyl = SPECIFIC_HEAT_CAPACITY_WATER * v_cyl
 
         # Cold water temperature (°C)
         self.theta_cw = COLD_WATER_TEMPERATURE
@@ -113,22 +131,41 @@ class Building:
         self.hot_water = None
         self.solar_thermal = None
 
-    def initialize_temperatures(self, initial_outdoor_temp: float = 10.0):
+    def initialize_temperatures(self, initial_outdoor_temp: float, random_gen=None):
         """
-        Initialize building temperatures to steady-state values.
+        Initialize building temperatures using VBA-matched logic.
+
+        Matches VBA InitialiseBuilding (clsBuilding.cls lines 287-297).
 
         Parameters
         ----------
-        initial_outdoor_temp : float, optional
-            Initial outdoor temperature for initialization (°C)
+        initial_outdoor_temp : float
+            Initial outdoor temperature from climate model (°C)
+        random_gen : Optional
+            Random number generator for reproducibility (uses numpy.random if None)
         """
-        # Simple initialization: assume building starts at outdoor temperature
-        # In reality, could use more sophisticated steady-state calculation
-        self.theta_b[0] = initial_outdoor_temp
-        self.theta_i[0] = initial_outdoor_temp + 2.0  # Slightly warmer indoors
-        self.theta_em[0] = initial_outdoor_temp + 2.0
-        self.theta_cool[0] = initial_outdoor_temp + 2.0
-        self.theta_cyl[0] = 45.0  # Hot water cylinder starts at ~45°C
+        import numpy as np
+
+        # Use provided RNG or default numpy random
+        if random_gen is None:
+            rnd = np.random.random
+        else:
+            rnd = random_gen.random
+
+        # VBA line 291: aTheta_b(1, 1) = Rnd * 2 + WorksheetFunction.Max(16, dblTheta_o)
+        self.theta_b[0] = rnd() * 2 + max(16, initial_outdoor_temp)
+
+        # VBA line 292: aTheta_i(1, 1) = Rnd * 2 + WorksheetFunction.Min(WorksheetFunction.Max(19, dblTheta_o), 25)
+        self.theta_i[0] = rnd() * 2 + min(max(19, initial_outdoor_temp), 25)
+
+        # VBA line 293: aTheta_em(1, 1) = aTheta_i(1, 1)
+        self.theta_em[0] = self.theta_i[0]
+
+        # VBA line 294: aTheta_cool(1, 1) = aTheta_i(1, 1)
+        self.theta_cool[0] = self.theta_i[0]
+
+        # VBA line 297: aTheta_cyl(1, 1) = 60 + Rnd() * 2
+        self.theta_cyl[0] = 60 + rnd() * 2
 
     def calculate_temperature_change(self, timestep: int):
         """
@@ -321,12 +358,10 @@ class Building:
             theta_em = self.theta_em[timestep - 2]
             theta_i = self.theta_i[timestep - 2]
 
-        # Get thermostat setpoint
-        setpoint = self.heating_controls.get_space_thermostat_setpoint()
-
         # Emitter deadband and target (VBA lines 175-177)
+        # VBA: dblTheta_emTarget = dblEmitterDeadband + Application.index(wsBuildings.Range("rTheta_em"), intOffset + intBuildingIndex).Value
         emitter_deadband = 5.0
-        theta_em_target = setpoint + emitter_deadband
+        theta_em_target = emitter_deadband + self.theta_em_nominal
 
         # Calculate target heat delivery to emitters (VBA lines 189-190)
         # Capacitance term + heat transfer to room
@@ -380,3 +415,45 @@ class Building:
         )
 
         return phi_target
+
+    def get_target_cooling(self, timestep: int) -> float:
+        """
+        Calculate target cooling demand for space cooling (W).
+
+        Matches VBA GetPhi_hCooling property (clsBuilding.cls lines 197-232).
+        Calculates cooling needed for emitters to reach target temperature.
+
+        Parameters
+        ----------
+        timestep : int
+            Current timestep (1-based, 1-1440)
+
+        Returns
+        -------
+        float
+            Target cooling demand in Watts (negative for cooling)
+        """
+        if self.heating_controls is None:
+            return 0.0
+
+        # Get previous timestep temperatures (or initial if timestep=1)
+        if timestep == 1:
+            theta_cool = self.theta_cool[0]
+            theta_i = self.theta_i[0]
+        else:
+            theta_cool = self.theta_cool[timestep - 2]
+            theta_i = self.theta_i[timestep - 2]
+
+        # Emitter deadband and target (VBA lines 214-217)
+        # VBA: dblTheta_coolTarget = Application.index(wsBuildings.Range("rTheta_cool"), intOffset + intBuildingIndex).Value - dblEmitterDeadband
+        emitter_deadband = 5.0
+        theta_cool_target = self.theta_cool_nominal - emitter_deadband
+
+        # Calculate target cooling delivery to emitters (VBA lines 227-228)
+        # Capacitance term + heat transfer to room
+        phi_h_cooling_target = (
+            (self.c_cool / self.timestep_seconds) * (theta_cool_target - theta_cool) +
+            self.h_cool * (theta_cool - theta_i)
+        )
+
+        return phi_h_cooling_target

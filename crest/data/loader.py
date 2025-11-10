@@ -150,18 +150,55 @@ class CRESTDataLoader:
         # Rename columns to match Python naming convention (add underscores)
         # VBA uses: Hob, Hbi, Cb, Ci, As, Hv, Hem, Cem, etc.
         # Python expects: H_ob, H_bi, C_b, C_i, A_s, H_v, H_em, C_em, etc.
+        #
+        # Note: CSV has unnamed columns for cooling system (columns 17-19):
+        # - Column 17: θcool (Unnamed: 17) - nominal temperature of coolers
+        # - Column 18: Hemcool (appears as Hem.1) - heat transfer coefficient for cooling
+        # - Column 19: Cemcool (Unnamed: 19) - thermal capacitance of cooling emitters
         rename_map = {
             'Hob': 'H_ob', 'Hbi': 'H_bi', 'Cb': 'C_b', 'Ci': 'C_i',
             'As': 'A_s', 'Hv': 'H_v', 'Hem': 'H_em', 'Cem': 'C_em',
-            'mem': 'm_em'
+            'mem': 'm_em', 'Hem.1': 'H_emcool'
         }
         df = df.rename(columns=rename_map)
+
+        # Manually name the cooling capacitance column (column 19)
+        # Find the unnamed column after H_emcool
+        cols = list(df.columns)
+        for i, col in enumerate(cols):
+            if col == 'H_emcool' and i + 1 < len(cols) and 'Unnamed' in str(cols[i + 1]):
+                df = df.rename(columns={cols[i + 1]: 'C_emcool'})
+                break
+
+        # Also rename the theta columns for emitters
+        df = df.rename(columns={'θem': 'theta_em'})
+
+        # Find and rename the cooling emitter nominal temperature (column 17, appears before H_emcool)
+        cols = list(df.columns)
+        for i, col in enumerate(cols):
+            if col == 'H_emcool' and i > 0 and 'Unnamed' in str(cols[i - 1]):
+                df = df.rename(columns={cols[i - 1]: 'theta_cool'})
+                break
+
         return df
 
     def load_primary_heating_systems(self) -> pd.DataFrame:
         """Load heating system specifications (boilers, etc.)."""
-        # Skip 4 header rows, use row 5 as column headers
-        return self._load_csv("PrimaryHeatingSystems.csv", skiprows=4, header=0)
+        # Skip title, long descriptions, and units rows; use symbols row as header
+        # Row 0: Title
+        # Row 1: Long column descriptions
+        # Row 2: Short symbols (use as header)
+        # Row 3: Units
+        # Row 4+: Data
+        df = self._load_csv("PrimaryHeatingSystems.csv", skiprows=[0, 1, 3], header=0)
+
+        # Rename columns for consistency
+        rename_map = {
+            'Vcyl': 'V_cyl',
+            'Hloss': 'H_loss'
+        }
+        df = df.rename(columns=rename_map)
+        return df
 
     def load_cooling_systems(self) -> pd.DataFrame:
         """Load cooling system specifications."""

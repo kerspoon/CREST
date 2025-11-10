@@ -385,3 +385,269 @@ thermal_gains[i] = DORMANT * dormant_occupants + ACTIVE * active_occupants
 
 ---
 
+### 3. Building (clsBuilding.cls → building.py)
+
+**Status**: ✅ PASS - Full VBA implementation complete after fixes
+
+**VBA File**: `original/clsBuilding.cls` (504 lines)
+**Python File**: `crest/core/building.py` (~460 lines after fixes)
+
+**MAJOR ISSUES FOUND AND FIXED:**
+
+#### Issue 3.1: Buildings.csv Cooling System Columns Not Loaded ❌ → ✅ FIXED
+**Problem**: CSV has unnamed columns for cooling system parameters
+- Column 17: θcool (nominal temperature of coolers) - appeared as "Unnamed: 17"
+- Column 18: H_emcool (heat transfer coefficient) - appeared as "Hem.1"
+- Column 19: C_emcool (thermal capacitance) - appeared as "Unnamed: 19"
+
+**Fix** (loader.py:145-183):
+```python
+rename_map = {
+    'Hob': 'H_ob', 'Hbi': 'H_bi', 'Cb': 'C_b', 'Ci': 'C_i',
+    'As': 'A_s', 'Hv': 'H_v', 'Hem': 'H_em', 'Cem': 'C_em',
+    'mem': 'm_em', 'Hem.1': 'H_emcool'
+}
+# ... additional logic to rename unnamed columns to 'theta_cool' and 'C_emcool'
+```
+
+**Impact**: Cooling system now loads correct thermal parameters from CSV
+
+#### Issue 3.2: PrimaryHeatingSystems.csv Loaded Incorrectly ❌ → ✅ FIXED
+**Problem**: `skiprows=4` was using first data row as header instead of symbol row
+
+**VBA** (lines 276-285): Loads from PrimaryHeatingSystems, columns H_loss and V_cyl
+**Python (Before)**: Used `skiprows=4` which skipped rows 0-3, making row 4 (first data row) the header
+
+**Fix** (loader.py:185-201):
+```python
+# Skip title, long descriptions, and units rows; use symbols row as header
+df = self._load_csv("PrimaryHeatingSystems.csv", skiprows=[0, 1, 3], header=0)
+rename_map = {'Vcyl': 'V_cyl', 'Hloss': 'H_loss'}
+```
+
+**Impact**: Heating system parameters now load correctly
+
+#### Issue 3.3: Building Class Missing Heating System Parameters ❌ → ✅ FIXED
+**VBA** (lines 276-285):
+- Loads `dblH_loss` from PrimaryHeatingSystems (line 279)
+- Loads `dblV_cyl` from PrimaryHeatingSystems (line 282)
+- Calculates `dblC_cyl = SPECIFIC_HEAT_CAPACITY_WATER * dblV_cyl` (line 283)
+
+**Python (Before)**:
+- Tried to load H_loss and C_cyl from Buildings.csv (wrong!)
+- Used hardcoded default values
+
+**Fix** (building.py:26-104):
+```python
+@dataclass
+class BuildingConfig:
+    building_index: int
+    heating_system_index: int  # Added!
+    dwelling_index: int = 0
+    run_number: int = 0
+
+# In __init__:
+self.theta_em_nominal = building_params['theta_em']   # Store nominal temps
+self.theta_cool_nominal = building_params['theta_cool']
+
+# Load from PrimaryHeatingSystems
+heating_systems_data = data_loader.load_primary_heating_systems()
+heating_params = heating_systems_data.iloc[config.heating_system_index]
+self.h_loss = heating_params['H_loss']
+v_cyl = heating_params['V_cyl']
+self.c_cyl = SPECIFIC_HEAT_CAPACITY_WATER * v_cyl  # 4200 J/kg/K
+```
+
+**Impact**: Building now loads correct cylinder parameters, matches VBA exactly
+
+#### Issue 3.4: initialize_temperatures Doesn't Match VBA ❌ → ✅ FIXED
+**VBA** (lines 287-297):
+```vba
+dblTheta_o = aLocalClimate(intRunNumber).GetTheta_o(1)
+aTheta_b(1, 1) = Rnd * 2 + WorksheetFunction.Max(16, dblTheta_o)
+aTheta_i(1, 1) = Rnd * 2 + WorksheetFunction.Min(WorksheetFunction.Max(19, dblTheta_o), 25)
+aTheta_em(1, 1) = aTheta_i(1, 1)
+aTheta_cool(1, 1) = aTheta_i(1, 1)
+aTheta_cyl(1, 1) = 60 + Rnd() * 2
+```
+
+**Python (Before)**:
+```python
+self.theta_b[0] = initial_outdoor_temp
+self.theta_i[0] = initial_outdoor_temp + 2.0
+self.theta_cyl[0] = 45.0  # Wrong!
+```
+
+**Fix** (building.py:134-168):
+```python
+def initialize_temperatures(self, initial_outdoor_temp: float, random_gen=None):
+    rnd = random_gen.random if random_gen else np.random.random
+
+    # VBA line 291
+    self.theta_b[0] = rnd() * 2 + max(16, initial_outdoor_temp)
+    # VBA line 292
+    self.theta_i[0] = rnd() * 2 + min(max(19, initial_outdoor_temp), 25)
+    # VBA line 293-294
+    self.theta_em[0] = self.theta_i[0]
+    self.theta_cool[0] = self.theta_i[0]
+    # VBA line 297
+    self.theta_cyl[0] = 60 + rnd() * 2
+```
+
+**Impact**: Initialization now matches VBA with proper random variation
+
+#### Issue 3.5: get_target_heat_space Uses Wrong Emitter Target ❌ → ✅ FIXED
+**VBA** (line 177):
+```vba
+dblTheta_emTarget = dblEmitterDeadband + Application.index(wsBuildings.Range("rTheta_em"), intOffset + intBuildingIndex).Value
+```
+Target = deadband (5°C) + nominal temp from Buildings.csv (typically 50°C) = 55°C
+
+**Python (Before)**:
+```python
+setpoint = self.heating_controls.get_space_thermostat_setpoint()  # ~20°C
+theta_em_target = setpoint + emitter_deadband  # 20+5 = 25°C (WRONG!)
+```
+
+**Fix** (building.py:361-364):
+```python
+emitter_deadband = 5.0
+theta_em_target = emitter_deadband + self.theta_em_nominal  # 5 + 50 = 55°C
+```
+
+**Impact**: Heating system now targets correct emitter temperature
+
+#### Issue 3.6: Missing get_target_cooling Method ❌ → ✅ FIXED
+**VBA** has GetPhi_hCooling property (lines 197-232)
+**Python (Before)**: Method didn't exist
+
+**Fix** (building.py:419-459):
+```python
+def get_target_cooling(self, timestep: int) -> float:
+    """Matches VBA GetPhi_hCooling property (clsBuilding.cls lines 197-232)."""
+    if timestep == 1:
+        theta_cool = self.theta_cool[0]
+        theta_i = self.theta_i[0]
+    else:
+        theta_cool = self.theta_cool[timestep - 2]
+        theta_i = self.theta_i[timestep - 2]
+
+    emitter_deadband = 5.0
+    theta_cool_target = self.theta_cool_nominal - emitter_deadband
+
+    phi_h_cooling_target = (
+        (self.c_cool / self.timestep_seconds) * (theta_cool_target - theta_cool) +
+        self.h_cool * (theta_cool - theta_i)
+    )
+
+    return phi_h_cooling_target
+```
+
+**Impact**: Cooling system demand calculation now implemented
+
+#### Component Verification: Differential Equations ✅
+
+**VBA CalculateTemperatureChange** (lines 311-483):
+All 5 coupled differential equations verified exact match:
+
+**External Building Node** (lines 431-436):
+```vba
+dblDeltaTheta_b = (intTimeStep / dblC_b) * (
+    -(dblH_ob + dblH_bi) * dblTheta_b +
+    dblH_bi * dblTheta_i +
+    dblH_ob * dblTheta_o
+)
+```
+✅ **Python** (lines 229-233): Exact match
+
+**Internal Building Node** (lines 439-448):
+```vba
+dblDeltaTheta_i = (intTimeStep / dblC_i) * (
+    dblH_bi * dblTheta_b -
+    (dblH_v + dblH_bi + dblH_em + dblH_cool + dblH_loss) * dblTheta_i +
+    dblH_v * dblTheta_o +
+    dblH_em * dblTheta_em +
+    dblH_cool * dblTheta_cool +
+    dblH_loss * dblTheta_cyl +
+    dblPhi_s + dblPhi_c
+)
+```
+✅ **Python** (lines 235-244): Exact match
+
+**Heating Emitters** (lines 451-456):
+```vba
+dblDeltaTheta_em = (intTimeStep / dblC_em) * (
+    dblH_em * dblTheta_i -
+    dblH_em * dblTheta_em +
+    dblPhi_hSpace
+)
+```
+✅ **Python** (lines 247-251): Exact match
+
+**Cooling Emitters** (lines 459-464):
+```vba
+dblDeltaTheta_cool = (intTimeStep / dblC_cool) * (
+    dblH_cool * dblTheta_i -
+    dblH_cool * dblTheta_cool +
+    dblPhi_hCooling
+)
+```
+✅ **Python** (lines 254-258): Exact match
+
+**Hot Water Cylinder** (lines 467-474):
+```vba
+dblDeltaTheta_cyl = (intTimeStep / dblC_cyl) * (
+    dblH_loss * dblTheta_i -
+    (dblH_loss + dblH_dhw) * dblTheta_cyl +
+    dblH_dhw * dblTheta_cw +
+    dblPhi_hWater +
+    dblPhi_collector
+)
+```
+✅ **Python** (lines 261-267): Exact match
+
+#### Component Verification: Thermal Gains ✅
+
+**Passive Solar Gains** (VBA line 413):
+```vba
+dblPhi_s = dblG_o * dblA_s
+```
+✅ **Python** (line 207): `phi_s = g_o * self.a_s`
+
+**Casual Gains** (VBA lines 417-421):
+```vba
+dblPhi_cOccupancy = aOccupancy(intRunNumber).GetPhi_cOccupancy((currentTimeStep - 1) \ 10)
+dblPhi_cLighting = aLighting(intRunNumber).GetPhi_cLighting(currentTimeStep)
+dblPhi_cAppliances = aAppliances(intRunNumber).GetPhi_cAppliances(currentTimeStep)
+dblPhi_c = dblPhi_cOccupancy + dblPhi_cLighting + dblPhi_cAppliances
+```
+✅ **Python** (lines 211-217): Exact match
+- Occupancy timestep conversion: `(currentTimeStep - 1) \ 10` (VBA) = `idx // 10` (Python) ✅
+
+**Array Indexing Verification:**
+- VBA: 1-based arrays `(1 To 1440, 1 To 1)`, 1-based timesteps (1-1440)
+- Python: 0-based arrays `[0:1440]`, 1-based timestep API (converted to 0-based internally)
+- All array accesses verified: `timestep - 1` converts to 0-based index
+- Previous timestep access: `timestep - 2` (Python) = VBA `timestep - 1` array access
+
+**Constants Verification:**
+- `THERMAL_TIMESTEP_SECONDS = 60` (config.py) = `intTimeStep = 60` (VBA line 249) ✅
+- `COLD_WATER_TEMPERATURE = 10` (config.py) = `dblTheta_cw = 10` (VBA line 300) ✅
+- `SPECIFIC_HEAT_CAPACITY_WATER = 4200` (config.py) = VBA constant (line 283) ✅
+
+**Summary of Changes:**
+1. ✅ Fixed Buildings.csv loader to properly name cooling columns (loader.py:145-183)
+2. ✅ Fixed PrimaryHeatingSystems.csv loader skiprows logic (loader.py:185-201)
+3. ✅ Added heating_system_index to BuildingConfig (building.py:29-30)
+4. ✅ Load H_loss, V_cyl, and calculate C_cyl from heating system (building.py:91-104)
+5. ✅ Store theta_em_nominal and theta_cool_nominal (building.py:87-89)
+6. ✅ Fixed initialize_temperatures to match VBA logic (building.py:134-168)
+7. ✅ Fixed get_target_heat_space to use nominal emitter temp (building.py:361-364)
+8. ✅ Added get_target_cooling method (building.py:419-459)
+9. ✅ Verified all differential equations match VBA exactly
+10. ✅ Verified all thermal gain calculations match VBA exactly
+
+**Testing**: Code imports successfully, ready for validation run
+
+---
+
