@@ -36,8 +36,22 @@ env/
 # Results
 results/
 output/
+output*/
 *.csv
 !data/*.csv
+
+# Testing/Coverage
+.coverage
+htmlcov/
+.pytest_cache/
+
+# Logs
+*.log
+
+# Excel files (keep for validation but don't commit)
+*.xlsx
+*.xlsm
+*.xls
 
 # Jupyter
 .ipynb_checkpoints/

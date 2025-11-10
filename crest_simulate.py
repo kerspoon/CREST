@@ -9,6 +9,7 @@ domestic energy demand simulator.
 import argparse
 import sys
 from pathlib import Path
+import json
 
 # Add crest package to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -16,6 +17,7 @@ sys.path.insert(0, str(Path(__file__).parent))
 from crest.data.loader import CRESTDataLoader
 from crest.core.climate import GlobalClimate, ClimateConfig
 from crest.simulation.dwelling import Dwelling, DwellingConfig
+from crest.output.writer import ResultsWriter, OutputConfig
 from crest.utils import random as rng_module
 import numpy as np
 
@@ -96,6 +98,23 @@ def main():
         default=None,
         help="Path to data directory (default: ./data)"
     )
+    parser.add_argument(
+        "--output-dir",
+        type=Path,
+        default=None,
+        help="Directory to save simulation results (default: None, no output saved)"
+    )
+    parser.add_argument(
+        "--save-detailed",
+        action="store_true",
+        help="Save minute-level detailed results (large files)"
+    )
+    parser.add_argument(
+        "--config-file",
+        type=Path,
+        default=None,
+        help="JSON file with per-dwelling configurations (overrides --residents and other dwelling params)"
+    )
 
     args = parser.parse_args()
 
@@ -121,22 +140,63 @@ def main():
     global_climate = GlobalClimate(climate_config, data_loader)
     global_climate.run_all()
 
+    # Initialize output writer if requested
+    results_writer = None
+    if args.output_dir:
+        output_config = OutputConfig(
+            output_dir=args.output_dir,
+            save_minute_data=args.save_detailed,
+            save_daily_summary=True,
+            save_global_climate=True
+        )
+        results_writer = ResultsWriter(output_config)
+        print(f"Saving results to: {args.output_dir}")
+
+        # Write global climate data once
+        results_writer.write_global_climate(global_climate)
+
+    # Load dwelling configurations if provided
+    dwelling_configs_list = None
+    if args.config_file:
+        print(f"Loading dwelling configurations from: {args.config_file}")
+        with open(args.config_file, 'r') as f:
+            dwelling_configs_list = json.load(f)
+        print(f"  Loaded {len(dwelling_configs_list)} dwelling configurations")
+        # Override num_dwellings to match config file
+        args.num_dwellings = len(dwelling_configs_list)
+
     # Simulate dwellings
     results = []
+    dwellings = []  # Store dwelling objects for output
 
     for dwelling_idx in range(args.num_dwellings):
         print(f"\nSimulating dwelling {dwelling_idx + 1}/{args.num_dwellings}...")
 
-        # Configure dwelling
-        dwelling_config = DwellingConfig(
-            dwelling_index=dwelling_idx,
-            num_residents=args.residents,
-            building_index=0,  # Simplified: use first building type
-            heating_system_index=0,  # Simplified: use first heating system
-            is_weekend=args.weekend,
-            has_pv=False,
-            has_solar_thermal=False
-        )
+        # Configure dwelling - either from config file or command-line args
+        if dwelling_configs_list:
+            # Load from config file
+            cfg = dwelling_configs_list[dwelling_idx]
+            dwelling_config = DwellingConfig(
+                dwelling_index=dwelling_idx,
+                num_residents=cfg['num_residents'],
+                building_index=cfg['building_index'],
+                heating_system_index=cfg['heating_system_index'],
+                cooling_system_index=cfg.get('cooling_system_index', 0),
+                is_weekend=args.weekend,
+                has_pv=cfg.get('has_pv', False),
+                has_solar_thermal=cfg.get('has_solar_thermal', False)
+            )
+        else:
+            # Use command-line defaults
+            dwelling_config = DwellingConfig(
+                dwelling_index=dwelling_idx,
+                num_residents=args.residents,
+                building_index=0,  # Simplified: use first building type
+                heating_system_index=0,  # Simplified: use first heating system
+                is_weekend=args.weekend,
+                has_pv=False,
+                has_solar_thermal=False
+            )
 
         # Create and run dwelling simulation
         dwelling = Dwelling(
@@ -148,6 +208,9 @@ def main():
 
         print("  Running simulation...")
         dwelling.run_simulation()
+
+        # Store dwelling for output
+        dwellings.append(dwelling)
 
         # Collect results
         print("  Calculating daily totals...")
@@ -165,6 +228,17 @@ def main():
         print(f"  Daily electricity: {daily_electricity/1000.0:.2f} kWh")
         print(f"  Daily gas: {daily_gas:.2f} m³")
         print(f"  Daily hot water: {daily_hot_water:.2f} litres")
+
+    # Write results to files if requested
+    if results_writer:
+        print("\nWriting results to files...")
+        for dwelling_idx, dwelling in enumerate(dwellings):
+            print(f"  Writing dwelling {dwelling_idx + 1}/{args.num_dwellings}...")
+            if args.save_detailed:
+                results_writer.write_minute_data(dwelling_idx, dwelling)
+            results_writer.write_daily_summary(dwelling_idx, dwelling)
+        results_writer.close()
+        print(f"Results saved to: {args.output_dir}")
 
     # Summary
     print("\n" + "="*60)
