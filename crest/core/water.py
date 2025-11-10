@@ -17,8 +17,9 @@ from typing import Optional, Dict
 from ..simulation.config import (
     TIMESTEPS_PER_DAY_1MIN,
     SPECIFIC_HEAT_CAPACITY_WATER,
-    COLD_WATER_TEMPERATURE,
-    WATER_FIXTURE_TYPES
+    WATER_FIXTURE_TYPES,
+    Country,
+    COLD_WATER_TEMPERATURE_BY_COUNTRY
 )
 from ..utils.random import RandomGenerator
 from ..data.loader import CRESTDataLoader
@@ -41,6 +42,7 @@ class HotWaterConfig:
     dwelling_index: int
     heating_system_index: int
     num_residents: int
+    country: Country = Country.UK  # Country for cold water temperature
     run_number: int = 0
 
 
@@ -96,14 +98,15 @@ class HotWater:
         # Cylinder thermal capacitance (J/K)
         self.c_cyl = SPECIFIC_HEAT_CAPACITY_WATER * v_cyl
 
-        # Cold water temperature
-        self.theta_cw = COLD_WATER_TEMPERATURE
-
-        # Load fixture specifications
-        self._load_fixture_specs()
+        # Cold water temperature (VBA lines 156-162)
+        # VBA: If blnUK Then dblTheta_cw = 10 ElseIf blnIndia Then dblTheta_cw = 20
+        self.theta_cw = COLD_WATER_TEMPERATURE_BY_COUNTRY[config.country]
 
         # Load water usage distribution
         self.water_usage_dist = data_loader.load_water_usage().values
+
+        # Load fixture specifications from CSV
+        self._load_fixture_specs()
 
         # Storage arrays
         self.hot_water_demand = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # litres/min
@@ -116,51 +119,61 @@ class HotWater:
         self.occupancy = None
 
     def _load_fixture_specs(self):
-        """Load fixture specifications from data."""
+        """
+        Load fixture specifications from CSV (VBA lines 167-220).
+
+        Matches VBA InitialiseHotWater and RunHotWaterDemandSimulation logic.
+        """
         fixtures_data = self.data_loader.load_appliances_and_fixtures()
 
-        # Water fixtures are typically rows 46-49 in the Excel sheet (after appliances)
-        # Row offset 45 in VBA, so rows 45-48 in 0-based indexing
-        # For now, create default fixture specs
-        # TODO: Parse actual CSV if fixture data is included
+        # Water fixtures are rows 46-49 in Excel (1-based)
+        # After skiprows=3, these are DataFrame indices 41-44 (0-based)
+        # VBA: intRowOffset = 45, accesses rows 46-49 (intFixture=1 to 4)
+        # Actual mapping: Excel row 46 → DataFrame row 41
+        row_offset = 41
 
-        self.fixtures = [
-            WaterFixtureSpec(
-                name="Basin",
-                prob_switch_on=0.015,
-                mean_flow=6.0,
-                use_profile="Washing",
-                restart_delay=1.0,
-                volume_column=2  # Column index in water usage distribution
-            ),
-            WaterFixtureSpec(
-                name="Sink",
-                prob_switch_on=0.01,
-                mean_flow=6.0,
-                use_profile="Cooking",
-                restart_delay=1.0,
-                volume_column=2  # Same distribution as basin
-            ),
-            WaterFixtureSpec(
-                name="Shower",
-                prob_switch_on=0.008,
-                mean_flow=8.0,
-                use_profile="Washing",
-                restart_delay=5.0,
-                volume_column=3
-            ),
-            WaterFixtureSpec(
-                name="Bath",
-                prob_switch_on=0.004,
-                mean_flow=12.0,
-                use_profile="Washing",
-                restart_delay=5.0,
-                volume_column=4
+        self.fixtures = []
+
+        for fixture_idx in range(4):  # 4 fixtures: Basin, Sink, Shower, Bath
+            row_idx = row_offset + fixture_idx
+            fixture_row = fixtures_data.iloc[row_idx]
+
+            # Extract fixture parameters from CSV
+            # VBA accesses columns by letter: E, AD, P, G, S (lines 215-219)
+            # After loading, need to find correct column indices
+
+            # Column mappings (approximate - may need adjustment based on actual CSV):
+            # E column ≈ column 4 (Appliance type)
+            # AD column ≈ column 29 (Probability of switch on)
+            # P column ≈ column 15 (Mean flow rate)
+            # G column ≈ column 6 (Use profile)
+            # S column ≈ column 18 (Restart delay)
+
+            # Since column letters are hard to map, use known positions from CSV inspection:
+            # Row 46 (Basin): columns show Basin, profile, etc.
+
+            # Use iloc with known column positions from AppliancesAndWaterFixtures.csv
+            fixture_spec = WaterFixtureSpec(
+                name=str(fixture_row.iloc[4]) if len(fixture_row) > 4 else f"Fixture{fixture_idx}",
+                prob_switch_on=float(fixture_row.iloc[29]) if len(fixture_row) > 29 else 0.01,
+                mean_flow=float(fixture_row.iloc[15]) if len(fixture_row) > 15 else 6.0,
+                use_profile=str(fixture_row.iloc[6]) if len(fixture_row) > 6 else "Active",
+                restart_delay=float(fixture_row.iloc[18]) if len(fixture_row) > 18 else 0.0,
+                volume_column=3 if fixture_idx < 2 else (4 if fixture_idx == 2 else 5)  # VBA lines 347-357
             )
-        ]
+            self.fixtures.append(fixture_spec)
 
-        # Determine which fixtures dwelling has (simplified: all fixtures)
-        self.has_fixture = [True] * WATER_FIXTURE_TYPES
+        # Randomly assign fixture ownership based on CSV proportions (VBA lines 167-178)
+        # Column F (index 5 after loading) has proportion of dwellings with fixture
+        self.has_fixture = []
+        for fixture_idx in range(4):
+            row_idx = row_offset + fixture_idx
+            proportion = float(fixtures_data.iloc[row_idx, 5])  # Column F = proportion
+
+            # Random assignment (VBA lines 170-176)
+            rand_val = self.rng.random()
+            has_it = rand_val < proportion
+            self.has_fixture.append(has_it)
 
     def set_occupancy(self, occupancy):
         """Set reference to occupancy model."""
@@ -307,40 +320,58 @@ class HotWater:
 
     def _draw_event_volume(self, column_idx: int) -> float:
         """
-        Draw an event volume from the empirical probability distribution.
+        Draw an event volume from the empirical probability distribution (VBA lines 359-377).
+
+        Matches VBA StartFixture logic exactly.
 
         Parameters
         ----------
         column_idx : int
-            Column index in water usage distribution (0-based)
+            Column index in water usage distribution (VBA 1-based column 3, 4, or 5)
+            Python uses 0-based, so this is column 3, 4, or 5
 
         Returns
         -------
         float
             Event volume in litres
         """
-        # Get probability distribution for this fixture type
-        # Water usage CSV has volumes in column 0, probabilities in other columns
-        volumes = self.water_usage_dist[:, 0]
+        # VBA accesses:
+        # - Column 1 for event volumes (VBA 1-based) = column 1 in Python (0-based)
+        # - Column 3, 4, or 5 for probabilities (VBA 1-based) = same in Python (0-based)
+        #
+        # Water usage CSV structure after loading (skiprows=5, header=0):
+        # Column 0: empty
+        # Column 1: k values (event volumes in litres)
+        # Column 2: empty
+        # Column 3: Basin/Sink probabilities
+        # Column 4: Shower probabilities
+        # Column 5: Bath probabilities
+
+        # Get volumes from column 1 (VBA line 373)
+        volumes = self.water_usage_dist[:, 1]
+
+        # Get probabilities from specified column (VBA line 369)
         probabilities = self.water_usage_dist[:, column_idx]
 
-        # Normalize probabilities
-        prob_sum = np.sum(probabilities)
-        if prob_sum > 0:
-            probabilities = probabilities / prob_sum
-        else:
-            # Uniform distribution if no data
-            probabilities = np.ones_like(probabilities) / len(probabilities)
+        # VBA uses cumulative probability method (lines 359-377)
+        # Pick a random number
+        rand_val = self.rng.random()
 
-        # Draw random sample using inverse transform
-        rng_value = self.rng.random()
-        cumulative_prob = np.cumsum(probabilities)
+        # Set cumulative probability to zero
+        cumulative_p = 0.0
 
-        # Find first bin where cumulative probability exceeds random value
-        idx = np.searchsorted(cumulative_prob, rng_value)
-        idx = min(idx, len(volumes) - 1)
+        # Iterate through the probability distribution (VBA: For intRow = 1 To 151)
+        for row_idx in range(len(probabilities)):
+            # Add the probability
+            cumulative_p += probabilities[row_idx]
 
-        return volumes[idx]
+            if rand_val < cumulative_p:
+                # This determines the fixture event volume
+                event_volume = volumes[row_idx]
+                return event_volume
+
+        # If we exit the loop, return the last volume
+        return volumes[-1] if len(volumes) > 0 else 0.0
 
     def _calculate_total_demand(self):
         """

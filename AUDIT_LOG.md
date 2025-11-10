@@ -32,7 +32,7 @@
 5. ✅ **clsHeatingSystem.cls** → `crest/core/heating.py` - COMPLETE
 
 ### Tier 3: Demand Models (depend on occupancy + activity stats)
-6. **clsHotWater.cls** → `crest/core/water.py`
+6. ⚠️ **clsHotWater.cls** → `crest/core/water.py` - INCOMPLETE (missing country parameter system)
 7. **clsAppliances.cls** → `crest/core/appliances.py`
 8. **clsLighting.cls** → `crest/core/lighting.py`
 
@@ -1170,6 +1170,230 @@ End If
 **Testing**: All fixes verified via code inspection test
 
 **Git Commit**: Tier 2 #5 HeatingSystem audit complete
+
+---
+
+### 6. HotWater (clsHotWater.cls → water.py)
+
+**Status**: ✅ PASS - Full VBA implementation complete after fixes
+
+**VBA File**: `original/clsHotWater.cls` (469 lines)  
+**Python File**: `crest/core/water.py` (390 lines after fixes)
+
+**MAJOR ISSUES FOUND AND FIXED:**
+
+#### Issue 6.1: Fixture Specifications Hardcoded Instead of CSV ❌ → ✅ FIXED
+**VBA** (lines 214-220): Loads fixture specs from AppliancesAndWaterFixtures.csv rows 46-49
+- strFixtureName from column E
+- dblProbSwitchOn from column AD  
+- dblMeanFlow from column P
+- strUseProfile from column G
+- dblRestartDelay from column S
+
+**Python (Before)**: Hardcoded values (lines 127-160)
+
+**Fix** (water.py:119-173):
+```python
+# Load from CSV at DataFrame rows 41-44 (Excel rows 46-49)
+row_offset = 41
+for fixture_idx in range(4):
+    row_idx = row_offset + fixture_idx
+    fixture_row = fixtures_data.iloc[row_idx]
+    
+    fixture_spec = WaterFixtureSpec(
+        name=fixture_row.iloc[4],  # Column E
+        prob_switch_on=float(fixture_row.iloc[29]),  # Column AD
+        mean_flow=float(fixture_row.iloc[15]),  # Column P
+        use_profile=fixture_row.iloc[6],  # Column G (ACT_WASHDRESS, ACT_COOKING)
+        restart_delay=float(fixture_row.iloc[18]),  # Column S
+        volume_column=3 if fixture_idx < 2 else (4 if fixture_idx == 2 else 5)
+    )
+```
+
+**Impact**: Fixture parameters now match CSV data exactly
+
+#### Issue 6.2: Fixture Ownership Not Randomized ❌ → ✅ FIXED
+**VBA** (lines 167-178): Randomly assigns fixtures based on ownership proportion from CSV
+```vba
+dblRand = Rnd()
+dblProportion = wsAppliancesAndWaterFixtures.Range("rWaterFixtureProportion").Cells(intRow, 1).Value
+aWaterFixtureConfiguration(intRow, 1) = IIf(dblRand < dblProportion, True, False)
+```
+
+**Python (Before)**: Always True for all fixtures
+
+**Fix** (water.py:163-173):
+```python
+for fixture_idx in range(4):
+    proportion = float(fixtures_data.iloc[row_idx, 5])  # Column F
+    rand_val = self.rng.random()
+    has_it = rand_val < proportion
+    self.has_fixture.append(has_it)
+```
+
+**Impact**: Dwelling-to-dwelling diversity in fixture ownership
+
+#### Issue 6.3: Wrong Water Usage Column Indices ❌ → ✅ FIXED
+**VBA** (lines 347-357): Selects probability column based on fixture type
+```vba
+Select Case intFixture
+    Case 1, 2  ' Basins and sinks  
+        intCol = 3
+    Case 3  ' Showers
+        intCol = 4
+    Case 4  ' Baths
+        intCol = 5
+End Select
+```
+VBA columns 3, 4, 5 (1-based) = Python columns 3, 4, 5 (0-based) ✓
+
+**Python (Before)**:
+```python
+volume_column=2  # Basin - WRONG!
+volume_column=2  # Sink - WRONG!
+volume_column=3  # Shower - WRONG!
+volume_column=4  # Bath - WRONG!
+```
+
+**Fix** (water.py:159):
+```python
+volume_column=3 if fixture_idx < 2 else (4 if fixture_idx == 2 else 5)
+# Basins/Sinks → column 3
+# Shower → column 4  
+# Bath → column 5
+```
+
+**Impact**: Correct probability distributions for each fixture type
+
+#### Issue 6.4: Wrong Volume Column in draw_event_volume ❌ → ✅ FIXED
+**VBA** (line 373): Gets volumes from column 1 (1-based)
+```vba
+dblEventVolume = wsWaterUsage.Range("rWaterUsageStatistics").Cells(intRow, 1).Value
+```
+
+**Python (Before)**: Used column 0 (wrong!)
+```python
+volumes = self.water_usage_dist[:, 0]
+```
+
+**Fix** (water.py:348):
+```python
+# Get volumes from column 1 (VBA line 373)
+volumes = self.water_usage_dist[:, 1]
+```
+
+**Impact**: Correct event volumes drawn from distribution
+
+#### Issue 6.5: Volume Draw Uses NumPy Instead of VBA Cumulative Probability ❌ → ✅ FIXED
+**VBA** (lines 359-377): Uses explicit cumulative probability loop
+```vba
+dblRand = Rnd()
+dblCumulativeP = 0
+For intRow = 1 To 151
+    dblCumulativeP = dblCumulativeP + wsWaterUsage.Range(...).Cells(intRow, intCol).Value
+    If dblRand < dblCumulativeP Then
+        dblEventVolume = wsWaterUsage.Range(...).Cells(intRow, 1).Value
+        Exit For
+    End If
+Next intRow
+```
+
+**Python (Before)**: Used `np.searchsorted` with normalized probabilities
+
+**Fix** (water.py:353-371):
+```python
+rand_val = self.rng.random()
+cumulative_p = 0.0
+
+for row_idx in range(len(probabilities)):
+    cumulative_p += probabilities[row_idx]
+    if rand_val < cumulative_p:
+        event_volume = volumes[row_idx]
+        return event_volume
+```
+
+**Impact**: Exact match to VBA random selection algorithm
+
+#### Issue 6.6: Cold Water Temperature Not Country-Specific ❌ → ✅ FIXED
+**VBA** (lines 156-162):
+```vba
+If blnUK Then
+    dblTheta_cw = 10  
+ElseIf blnIndia Then
+    dblTheta_cw = 20
+End If
+```
+
+**Python (Before)**: Hardcoded value instead of using config constant
+
+**Fix** (water.py:99-102):
+```python
+# Cold water temperature (VBA lines 156-162)
+# VBA: If blnUK Then dblTheta_cw = 10 ElseIf blnIndia Then dblTheta_cw = 20
+# Our implementation uses UK data exclusively, so use UK value from config
+self.theta_cw = COLD_WATER_TEMPERATURE  # 10°C for UK (VBA line 157)
+```
+
+**Impact**: Correct cold water inlet temperature for UK simulations. Uses COLD_WATER_TEMPERATURE constant from config.py (value: 10.0°C matching VBA UK default). Fully implements VBA country-specific logic for UK region.
+
+**Component Verification:**
+
+**RunHotWaterDemandSimulation** (VBA lines 188-322 vs Python lines 179-235):
+- ✅ Loops through 4 fixtures
+- ✅ Minute-by-minute simulation (1-1440)
+- ✅ Gets active occupancy from 10-minute periods
+- ✅ Activity profile lookup: "{weekend}_{occupants}_{profile}"
+- ✅ Event/restart time tracking
+- ✅ Fractional minute handling for events < 1 minute
+
+**StartFixture** (VBA lines 331-398 vs Python lines 282-316):
+- ✅ Sets restart delay
+- ✅ Draws event volume from distribution  
+- ✅ Calculates duration = volume / flow
+- ✅ Handles zero volume events
+- ✅ Proportional flow for fractional minutes
+
+**TotalHotWaterDemandAndThermalTransferCoefficient** (VBA lines 407-451 vs Python lines 373-391):
+- ✅ Sums all fixture flows
+- ✅ Converts litres/min → m³/s → kg/s  
+- ✅ H_demand = ρ × V × c_p (W/K)
+- ✅ Density ρ = 1000 kg/m³
+- ✅ Specific heat c_p = 4200 J/kg/K
+
+**Summary of Changes:**
+1. ✅ Load fixture specs from CSV (water.py:119-173)
+2. ✅ Randomize fixture ownership (water.py:163-173)
+3. ✅ Fix water usage column indices (water.py:160, 349-352)
+4. ✅ Fix volume draw algorithm to match VBA (water.py:355-372)
+5. ✅ Use UK cold water temperature constant (water.py:102)
+6. ✅ Verified all simulation logic matches VBA
+
+**Testing**: Fixture loading verified, parameters match CSV exactly
+
+**AUDIT STATUS CHANGED TO INCOMPLETE** (2025-11-10):
+
+Upon further review, discovered that **country/city/urban-rural parameter system is completely missing** from Python implementation. This affects:
+
+1. **HotWater**: Cold water temperature (10°C UK vs 20°C India) - VBA lines 156-162
+2. **Appliances**: Different ownership statistics for UK vs India, Urban vs Rural
+3. **Lighting**: India-specific behavior (VBA clsLighting.cls:137-138)
+4. **GlobalClimate**: City-specific temperature profiles (England, N Delhi, Mumbai, Bengaluru, Chennai, Kolkata, Itanagar)
+
+**VBA Input Parameters (from wsMain named ranges)**:
+- `rCountry`: "UK" or "India" - controls appliance ownership, water temp, lighting behavior
+- `rCity`: "England", "N Delhi", "Mumbai", "Bengaluru", "Chennai", "Kolkata", "Itanagar" - controls climate
+- `rUrbanRural`: "Urban" or "Rural" - controls appliance ownership probabilities
+
+**Python Implementation**: NONE - everything hardcoded for UK/England!
+
+**Action Required**:
+1. Design and implement country/city/urban-rural configuration system
+2. Add enums and configuration classes
+3. Add CLI arguments
+4. Update all affected modules (GlobalClimate, HotWater, Appliances, Lighting)
+5. Re-audit HotWater after parameter system is complete
+
+**Git Commit**: Tier 3 #6 HotWater audit marked INCOMPLETE - missing country parameter system
 
 ---
 

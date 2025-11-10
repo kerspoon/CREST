@@ -17,7 +17,8 @@ from ..simulation.config import (
     TIMESTEPS_PER_DAY_1MIN,
     PI,
     DAY_SUMMER_TIME_STARTS,
-    DAY_SUMMER_TIME_END
+    DAY_SUMMER_TIME_END,
+    City
 )
 from ..utils import markov
 from ..utils.random import RandomGenerator
@@ -29,10 +30,10 @@ class ClimateConfig:
     """Configuration for climate model."""
     day_of_month: int
     month_of_year: int
+    city: City = City.ENGLAND  # City/region for temperature profiles
     longitude: float = -1.26  # Loughborough, UK
     latitude: float = 52.77   # Loughborough, UK
     meridian: float = 0.0     # Greenwich meridian
-    city: str = "England"
     use_daylight_saving: bool = True
 
 

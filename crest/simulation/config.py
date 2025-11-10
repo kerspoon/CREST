@@ -5,6 +5,42 @@ Physical constants, simulation parameters, and configuration values used through
 """
 
 import math
+from enum import Enum
+
+# ===============================================================================================
+# LOCATION AND REGION ENUMS
+# ===============================================================================================
+
+class Country(Enum):
+    """Country selection for appliance ownership and water temperature."""
+    UK = "UK"
+    INDIA = "India"
+
+class City(Enum):
+    """City/region selection for climate data."""
+    ENGLAND = "England"
+    N_DELHI = "N Delhi"
+    MUMBAI = "Mumbai"
+    BENGALURU = "Bengaluru"
+    CHENNAI = "Chennai"
+    KOLKATA = "Kolkata"
+    ITANAGAR = "Itanagar"
+
+class UrbanRural(Enum):
+    """Urban or rural location for appliance ownership."""
+    URBAN = "Urban"
+    RURAL = "Rural"
+
+# ===============================================================================================
+# COUNTRY-SPECIFIC CONSTANTS
+# ===============================================================================================
+
+# Cold water inlet temperature by country (°C)
+# VBA: clsHotWater.cls lines 156-162
+COLD_WATER_TEMPERATURE_BY_COUNTRY = {
+    Country.UK: 10.0,
+    Country.INDIA: 20.0
+}
 
 # ===============================================================================================
 # PHYSICAL CONSTANTS
