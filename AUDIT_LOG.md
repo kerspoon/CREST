@@ -2342,3 +2342,119 @@ self.thermal_gains[minute] = row_sum  # 100% conversion
 
 **AUDIT COMPLETE**: All VBA functionality implemented, no TODOs, no placeholders, ready for testing
 
+
+---
+
+### CRITICAL BUG FIXES (2025-11-10)
+
+After careful review by web-based Claude, **5 critical bugs** were identified and fixed:
+
+#### Bug #1: restart_delay_time_left Not Reset After Each Cycle ✅ FIXED
+
+**Problem**: In VBA, `intRestartDelayTimeLeft` is reset to `intRestartDelay` EVERY time `StartAppliance()` is called (line 392). This is critical for cold appliances (fridges/freezers) that cycle on and off throughout the day. The Python code only set it once at initialization, so after the first cycle, appliances could restart immediately without proper delay.
+
+**VBA** (StartAppliance, line 392):
+```vba
+intRestartDelayTimeLeft = intRestartDelay  ' ← RESETS EVERY TIME
+```
+
+**Fix** (appliances.py:296-298):
+```python
+# BUG FIX: VBA line 392 sets intRestartDelayTimeLeft = intRestartDelay
+# This must be reset EVERY time the appliance starts, not just at initialization
+restart_delay_time_left = appliance.restart_delay
+```
+
+**Impact**: Fridges/freezers now cycle correctly with proper delays between on-periods.
+
+---
+
+#### Bug #2: get_daily_energy() Incorrect Unit Conversion ✅ FIXED
+
+**Problem**: VBA `GetDailySumApplianceDemand` returns the raw sum without any unit conversion. Python code divided by 60 to convert W·min to Wh, which **changed the numerical value** and would break exact comparison with Excel output.
+
+**VBA** (lines 81-83):
+```vba
+Public Property Get GetDailySumApplianceDemand() As Double
+    GetDailySumApplianceDemand = WorksheetFunction.Sum(aTotalApplianceDemand)
+End Property
+```
+
+**Fix** (appliances.py:574-585):
+```python
+def get_daily_energy(self) -> float:
+    """Get total daily appliance sum (matches VBA units exactly)."""
+    # BUG FIX: Removed /60.0 conversion - VBA does NOT convert units
+    return np.sum(self.total_demand)
+```
+
+**Impact**: Now returns exact same numerical value as VBA for 100-house comparison.
+
+---
+
+#### Bug #3: Misleading Comment ✅ FIXED
+
+**Problem**: Comment said "_start_appliance returns after decrementing" but the function returns BEFORE decrementing.
+
+**Fix** (appliances.py:300-301):
+```python
+# VBA decrements cycle_time_left in StartAppliance (line 398)
+cycle_time_left -= 1
+```
+
+**Impact**: Documentation now accurate.
+
+---
+
+#### Bug #4: CSV Column Index Off-By-One ✅ FIXED
+
+**Problem**: Heat gains ratio is in Excel column AF (32nd column, 1-based), which maps to pandas iloc[31] (0-based), not iloc[32]. Using iloc[32] read from column AG instead.
+
+**Investigation**: Verified with actual CSV data:
+- Raw CSV column 32 (1-based) has value 0.8 for CHEST_FREEZER
+- Pandas iloc[31] (0-based) has value 0.8 ✓
+- Pandas iloc[32] (0-based) has value 1 ✗
+
+**Fix** (appliances.py:160-161):
+```python
+# BUG FIX: Excel column AF (32nd, 1-based) = pandas iloc[31] (0-based), not iloc[32]
+heat_gains_ratio = float(row.iloc[31]) if len(row) > 31 else 0.8
+```
+
+**Impact**: Now reads correct heat gains ratios from CSV.
+
+---
+
+#### Bug #5: CSV Row Offset - Reading Header Rows as Data ✅ FIXED
+
+**Problem**: CSV has 4 header rows after skiprows=3, header=0:
+- iloc[0-3] = additional headers
+- iloc[4] = first data row (CHEST_FREEZER)
+
+Code was iterating `for i in range(...)` and using `iloc[i]`, reading headers as appliance data!
+
+**Investigation**: Verified with actual CSV:
+```
+iloc[0]: NaN, NaN, "Short name", ... (header row)
+iloc[1]: NaN, "LEVEL", ... (header row)
+iloc[2]: "Short name", ... (header labels)
+iloc[3]: units row
+iloc[4]: "CHEST_FREEZER", 0.163, "LEVEL", ... (ACTUAL DATA)
+```
+
+**Fix** (appliances.py:134-139):
+```python
+# Note: CSV has 4 header rows when loaded with skiprows=3, header=0:
+# iloc[0-3] = additional headers, iloc[4] = first data row (CHEST_FREEZER)
+for i in range(min(MAX_APPLIANCE_TYPES, len(appliances_data) - 4)):
+    row_idx = i + 4  # Skip 4 header rows to get to actual data
+    if row_idx < len(appliances_data):
+        row = appliances_data.iloc[row_idx]
+```
+
+**Impact**: Now reads actual appliance data, not headers. Critical fix preventing garbage data.
+
+---
+
+**All bugs verified and fixed. Ready for 100-house validation test.**
+

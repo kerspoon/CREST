@@ -131,12 +131,24 @@ class Appliances:
         self.appliances = []
         self.has_appliance = []
 
-        for i in range(min(MAX_APPLIANCE_TYPES, len(appliances_data))):
-            if i < len(appliances_data):
-                row = appliances_data.iloc[i]
+        # Note: CSV has 4 header rows when loaded with skiprows=3, header=0:
+        # iloc[0-3] = additional headers, iloc[4] = first data row (CHEST_FREEZER)
+        for i in range(min(MAX_APPLIANCE_TYPES, len(appliances_data) - 4)):
+            row_idx = i + 4  # Skip 4 header rows to get to actual data
+            if row_idx < len(appliances_data):
+                row = appliances_data.iloc[row_idx]
 
                 # Extract data matching VBA column references
-                # Note: pandas DataFrame columns after skiprows=3, so we access by iloc
+                # CSV columns (1-based) → pandas iloc (0-based after skiprows=3):
+                # - E (column 5, 1-based) = iloc[4] (0-based)
+                # - F (column 6) = iloc[5]
+                # - G (column 7) = iloc[6]
+                # - P (column 16) = iloc[15]
+                # - R (column 18) = iloc[17]
+                # - S (column 19) = iloc[18]
+                # - T (column 20) = iloc[19]
+                # - AD (column 30) = iloc[29]
+                # - AF (column 32, Excel 1-based) = iloc[31] (pandas 0-based)
                 appliance_name = str(row.iloc[4]) if len(row) > 4 else f'Appliance{i}'
                 ownership = float(row.iloc[5]) if len(row) > 5 else 0.5
                 use_profile = str(row.iloc[6]) if len(row) > 6 else 'ACTIVE_OCC'
@@ -145,7 +157,8 @@ class Appliances:
                 restart_delay = int(float(row.iloc[18])) if len(row) > 18 else 0
                 standby_power = int(float(row.iloc[19])) if len(row) > 19 else 0
                 prob_switch_on = float(row.iloc[29]) if len(row) > 29 else 0.01
-                heat_gains_ratio = float(row.iloc[32]) if len(row) > 32 else 0.8
+                # BUG FIX: Excel column AF (32nd, 1-based) = pandas iloc[31] (0-based), not iloc[32]
+                heat_gains_ratio = float(row.iloc[31]) if len(row) > 31 else 0.8
 
                 self.appliances.append(ApplianceSpec(
                     name=appliance_name,
@@ -279,7 +292,12 @@ class Appliances:
                         if self.rng.random() < (activity_probability * appliance.prob_switch_on):
                             # VBA: StartAppliance (line 248)
                             cycle_time_left, power = self._start_appliance(appliance, rated_power)
-                            # Note: _start_appliance returns after decrementing, so we have one less minute
+
+                            # BUG FIX: VBA line 392 sets intRestartDelayTimeLeft = intRestartDelay
+                            # This must be reset EVERY time the appliance starts, not just at initialization
+                            restart_delay_time_left = appliance.restart_delay
+
+                            # VBA decrements cycle_time_left in StartAppliance (line 398)
                             cycle_time_left -= 1
                         else:
                             power = appliance.standby_power
@@ -555,13 +573,16 @@ class Appliances:
 
     def get_daily_energy(self) -> float:
         """
-        Get total daily appliance energy in Wh.
+        Get total daily appliance sum (matches VBA units exactly).
 
         VBA Reference: GetDailySumApplianceDemand property (lines 81-83)
+
+        Note: VBA returns raw sum without unit conversion. For exact VBA matching,
+        we return the same. Units are technically W summed over 1440 minutes.
         """
         # VBA: GetDailySumApplianceDemand = WorksheetFunction.Sum(aTotalApplianceDemand)
-        # Note: VBA sum is in W, so need to convert W·min to Wh
-        return np.sum(self.total_demand) / 60.0
+        # BUG FIX: Removed /60.0 conversion - VBA does NOT convert units
+        return np.sum(self.total_demand)
 
     def get_appliance_demand(self, timestep: int, appliance_idx: int) -> float:
         """
