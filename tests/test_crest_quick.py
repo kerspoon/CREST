@@ -523,9 +523,9 @@ def test_7_reproducibility():
             rng = RandomGenerator(seed=seed)
             data_loader = CRESTDataLoader()
             activity_stats = load_activity_statistics(data_loader)
-            
+
             climate_config = ClimateConfig(day_of_month=15, month_of_year=6, city=City.ENGLAND)
-            global_climate = GlobalClimate(climate_config, data_loader)
+            global_climate = GlobalClimate(climate_config, data_loader, rng)
             global_climate.run_all()
             
             dwelling_config = DwellingConfig(
