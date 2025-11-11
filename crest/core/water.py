@@ -333,7 +333,8 @@ class HotWater:
         """
         # Create key for activity statistics lookup
         weekend_flag = "1" if self.is_weekend else "0"
-        key = f"{weekend_flag}_{active_occupants}_{fixture.use_profile}"
+        # NOTE: VBA's Collection is case-insensitive, normalize to uppercase
+        key = f"{weekend_flag}_{active_occupants}_{fixture.use_profile.upper()}"
 
         # Get activity probability for this time period (strict mode - crash if not found)
         if key not in self.activity_statistics:

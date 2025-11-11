@@ -81,7 +81,9 @@ def load_activity_statistics(data_loader: CRESTDataLoader) -> dict:
         # VBA: strKey = IIf(objActivityStatsItem.IsWeekend, "1", "0") + "_" +
         #              CStr(objActivityStatsItem.ActiveOccupantCount) + "_" +
         #              objActivityStatsItem.ID
-        key = f"{is_weekend}_{active_occupants}_{profile_id}"
+        # NOTE: VBA's Collection is case-insensitive, so we normalize to uppercase
+        # to match appliance profile names (e.g., ACT_IRON vs Act_Iron)
+        key = f"{is_weekend}_{active_occupants}_{profile_id.upper()}"
 
         # VBA: objActivityStatistics.Add Item:=objActivityStatsItem, Key:=strKey
         activity_stats[key] = modifiers

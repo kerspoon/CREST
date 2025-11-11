@@ -286,13 +286,15 @@ class Appliances:
                             key = f"{weekend_flag}_{active_occupants}_{appliance.use_profile}"
 
                             # Get activity probability from statistics
-                            if key in self.activity_statistics:
-                                # VBA: dblActivityProbability = objActivityStatistics(strKey).Modifiers(intTenMinuteCount)
-                                # Note: Modifiers array is 0-based in our implementation
-                                activity_probability = self.activity_statistics[key][ten_min_idx]
-                            else:
-                                # If profile not found, use very low probability
-                                activity_probability = 0.001
+                            # VBA: dblActivityProbability = objActivityStatistics(strKey).Modifiers(intTenMinuteCount)
+                            # Note: Modifiers array is 0-based in our implementation
+                            if key not in self.activity_statistics:
+                                raise KeyError(
+                                    f"Activity statistics key '{key}' not found for appliance '{appliance.name}'. "
+                                    f"Available keys: {sorted(list(self.activity_statistics.keys())[:10])}... "
+                                    f"(weekend={self.is_weekend}, active_occ={active_occupants}, profile={appliance.use_profile})"
+                                )
+                            activity_probability = self.activity_statistics[key][ten_min_idx]
 
                         # VBA: Check probability and switch on (line 245)
                         # If (Rnd() < (dblActivityProbability * dblProbSwitchOn)) Then
