@@ -24,7 +24,7 @@ Note: Despite the name "clsCoolingSystem", this is part of the HVAC system,
 """
 
 import numpy as np
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from crest.data.loader import CRESTDataLoader
@@ -84,7 +84,7 @@ class CoolingSystem:
                    run_number: int,
                    controls: 'HeatingControls',
                    building: 'Building',
-                   cooling_system_index: int = None) -> None:
+                   cooling_system_index: Optional[int] = None) -> None:
         """
         Initialize cooling system with configuration and component references.
 

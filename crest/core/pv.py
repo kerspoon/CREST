@@ -16,7 +16,7 @@ Execution: Runs ONCE per day in pre-simulation phase (not in thermal loop)
 """
 
 import numpy as np
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from crest.core.solar import SolarGeometry
 
@@ -87,11 +87,11 @@ class PVSystem:
                    climate: 'LocalClimate',
                    appliances: 'Appliances',
                    lighting: 'Lighting',
-                   pv_system_index: int = None,
+                   pv_system_index: Optional[int] = None,
                    latitude: float = 52.2,
                    longitude: float = -0.9,
                    meridian: float = 0.0,
-                   day_of_year: int = None,
+                   day_of_year: Optional[int] = None,
                    month: int = 6,
                    day: int = 15) -> None:
         """

@@ -21,7 +21,7 @@ Critical Note: VBA has a bug at line 428 (Tan(Declination)/Tan(Declination) shou
 """
 
 import numpy as np
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Optional
 
 from crest.core.solar import SolarGeometry
 from crest.simulation.config import SPECIFIC_HEAT_CAPACITY_WATER
@@ -105,11 +105,11 @@ class SolarThermal:
                    run_number: int,
                    climate: 'LocalClimate',
                    building: 'Building',
-                   solar_thermal_index: int = None,
+                   solar_thermal_index: Optional[int] = None,
                    latitude: float = 52.2,
                    longitude: float = -0.9,
                    meridian: float = 0.0,
-                   day_of_year: int = None,
+                   day_of_year: Optional[int] = None,
                    month: int = 6,
                    day: int = 15) -> None:
         """
