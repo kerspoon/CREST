@@ -510,15 +510,15 @@ class Appliances:
 
             # Add heating system demand if available
             if self.heating_system is not None:
-                row_sum += self.heating_system.get_power_demand(minute + 1)  # 1-based API
+                row_sum += self.heating_system.get_heating_system_power_demand(minute + 1)  # 1-based API
 
             # Add solar thermal pump demand if available
             if self.solar_thermal is not None:
-                row_sum += self.solar_thermal.get_pump_power(minute + 1)  # 1-based API
+                row_sum += self.solar_thermal.get_P_pumpsolar(minute + 1)  # 1-based API
 
             # Add cooling system demand if available
             if self.cooling_system is not None:
-                row_sum += self.cooling_system.get_power_demand(minute + 1)  # 1-based API
+                row_sum += self.cooling_system.get_cooling_system_power_demand(minute + 1)  # 1-based API
 
             self.total_demand[minute] = row_sum
 
