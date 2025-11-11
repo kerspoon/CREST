@@ -221,6 +221,144 @@ def assign_dwelling_parameters(
     )
 
 
+def aggregate_results(dwellings: list) -> dict:
+    """
+    Aggregate time series results across all dwellings.
+
+    VBA Reference: AggregateResults (mdlThermalElectricalModel.bas lines 810-1048)
+
+    Aggregates 22 time series variables (1440 timesteps each) across all dwellings.
+    Normalizes by population (occupancy), dwelling count (temperatures/states),
+    or sums totals (power, fuel).
+
+    Parameters
+    ----------
+    dwellings : list
+        List of Dwelling objects
+
+    Returns
+    -------
+    dict
+        Dictionary with 22 aggregated time series arrays (each 1440 timesteps)
+    """
+    num_dwellings = len(dwellings)
+    if num_dwellings == 0:
+        return {}
+
+    # VBA line 940: Get total population
+    total_population = sum(d.config.num_residents for d in dwellings)
+
+    # Initialize aggregated arrays (VBA lines 891-933)
+    # All arrays are 1440 timesteps (minutes in a day)
+    aggregated = {
+        'occupancy': np.zeros(1440),  # Normalized by population
+        'activity': np.zeros(1440),  # Normalized by population
+        'P_e': np.zeros(1440),  # Total electricity (kW)
+        'P_pv': np.zeros(1440),  # Total PV output (kW)
+        'P_net': np.zeros(1440),  # Net demand (kW)
+        'Phi_hSpace': np.zeros(1440),  # Space heating (kW)
+        'Phi_hWater': np.zeros(1440),  # Water heating (kW)
+        'Phi_s': np.zeros(1440),  # Solar thermal (kW)
+        'theta_i': np.zeros(1440),  # Indoor temp (averaged)
+        'V_dhw': np.zeros(1440),  # Hot water volume total (litres)
+        'theta_cyl': np.zeros(1440),  # Cylinder temp (averaged)
+        'space_timer': np.zeros(1440),  # Space timer state (averaged)
+        'water_timer': np.zeros(1440),  # Water timer state (averaged)
+        'heating_on': np.zeros(1440),  # Heating on/off (averaged)
+        'water_heating_on': np.zeros(1440),  # Water heating on/off (averaged)
+        'M_fuel': np.zeros(1440),  # Fuel flow total (m³)
+        'Phi_collector': np.zeros(1440),  # Solar collector (kW)
+        'P_self': np.zeros(1440),  # Self-consumption (kW)
+        'mean_V_dhw': np.zeros(1440),  # Hot water per dwelling (litres)
+        'mean_V_gas': np.zeros(1440),  # Fuel per dwelling (m³)
+        'cooling_timer': np.zeros(1440),  # Cooling timer (averaged)
+        'cooling_on': np.zeros(1440),  # Cooling on/off (averaged)
+    }
+
+    # VBA lines 969-995: Loop through dwellings and aggregate
+    for dwelling in dwellings:
+        for t in range(1, 1441):  # VBA uses 1-based timesteps
+            # VBA lines 975-976: Occupancy and activity
+            occupancy_state = dwelling.occupancy.get_active_occupancy_at_timestep((t - 1) // 10)
+            activity_state = dwelling.occupancy.get_combined_states_1min()[t - 1]
+            aggregated['occupancy'][t - 1] += occupancy_state
+            # Activity: 1 if active (odd combined state), 0 if dormant (even combined state)
+            aggregated['activity'][t - 1] += (int(activity_state) % 2)
+
+            # VBA line 977: Total electricity (lighting + appliances)
+            P_lighting = dwelling.lighting.get_total_demand(t)
+            P_appliances = dwelling.appliances.get_total_demand(t)
+            aggregated['P_e'][t - 1] += (P_lighting + P_appliances)
+
+            # VBA line 978: PV output
+            if dwelling.pv_system:
+                aggregated['P_pv'][t - 1] += dwelling.pv_system.P_pv[t - 1]
+                aggregated['P_self'][t - 1] += dwelling.pv_system.P_self[t - 1]
+
+            # VBA lines 979-980: Heating
+            aggregated['Phi_hSpace'][t - 1] += dwelling.heating_system.get_heat_to_space(t)
+            aggregated['Phi_hWater'][t - 1] += dwelling.heating_system.get_heat_to_hot_water(t)
+
+            # VBA line 981: Solar thermal
+            if dwelling.solar_thermal:
+                aggregated['Phi_s'][t - 1] += dwelling.solar_thermal.Phi_s[t - 1]
+                aggregated['Phi_collector'][t - 1] += dwelling.solar_thermal.Phi_collector[t - 1]
+
+            # VBA lines 982-984: Temperatures and hot water volume
+            aggregated['theta_i'][t - 1] += dwelling.building.get_internal_temperature(t)
+            aggregated['V_dhw'][t - 1] += dwelling.hot_water.hot_water_demand[t - 1]
+            aggregated['theta_cyl'][t - 1] += dwelling.building.get_cylinder_temperature(t)
+
+            # VBA lines 985-988: Control states (direct array access for efficiency)
+            aggregated['space_timer'][t - 1] += int(dwelling.heating_controls.get_space_timer_state(t))
+            aggregated['water_timer'][t - 1] += int(dwelling.heating_controls.hot_water_timer[t - 1])
+            aggregated['heating_on'][t - 1] += int(dwelling.heating_controls.get_space_thermostat_state(t))
+            aggregated['water_heating_on'][t - 1] += int(dwelling.heating_controls.hot_water_thermostat[t - 1])
+
+            # VBA line 989: Fuel flow
+            aggregated['M_fuel'][t - 1] += dwelling.heating_system.m_fuel[t - 1]
+
+            # VBA lines 992-993: Cooling
+            if dwelling.cooling_system:
+                aggregated['cooling_timer'][t - 1] += int(dwelling.cooling_system.cooling_timer[t - 1])
+                aggregated['cooling_on'][t - 1] += int(dwelling.cooling_system.cooling_thermostat[t - 1])
+
+    # VBA lines 998-1019: Normalize and convert units
+    for t in range(1440):
+        # Normalize by population (VBA lines 998-999)
+        if total_population > 0:
+            aggregated['occupancy'][t] /= total_population
+            aggregated['activity'][t] /= total_population
+
+        # Convert W → kW (VBA lines 1000-1005, 1014-1015)
+        aggregated['P_e'][t] /= 1000.0
+        aggregated['P_pv'][t] /= 1000.0
+        aggregated['P_net'][t] = aggregated['P_e'][t] - aggregated['P_pv'][t]  # VBA line 1002
+        aggregated['Phi_hSpace'][t] /= 1000.0
+        aggregated['Phi_hWater'][t] /= 1000.0
+        aggregated['Phi_s'][t] /= 1000.0
+        aggregated['Phi_collector'][t] /= 1000.0
+        aggregated['P_self'][t] /= 1000.0
+
+        # Average by dwelling count (VBA lines 1006, 1008-1012, 1018-1019)
+        aggregated['theta_i'][t] /= num_dwellings
+        aggregated['theta_cyl'][t] /= num_dwellings
+        aggregated['space_timer'][t] /= num_dwellings
+        aggregated['water_timer'][t] /= num_dwellings
+        aggregated['heating_on'][t] /= num_dwellings
+        aggregated['water_heating_on'][t] /= num_dwellings
+        aggregated['cooling_timer'][t] /= num_dwellings
+        aggregated['cooling_on'][t] /= num_dwellings
+
+        # Per-dwelling averages (VBA lines 1016-1017)
+        aggregated['mean_V_dhw'][t] = aggregated['V_dhw'][t] / num_dwellings
+        aggregated['mean_V_gas'][t] = aggregated['M_fuel'][t] / num_dwellings
+
+        # V_dhw and M_fuel kept as totals (VBA lines 1007, 1013)
+
+    return aggregated
+
+
 def main():
     """Main simulation entry point."""
     parser = argparse.ArgumentParser(
@@ -516,6 +654,16 @@ def main():
         if dwelling.pv_system is not None:
             print(f"  PV output: {pv_output_kwh:.2f} kWh, Net demand: {net_electricity_kwh:.2f} kWh")
         print(f"  Indoor temp: {average_indoor_temp:.1f}°C")
+
+    # Aggregate results across all dwellings
+    # VBA Reference: AggregateResults (lines 810-1048)
+    if args.num_dwellings > 1:
+        print("\nAggregating results across all dwellings...")
+        aggregated = aggregate_results(dwellings)
+        print(f"  Aggregated {len(aggregated)} time series variables (1440 timesteps each)")
+        print(f"  Total population: {sum(d.config.num_residents for d in dwellings)} residents")
+        print(f"  Peak total demand: {np.max(aggregated['P_e']):.2f} kW")
+        print(f"  Average indoor temperature: {np.mean(aggregated['theta_i']):.1f}°C")
 
     # Write results to files if requested
     if results_writer:
