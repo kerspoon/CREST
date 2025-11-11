@@ -577,7 +577,7 @@ def main():
         mean_active_occupancy = dwelling.occupancy.get_mean_active_occupancy()
 
         # VBA line 1082: GetPrActivelyOccupied
-        proportion_actively_occupied = dwelling.occupancy.get_probability_actively_occupied()
+        proportion_actively_occupied = dwelling.occupancy.get_proportion_actively_occupied()
 
         # VBA line 1083: GetDailySumLighting / 60 / 1000 (W·min → kWh)
         lighting_demand_kwh = dwelling.lighting.get_daily_energy() / 60.0 / 1000.0

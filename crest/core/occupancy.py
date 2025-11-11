@@ -333,9 +333,9 @@ class Occupancy:
         """
         return np.mean(self.active_occupancy)
 
-    def get_probability_actively_occupied(self) -> float:
+    def get_proportion_actively_occupied(self) -> float:
         """
-        Calculate probability that dwelling is actively occupied.
+        Calculate proportion that dwelling is actively occupied.
 
         Returns
         -------

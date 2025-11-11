@@ -75,7 +75,7 @@
 - `__init__(config, data_loader, rng)`
 - `run_simulation()` - Generate day of occupancy states
 - `get_mean_active_occupancy() -> float` - Mean active occupants
-- `get_probability_actively_occupied() -> float` - Proportion of time active
+- `get_proportion_actively_occupied() -> float` - Proportion of time active
 - `get_thermal_gains(timestep: int) -> float` - Thermal gains (W) at 10-min timestep (1-144)
 
 **Public Arrays**: `active_occupancy[144]`, `combined_states[144]` (strings like "11"), `thermal_gains[144]`
