@@ -46,6 +46,27 @@ pip install -r requirements.txt
 python crest_simulate.py --help
 ```
 
+# Type Checking
+
+This project uses [mypy](https://mypy-lang.org/) for static type checking to catch interface bugs before runtime. 
+
+```bash
+  # Run type checker
+  ./check_types.sh
+
+  # or directly 
+  venv/bin/mypy crest/core/building.py
+```
+
+later improvements TODO:
+
+1. disallow_incomplete_defs = True
+2. disallow_untyped_calls = True
+3. disallow_untyped_defs = True
+4. warn_return_any = True
+5. .git/hooks/pre-commit
+
+
 ## Citation
 
 If you use this model in research, please cite the original CREST model:

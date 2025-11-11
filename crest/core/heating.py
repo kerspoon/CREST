@@ -180,7 +180,7 @@ class HeatingSystem:
                 # Heating systems 1-3 are gas boilers (use fuel)
                 # Heating systems 4+ are electric (use electricity)
                 if self.config.heating_system_index < 3:
-                    # Gas boiler: fuel flow rate in m³/min
+                    # Gas boiler: fuel flow rate in m³/h (must divide sum by 60 to get daily m³)
                     self.m_fuel[idx] = self.fuel_flow_rate * utilization
                 else:
                     # Electric heating: electricity in W

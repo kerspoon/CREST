@@ -204,7 +204,7 @@ class ResultsWriter:
         # Calculate daily totals
         total_electricity = sum(dwelling.get_total_electricity_demand(t)
                                for t in range(1, 1441)) / 60.0  # Wh
-        total_gas = dwelling.heating_system.get_daily_fuel_consumption()  # m³
+        total_gas = dwelling.heating_system.get_daily_fuel_consumption() / 60.0  # m³ (sum of rates in m³/h, divide by 60)
         total_hot_water = dwelling.hot_water.get_daily_hot_water_volume()  # litres
 
         # Calculate peaks

@@ -28,7 +28,7 @@ Data cleaning utility for Excel outputs.
 
 1. Run Excel simulation → generates baseline results
 2. Extract configs: `python parse_excel_configs.py`
-3. Run Python with same configs: `python crest_simulate.py --config-file configs/excel_100houses.json`
+3. Run Python simulation: `python crest_simulate.py --num-dwellings 100 --seed 42 --output-dir output`
 4. Compare results: `python compare_results.py`
 
 ## Future
