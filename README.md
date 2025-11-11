@@ -2,39 +2,39 @@
 
 A high-resolution (1-minute) stochastic integrated thermal-electrical domestic energy demand simulator.
 
-## Overview
+## Overview - PYCREST (Centre for Renewable Energy Systems Technology) Demand Model
 
-The CREST Demand Model is a sophisticated simulation tool for modeling residential energy demand, originally developed by Loughborough University in Excel/VBA. This is a like-for-like Python port that maintains statistical equivalence with the original model.
+A python port of a high-resolution (1-minute) stochastic integrated thermal-electrical domestic energy demand simulator originally developed in Excel VBA by researchers at Loughborough University (McKenna & Thomson,
+  2016).
 
-### Key Features
+What it models:
 
-- **High resolution**: 1-minute timestep thermal and electrical simulation
-- **Stochastic modeling**: Markov chain-based occupancy and activity patterns
-- **Integrated thermal-electrical**: Coupled building thermal model with appliances, lighting, and heating
-- **Comprehensive systems**: Includes heating, hot water, appliances, lighting, PV, solar thermal, and cooling
-- **UK-calibrated**: Based on UK Time Use Survey 2000 and building stock data
+  - Occupancy: 4-state Markov chain (at home/away × active/dormant)
+  - Electrical demand: 31 appliance types, up to 60 light bulbs
+  - Thermal demand: Building physics (5-node RC thermal network), gas boilers, hot water (4 fixtures)
+  - Renewables: PV systems, solar thermal collectors
+  - Cooling: Fans, air coolers, AC units
+  - Climate: Stochastic weather (temperature, solar irradiance) with seasonal variability
 
-### Model Components
+Purpose:
 
-**Core Stochastic Models:**
-- Occupancy (4-state Markov chain)
-- Global climate (irradiance, temperature)
-- Local climate (dwelling-specific)
+  - Low-voltage network analysis (simulating aggregations of dwellings)
+  - Urban energy systems modeling
+  - Bottom-up activity-based approach captures appropriate demand diversity
+  - Stochastic methods produce realistic statistical properties
 
-**Thermal Systems:**
-- Building (5-node thermal capacitance network)
-- Hot water (cylinder thermal model + 4 fixtures)
-- Heating system (gas boilers, electric heating)
-- Heating controls (hysteresis thermostats + timers)
+---
 
-**Electrical Demand:**
-- Appliances (31 appliance types)
-- Lighting (irradiance-based, 60 bulbs)
+### Conversion Goal
 
-**Renewable Systems:**
-- PV systems
-- Solar thermal collectors
-- Cooling systems
+Convert the VBA Excel model to Python like-for-like - exact functionality match so outputs are identical (same inputs, same random seeds → same results, accounting for floating point differences).
+
+
+### Data Files
+
+37 CSV files extracted from Excel sheets in original/excel_data/:
+  - 12 occupancy TPMs (6 resident counts × weekday/weekend)
+  - 25 config/spec files (appliances, buildings, heating systems, PV, etc.)
 
 ## Installation
 
@@ -45,173 +45,6 @@ pip install -r requirements.txt
 # Verify installation
 python crest_simulate.py --help
 ```
-
-### Requirements
-
-- Python 3.9+
-- NumPy >= 1.24.0
-- Pandas >= 2.0.0
-- SciPy >= 1.10.0
-
-## Usage
-
-### Basic Simulation
-
-Simulate a single dwelling with default parameters:
-
-```bash
-python crest_simulate.py
-```
-
-### Multiple Dwellings
-
-Simulate 10 dwellings for statistical analysis:
-
-```bash
-python crest_simulate.py --num-dwellings 10 --residents 3
-```
-
-### Weekend Simulation
-
-Simulate a weekend day:
-
-```bash
-python crest_simulate.py --weekend --day 15 --month 6
-```
-
-### Reproducible Results
-
-Use a seed for reproducible results:
-
-```bash
-python crest_simulate.py --seed 42 --num-dwellings 5
-```
-
-### Command-Line Options
-
-```
---num-dwellings N    Number of dwellings to simulate (default: 1)
---residents N        Number of residents per dwelling (1-6, default: 2)
---weekend            Simulate weekend day (default: weekday)
---day N              Day of month (default: 15)
---month N            Month of year (default: 6)
---seed N             Random seed for reproducibility
---data-dir PATH      Path to data directory (default: ./data)
-```
-
-## Project Structure
-
-```
-crest/
-├── crest/                          # Main package
-│   ├── core/                       # Model classes
-│   │   ├── occupancy.py           # 4-state occupancy model
-│   │   ├── climate.py             # Global/local climate
-│   │   ├── building.py            # Thermal building model
-│   │   ├── water.py               # Hot water demand
-│   │   ├── heating.py             # Heating system
-│   │   ├── controls.py            # Thermostats & timers
-│   │   ├── appliances.py          # Appliances model
-│   │   ├── lighting.py            # Lighting model
-│   │   └── renewables.py          # PV, solar thermal, cooling
-│   ├── data/
-│   │   └── loader.py              # CSV data loader
-│   ├── simulation/
-│   │   ├── config.py              # Constants & parameters
-│   │   └── dwelling.py            # Dwelling orchestrator
-│   └── utils/
-│       ├── random.py              # RNG utilities
-│       └── markov.py              # Markov chain helpers
-├── data/                           # CSV data files (37 files)
-├── crest_simulate.py               # CLI entry point
-├── requirements.txt
-└── README.md
-```
-
-## Model Architecture
-
-The simulation follows this execution order:
-
-1. **Global Climate** generates shared irradiance and temperature
-2. **Occupancy** creates activity patterns (10-minute resolution)
-3. **Hot Water** generates stochastic fixture events
-4. **Appliances** generates electrical demand based on activities
-5. **Lighting** generates demand based on irradiance and occupancy
-6. **Renewable Systems** calculate PV and solar thermal output
-7. **Building Thermal Loop** (minute-by-minute):
-   - Heating controls calculate thermostat/timer states
-   - Heating system allocates heat to space/water
-   - Cooling system provides cooling if needed
-   - Building thermal model updates temperatures (Euler's method)
-
-## Data Files
-
-The model requires 37 CSV data files in the `data/` directory:
-
-**Occupancy & Activity:**
-- `tpm1_wd.csv` through `tpm6_we.csv` (12 occupancy TPMs)
-- `Starting_states.csv`
-- `24hr_occupancy.csv`
-- `ActivityStats.csv`
-
-**Buildings & Systems:**
-- `Buildings.csv`
-- `PrimaryHeatingSystems.csv`
-- `CoolingSystems.csv`
-- `HeatingControls.csv`
-- `HeatingControlsTPM.csv`
-
-**Climate:**
-- `GlobalClimate.csv`
-- `Irradiance.csv`
-- `ClearnessIndexTPM.csv`
-- `ClimateDataandCoolingTech.csv`
-
-**Appliances & Fixtures:**
-- `AppliancesAndWaterFixtures.csv`
-- `WaterUsage.csv`
-- `light_config.csv`
-- `bulbs.csv`
-
-**Renewables:**
-- `PV_systems.csv`
-- `SolarThermalSystems.csv`
-
-**Configuration:**
-- `Dwellings.csv`
-
-## Technical Notes
-
-### Thermal Model
-
-The building thermal model uses a 5-node RC network:
-- External building node
-- Internal air node
-- Heating emitters
-- Cooling emitters
-- Hot water cylinder
-
-Solved using explicit Euler method with 60-second timesteps.
-
-### Stochastic Processes
-
-Random number generation uses NumPy's modern `Generator` interface for proper seeding and reproducibility. All Markov chains use transition probability matrices from empirical UK data.
-
-### Validation
-
-The Python port produces statistically equivalent results to the original Excel/VBA model:
-- Same stochastic processes and distributions
-- Same thermal model equations (Euler solver)
-- Same activity profiles and switching logic
-- Differences due to RNG implementation are expected
-
-## Performance
-
-- Single dwelling simulation: ~2-5 seconds
-- 100 dwellings: ~3-5 minutes
-- Memory usage: ~100-500 MB depending on number of dwellings
-
-Performance optimizations (JIT compilation with Numba, vectorization) can be added if needed.
 
 ## Citation
 

@@ -59,15 +59,25 @@ class HeatingSystem:
 
         heating_params = heating_systems.iloc[config.heating_system_index]
 
-        # System parameters
-        self.heating_type = heating_params.get('HeatingType', 'Boiler')
-        self.heating_system_type = int(heating_params.get('HeatingSystemType', 1))
-        self.fuel_type = heating_params.get('FuelType', 'Gas')
-        self.fuel_flow_rate = heating_params.get('FuelFlowRate', 0.5)  # m³/min for gas, kW for electric
-        self.phi_h_max = heating_params.get('Phi_h', 12000.0)  # W, max heat output
-        self.p_standby = heating_params.get('P_standby', 5.0)  # W, standby power
-        self.p_pump = heating_params.get('P_pump', 60.0)  # W, pump power
-        self.eta_h = heating_params.get('Eta_h', BOILER_THERMAL_EFFICIENCY)  # Thermal efficiency
+        # System parameters (strict mode - crash if columns missing)
+        # Column names are symbols from CSV row 2 (after skiprows processing)
+        try:
+            self.heating_system_type = int(heating_params['1 = regular, 2 = combi'])  # Column with system type
+            self.fuel_flow_rate = heating_params['mfuel']  # m³/h or kW
+            self.phi_h_max = heating_params['φh']  # W, max heat output
+            self.p_standby = heating_params['Pstandby']  # W, standby power
+            self.p_pump = heating_params['Ppump']  # W, pump power
+            self.eta_h = heating_params['ηh']  # Thermal efficiency (0-1 fraction)
+        except KeyError as e:
+            raise KeyError(
+                f"Missing required column in PrimaryHeatingSystems.csv for index {config.heating_system_index}: {e}. "
+                f"Available columns: {list(heating_params.index)}"
+            )
+
+        # Set derived properties (not in CSV but useful)
+        # Note: heating_type and fuel_type are not in the symbol row, only in description row
+        self.heating_type = 'Boiler'  # Default, could be read from description row if needed
+        self.fuel_type = 'Gas'  # Default, could be read from description row if needed
 
         # Storage arrays (1440 timesteps)
         self.phi_h_output = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Total heat output (W)

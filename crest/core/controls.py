@@ -67,21 +67,39 @@ class HeatingControls:
         self.data_loader = data_loader
         self.rng = rng if rng is not None else RandomGenerator()
 
-        # Load heating system type (determines hot water control logic)
+        # Load heating system type (determines hot water control logic - strict mode)
         heating_systems = data_loader.load_primary_heating_systems()
         if config.heating_system_index < len(heating_systems):
             heating_params = heating_systems.iloc[config.heating_system_index]
-            self.heating_system_type = int(heating_params.get('HeatingSystemType', 1))
+            try:
+                # Column name from CSV row 2 symbols
+                self.heating_system_type = int(heating_params['1 = regular, 2 = combi'])
+            except KeyError as e:
+                raise KeyError(
+                    f"Missing required column '1 = regular, 2 = combi' in PrimaryHeatingSystems.csv "
+                    f"for index {config.heating_system_index}. Available columns: {list(heating_params.index)}"
+                )
         else:
             self.heating_system_type = 1  # Default to regular boiler
 
-        # Load cooling system type
-        cooling_systems = data_loader.load_cooling_systems()
-        if config.cooling_system_index < len(cooling_systems):
-            cooling_params = cooling_systems.iloc[config.cooling_system_index]
-            self.cooling_system_type = int(cooling_params.get('CoolingSystemType', 0))
+        # Load cooling system type (strict mode)
+        # Negative index means no cooling system
+        if config.cooling_system_index >= 0:
+            cooling_systems = data_loader.load_cooling_systems()
+            if config.cooling_system_index < len(cooling_systems):
+                cooling_params = cooling_systems.iloc[config.cooling_system_index]
+                try:
+                    # Column name from CSV - cooling systems use 'Type of system'
+                    self.cooling_system_type = int(cooling_params['Type of system'])
+                except KeyError as e:
+                    raise KeyError(
+                        f"Missing required column in CoolingSystems.csv "
+                        f"for index {config.cooling_system_index}. Available columns: {list(cooling_params.index)}"
+                    )
+            else:
+                self.cooling_system_type = 0  # No cooling
         else:
-            self.cooling_system_type = 0  # No cooling
+            self.cooling_system_type = 0  # No cooling (negative index)
 
         # Thermostat setpoints (will be assigned stochastically)
         self._assign_thermostat_setpoints()

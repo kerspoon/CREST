@@ -84,16 +84,22 @@ class HotWater:
         self.is_weekend = is_weekend
         self.rng = rng if rng is not None else RandomGenerator()
 
-        # Load heating system parameters for cylinder
+        # Load heating system parameters for cylinder (strict mode)
         heating_systems = data_loader.load_primary_heating_systems()
         if config.heating_system_index >= len(heating_systems):
-            # Use default values
+            # Use default values for out-of-range index
             self.h_loss = 2.0
             v_cyl = 150.0
         else:
             heating_params = heating_systems.iloc[config.heating_system_index]
-            self.h_loss = heating_params.get('H_loss', 2.0)
-            v_cyl = heating_params.get('V_cyl', 150.0)
+            try:
+                self.h_loss = heating_params['H_loss']
+                v_cyl = heating_params['V_cyl']
+            except KeyError as e:
+                raise KeyError(
+                    f"Missing required column in PrimaryHeatingSystems.csv for index {config.heating_system_index}: {e}. "
+                    f"Available columns: {list(heating_params.index)}"
+                )
 
         # Cylinder thermal capacitance (J/K)
         self.c_cyl = SPECIFIC_HEAT_CAPACITY_WATER * v_cyl
@@ -118,6 +124,61 @@ class HotWater:
         # Reference to occupancy model (set externally)
         self.occupancy = None
 
+    def _convert_profile_name(self, profile_raw: str, strict: bool = True) -> str:
+        """
+        Convert profile name from CSV format to activity statistics format.
+
+        CSV format: ACT_WASHDRESS, ACT_COOKING
+        Activity stats format: Act_WashDress, Act_Cooking
+
+        Parameters
+        ----------
+        profile_raw : str
+            Profile name from CSV (e.g., "ACT_WASHDRESS")
+        strict : bool, optional
+            If True, raises KeyError for unknown profiles (default: True)
+
+        Returns
+        -------
+        str
+            Profile name in activity stats format (e.g., "Act_WashDress")
+
+        Raises
+        ------
+        KeyError
+            If strict=True and profile_raw not in conversion map
+        """
+        # Use lookup table for known conversions
+        # These match the activity profile IDs in ActivityStats.csv
+        conversion_map = {
+            'ACT_WASHDRESS': 'Act_WashDress',
+            'ACT_COOKING': 'Act_Cooking',
+            'ACT_HOUSECLEAN': 'Act_HouseClean',
+            'ACT_IRON': 'Act_Iron',
+            'ACT_LAUNDRY': 'Act_Laundry',
+            'ACT_TV': 'Act_TV',
+            'ACT_SHOWER': 'Act_WashDress',  # Shower uses WashDress activity
+            'ACT_BATH': 'Act_WashDress',  # Bath uses WashDress activity
+        }
+
+        # Check if we have a direct mapping
+        if profile_raw in conversion_map:
+            return conversion_map[profile_raw]
+
+        # Strict mode: crash on unknown profile
+        if strict:
+            raise KeyError(
+                f"Unknown water fixture profile '{profile_raw}'. "
+                f"Known profiles: {list(conversion_map.keys())}"
+            )
+
+        # Non-strict fallback (not recommended)
+        if profile_raw.startswith('ACT_'):
+            rest = profile_raw[4:]
+            return f"Act_{rest.capitalize()}"
+
+        return profile_raw
+
     def _load_fixture_specs(self):
         """
         Load fixture specifications from CSV (VBA lines 167-220).
@@ -126,10 +187,11 @@ class HotWater:
         """
         fixtures_data = self.data_loader.load_appliances_and_fixtures()
 
-        # Water fixtures are rows 46-49 in Excel (1-based)
-        # After skiprows=3, these are DataFrame indices 41-44 (0-based)
-        # VBA: intRowOffset = 45, accesses rows 46-49 (intFixture=1 to 4)
-        # Actual mapping: Excel row 46 → DataFrame row 41
+        # Water fixtures are rows 46-49 in Excel (1-based, displayed in spreadsheet)
+        # These correspond to CSV lines 45-48 (0-based file lines)
+        # After skiprows=3 (skip lines 0,1,2, use line 3 as header), CSV line 45 → DataFrame row 41
+        # VBA: intRowOffset = 45, accesses Excel rows 46-49 (intFixture=1 to 4)
+        # Actual mapping: Excel row 46 = CSV line 45 = DataFrame row 41
         row_offset = 41
 
         self.fixtures = []
@@ -153,11 +215,15 @@ class HotWater:
             # Row 46 (Basin): columns show Basin, profile, etc.
 
             # Use iloc with known column positions from AppliancesAndWaterFixtures.csv
+            # Get use_profile and convert from CSV format (ACT_WASHDRESS) to activity stats format (Act_WashDress)
+            use_profile_raw = str(fixture_row.iloc[6]) if len(fixture_row) > 6 else "Active"
+            use_profile = self._convert_profile_name(use_profile_raw)
+
             fixture_spec = WaterFixtureSpec(
                 name=str(fixture_row.iloc[4]) if len(fixture_row) > 4 else f"Fixture{fixture_idx}",
                 prob_switch_on=float(fixture_row.iloc[29]) if len(fixture_row) > 29 else 0.01,
                 mean_flow=float(fixture_row.iloc[15]) if len(fixture_row) > 15 else 6.0,
-                use_profile=str(fixture_row.iloc[6]) if len(fixture_row) > 6 else "Active",
+                use_profile=use_profile,
                 restart_delay=float(fixture_row.iloc[18]) if len(fixture_row) > 18 else 0.0,
                 volume_column=3 if fixture_idx < 2 else (4 if fixture_idx == 2 else 5)  # VBA lines 347-357
             )
@@ -269,12 +335,16 @@ class HotWater:
         weekend_flag = "1" if self.is_weekend else "0"
         key = f"{weekend_flag}_{active_occupants}_{fixture.use_profile}"
 
-        # Get activity probability for this time period
-        if key in self.activity_statistics:
-            activity_prob = self.activity_statistics[key][ten_min_idx]
-        else:
-            # Default low probability if profile not found
-            activity_prob = 0.001
+        # Get activity probability for this time period (strict mode - crash if not found)
+        if key not in self.activity_statistics:
+            raise KeyError(
+                f"Activity statistics key '{key}' not found. "
+                f"Fixture: {fixture.name}, profile: {fixture.use_profile}, "
+                f"weekend: {self.is_weekend}, active_occupants: {active_occupants}. "
+                f"Available keys sample: {list(self.activity_statistics.keys())[:10]}"
+            )
+
+        activity_prob = self.activity_statistics[key][ten_min_idx]
 
         # Check if fixture starts
         combined_prob = activity_prob * fixture.prob_switch_on
