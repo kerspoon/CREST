@@ -115,9 +115,22 @@ class CRESTDataLoader:
         return df
 
     def load_starting_states(self) -> pd.DataFrame:
-        """Load initial occupancy state probabilities."""
-        # Skip 4 header rows, use row 5 as column headers
-        return self._load_csv("Starting_states.csv", skiprows=4, header=0)
+        """
+        Load initial occupancy state probabilities.
+
+        CSV structure:
+        - Rows 1-4: Headers and description
+        - Row 5 (0-indexed 4): Column headers ("Number of residents in the house", "1.0", "2.0", ...)
+        - Row 6 (0-indexed 5): "Combined state" label row (should be skipped)
+        - Row 7+ (0-indexed 6+): Data rows (state "00", "01", etc.)
+
+        VBA Reference: clsOccupancy.cls lines 215-230
+        VBA reads from row 7+ (1-based), which is row 6+ (0-based)
+        """
+        # Skip rows 0-3 (headers) and row 5 ("Combined state" label)
+        # Use row 4 as column headers
+        rows_to_skip = [0, 1, 2, 3, 5]
+        return self._load_csv("Starting_states.csv", skiprows=rows_to_skip, header=0)
 
     def load_24hr_occupancy(self) -> pd.DataFrame:
         """Load 24-hour occupancy correction factors."""

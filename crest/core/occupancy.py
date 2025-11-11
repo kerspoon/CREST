@@ -146,9 +146,13 @@ class Occupancy:
         # Column index for this number of residents (1-indexed in CSV)
         col_idx = self.config.num_residents  # Assuming 0-based, column 1 is for 1 resident
 
-        # Row offset for weekend vs weekday (rows 7-54 weekday, 61-108 weekend in VBA 1-based)
-        # In 0-based pandas: rows 6-53 weekday, 60-107 weekend
-        row_offset = 60 if self.config.is_weekend else 6
+        # Row offset for weekend vs weekday
+        # VBA: rows 7-54 weekday (1-based), 61-108 weekend (1-based)
+        # After removing "Combined state" row from DataFrame:
+        # Weekday data starts at row 0 (first data row "00")
+        # Weekend data starts 54 rows later (49 weekday states + 5 header rows in original CSV)
+        # But we've removed the "Combined state" row, so weekend is at row 53
+        row_offset = 53 if self.config.is_weekend else 0
 
         # Get probabilities for all states
         state_probs = []
