@@ -46,6 +46,51 @@ pip install -r requirements.txt
 python crest_simulate.py --help
 ```
 
+## Running the 100 Household Validation Test
+
+To validate the Python port against the Excel/VBA model, run a 100-dwelling simulation with matching configurations:
+
+### 1. Run Python simulation with Excel dwelling configurations
+
+```bash
+# Run 100 dwellings using the same configuration as Excel baseline
+venv/bin/python3 crest_simulate.py \
+  --num-dwellings 100 \
+  --day 1 \
+  --month 1 \
+  --country UK \
+  --city England \
+  --urban-rural Urban \
+  --config-file results/excel_100houses/dwellings_config.csv \
+  --save-detailed \
+  --output-dir output/python_100dwellings \
+  --seed 42
+```
+
+This loads dwelling parameters (residents, building type, heating system, PV, solar thermal, cooling) from the CSV file to match the Excel test exactly.
+
+### 2. Compare results
+
+```bash
+# Compare Python output against Excel baseline
+venv/bin/python3 scripts/compare_results.py \
+  output/python_100dwellings \
+  results/excel_100houses
+```
+
+The comparison script performs:
+- **Daily summary statistics**: Mean/std comparison for electricity, gas, hot water, temperature
+- **Distribution tests**: Kolmogorov-Smirnov test to verify statistical similarity
+- **Time-series analysis**: Correlation, RMSE, MAE for minute-level data
+
+### Expected Results
+
+For a valid port:
+- Daily mean differences < 5% for electricity, gas, hot water
+- K-S test p-value > 0.05 (distributions match)
+- Time-series correlation > 0.95 for individual dwellings
+- Temperature matching within 0.4°C
+
 # Type Checking
 
 This project uses [mypy](https://mypy-lang.org/) for static type checking to catch interface bugs before runtime. 

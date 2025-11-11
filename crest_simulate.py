@@ -299,10 +299,10 @@ def aggregate_results(dwellings: list) -> dict:
             aggregated['Phi_hSpace'][t - 1] += dwelling.heating_system.get_heat_to_space(t)
             aggregated['Phi_hWater'][t - 1] += dwelling.heating_system.get_heat_to_hot_water(t)
 
-            # VBA line 981: Solar thermal
+            # VBA line 981: Solar thermal (Phi_collector is same as Phi_s - both refer to phi_s array)
             if dwelling.solar_thermal:
-                aggregated['Phi_s'][t - 1] += dwelling.solar_thermal.Phi_s[t - 1]
-                aggregated['Phi_collector'][t - 1] += dwelling.solar_thermal.Phi_collector[t - 1]
+                aggregated['Phi_s'][t - 1] += dwelling.solar_thermal.phi_s[t - 1]
+                aggregated['Phi_collector'][t - 1] += dwelling.solar_thermal.phi_s[t - 1]
 
             # VBA lines 982-984: Temperatures and hot water volume
             aggregated['theta_i'][t - 1] += dwelling.building.get_internal_temperature(t)
@@ -318,10 +318,10 @@ def aggregate_results(dwellings: list) -> dict:
             # VBA line 989: Fuel flow
             aggregated['M_fuel'][t - 1] += dwelling.heating_system.m_fuel[t - 1]
 
-            # VBA lines 992-993: Cooling
+            # VBA lines 992-993: Cooling (control states are in heating_controls)
             if dwelling.cooling_system:
-                aggregated['cooling_timer'][t - 1] += int(dwelling.cooling_system.cooling_timer[t - 1])
-                aggregated['cooling_on'][t - 1] += int(dwelling.cooling_system.cooling_thermostat[t - 1])
+                aggregated['cooling_timer'][t - 1] += int(dwelling.heating_controls.space_cooling_timer[t - 1])
+                aggregated['cooling_on'][t - 1] += int(dwelling.heating_controls.space_cooling_thermostat[t - 1])
 
     # VBA lines 998-1019: Normalize and convert units
     for t in range(1440):
@@ -357,6 +357,130 @@ def aggregate_results(dwellings: list) -> dict:
         # V_dhw and M_fuel kept as totals (VBA lines 1007, 1013)
 
     return aggregated
+
+
+def save_dwelling_configs_to_csv(configs: list, output_file: Path):
+    """
+    Save dwelling configurations to CSV file in Excel 'Dwellings' sheet format.
+
+    Parameters
+    ----------
+    configs : list[DwellingConfig]
+        List of dwelling configurations to save
+    output_file : Path
+        Path to output CSV file
+    """
+    # Create header rows matching Excel format
+    rows = []
+
+    # Row 1: Header description
+    rows.append(['Dwelling parameters', '', '', '', '', '', '', '', 'Appliance and water fixtures owned'])
+
+    # Row 2: Column names
+    rows.append(['Dwelling index', 'Number of residents', 'Building index',
+                 'Primary heating system index', 'PV system index',
+                 'Solar thermal collector index', 'Cooling system index', '', 'Chest freezer'])
+
+    # Row 3-4: Empty rows
+    rows.append(['', '', '', '', '', '', '', '', ''])
+    rows.append(['', '', '', '', '', '', '', '', ''])
+
+    # Data rows
+    for config in configs:
+        rows.append([
+            config.dwelling_index + 1,  # Convert back to 1-based
+            config.num_residents,
+            config.building_index,
+            config.heating_system_index,
+            config.pv_system_index,
+            config.solar_thermal_index,
+            config.cooling_system_index,
+            '',
+            ''  # Appliance data not included in simplified format
+        ])
+
+    # Write to CSV
+    df = pd.DataFrame(rows)
+    df.to_csv(output_file, index=False, header=False)
+    print(f"  Saved dwelling configurations to: {output_file}")
+
+
+def load_dwelling_configs_from_csv(config_file: Path, country: Country, urban_rural: UrbanRural, is_weekend: bool) -> list:
+    """
+    Load dwelling configurations from CSV file.
+
+    CSV format matches Excel 'Dwellings' sheet:
+    - Row 1: Header description
+    - Row 2: Column names (Dwelling index, Number of residents, Building index, etc.)
+    - Row 3-4: Empty rows
+    - Row 5+: Dwelling data
+
+    Columns used (0-based indexing):
+    - Column 0: Dwelling index (1-based in CSV)
+    - Column 1: Number of residents (1-6)
+    - Column 2: Building index (1-based)
+    - Column 3: Primary heating system index (1-based)
+    - Column 4: PV system index (0=none, 1+=system type)
+    - Column 5: Solar thermal collector index (0=none, 1+=system type)
+    - Column 6: Cooling system index (0=none, 1+=system type)
+
+    Parameters
+    ----------
+    config_file : Path
+        Path to CSV file with dwelling configurations
+    country : Country
+        Country enum (UK or India)
+    urban_rural : UrbanRural
+        Urban/Rural enum
+    is_weekend : bool
+        Weekend flag
+
+    Returns
+    -------
+    list[DwellingConfig]
+        List of dwelling configurations
+    """
+    df = pd.read_csv(config_file)
+
+    # Find the data start row (skip header rows)
+    # Look for first row with valid dwelling index (numeric)
+    data_start_row = 0
+    for i, row in df.iterrows():
+        if pd.notna(row.iloc[0]) and str(row.iloc[0]).isdigit():
+            data_start_row = i
+            break
+
+    configs = []
+    for i in range(data_start_row, len(df)):
+        row = df.iloc[i]
+
+        # Column indices (0-based): dwelling_index=0, residents=1, building=2, heating=3, pv=4, solar=5, cooling=6
+        if pd.isna(row.iloc[0]):  # No more valid data
+            break
+
+        dwelling_index = int(row.iloc[0]) - 1  # Convert to 0-based
+        num_residents = int(row.iloc[1])
+        building_index = int(row.iloc[2])
+        heating_system_index = int(row.iloc[3])
+        pv_system_index = int(row.iloc[4]) if pd.notna(row.iloc[4]) else 0
+        solar_thermal_index = int(row.iloc[5]) if pd.notna(row.iloc[5]) else 0
+        cooling_system_index = int(row.iloc[6]) if pd.notna(row.iloc[6]) else 0
+
+        config = DwellingConfig(
+            dwelling_index=dwelling_index,
+            num_residents=num_residents,
+            building_index=building_index,
+            heating_system_index=heating_system_index,
+            pv_system_index=pv_system_index,
+            solar_thermal_index=solar_thermal_index,
+            cooling_system_index=cooling_system_index,
+            country=country,
+            urban_rural=urban_rural,
+            is_weekend=is_weekend
+        )
+        configs.append(config)
+
+    return configs
 
 
 def main():
@@ -443,6 +567,19 @@ def main():
         default=2006,
         help="Year for India database interpolation (2006-2031, default: 2006). UK ignores this parameter."
     )
+    parser.add_argument(
+        "--config-file",
+        type=Path,
+        default=None,
+        help="CSV file with dwelling configurations (default: None, use stochastic assignment). "
+             "Format: same as Excel 'Dwellings' sheet with columns for dwelling index, residents, "
+             "building, heating, PV, solar thermal, and cooling system indices."
+    )
+    parser.add_argument(
+        "--save-dwelling-config",
+        action="store_true",
+        help="Save stochastically generated dwelling configurations to CSV in output directory"
+    )
 
     args = parser.parse_args()
 
@@ -510,50 +647,79 @@ def main():
     results = []
     dwellings = []  # Store dwelling objects for output
 
-    # Create RNG for stochastic parameter assignment
-    # Use the global RNG if seed was set, otherwise create a new one
-    param_rng = rng_module.get_rng()
+    # Load dwelling configurations from file or generate stochastically
+    dwelling_configs = []
+    if args.config_file:
+        # Load configurations from CSV file
+        if not args.config_file.exists():
+            print(f"ERROR: Config file not found: {args.config_file}")
+            sys.exit(1)
 
-    for dwelling_idx in range(args.num_dwellings):
+        print(f"Loading dwelling configurations from: {args.config_file}")
+        dwelling_configs = load_dwelling_configs_from_csv(
+            args.config_file,
+            country,
+            urban_rural,
+            args.weekend
+        )
+        print(f"  Loaded {len(dwelling_configs)} dwelling configurations")
+
+        # Override num_dwellings if config file specifies different number
+        if args.num_dwellings != len(dwelling_configs):
+            print(f"  Note: --num-dwellings ({args.num_dwellings}) overridden by config file ({len(dwelling_configs)} dwellings)")
+            args.num_dwellings = len(dwelling_configs)
+    else:
+        # Generate dwelling configurations stochastically
+        # Create RNG for stochastic parameter assignment
+        param_rng = rng_module.get_rng()
+
+        for dwelling_idx in range(args.num_dwellings):
+            # VBA Reference: AssignDwellingParameters (lines 1130-1288)
+            # VBA line 296: If wsMain.Shapes("objAssignDwellingParameters").ControlFormat.Value = 1
+            if args.num_dwellings == 1 and args.residents is not None:
+                # Single dwelling with --residents specified: Use manual configuration
+                dwelling_config = DwellingConfig(
+                    dwelling_index=dwelling_idx,
+                    num_residents=args.residents,
+                    building_index=1,  # Use building index 1 (1-based indexing)
+                    heating_system_index=1,  # Use heating system index 1 (1-based indexing)
+                    country=country,
+                    urban_rural=urban_rural,
+                    cooling_system_index=0,
+                    pv_system_index=0,  # No PV by default
+                    solar_thermal_index=0,  # No solar thermal by default
+                    is_weekend=args.weekend
+                )
+            else:
+                # Multi-dwelling or no --residents specified: Use stochastic generation
+                # VBA line 298: AssignDwellingParameters intDwellingIndex
+                dwelling_config = assign_dwelling_parameters(
+                    data_loader=data_loader,
+                    dwelling_index=dwelling_idx,
+                    rng=param_rng
+                )
+                # Override country/urban_rural/weekend from CLI args
+                dwelling_config.country = country
+                dwelling_config.urban_rural = urban_rural
+                dwelling_config.is_weekend = args.weekend
+
+            dwelling_configs.append(dwelling_config)
+
+        # Save dwelling configs if requested
+        if args.save_dwelling_config and args.output_dir:
+            config_output_file = args.output_dir / "dwellings_config.csv"
+            save_dwelling_configs_to_csv(dwelling_configs, config_output_file)
+
+    # Simulate all dwellings
+    for dwelling_idx, dwelling_config in enumerate(dwelling_configs):
         print(f"\nSimulating dwelling {dwelling_idx + 1}/{args.num_dwellings}...")
 
-        # Stochastically assign dwelling parameters
-        # VBA Reference: AssignDwellingParameters (lines 1130-1288)
-        # VBA line 296: If wsMain.Shapes("objAssignDwellingParameters").ControlFormat.Value = 1
-        if args.num_dwellings == 1 and args.residents is not None:
-            # Single dwelling with --residents specified: Use manual configuration
-            # This allows users to test specific configurations
-            dwelling_config = DwellingConfig(
-                dwelling_index=dwelling_idx,
-                num_residents=args.residents,
-                building_index=1,  # Use building index 1 (1-based indexing)
-                heating_system_index=1,  # Use heating system index 1 (1-based indexing)
-                country=country,
-                urban_rural=urban_rural,
-                cooling_system_index=0,
-                pv_system_index=0,  # No PV by default
-                solar_thermal_index=0,  # No solar thermal by default
-                is_weekend=args.weekend
-            )
-        else:
-            # Multi-dwelling or no --residents specified: Use stochastic generation
-            # VBA line 298: AssignDwellingParameters intDwellingIndex
-            dwelling_config = assign_dwelling_parameters(
-                data_loader=data_loader,
-                dwelling_index=dwelling_idx,
-                rng=param_rng
-            )
-            # Override country/urban_rural/weekend from CLI args
-            dwelling_config.country = country
-            dwelling_config.urban_rural = urban_rural
-            dwelling_config.is_weekend = args.weekend
-
-            print(f"  Stochastic config: {dwelling_config.num_residents} residents, "
-                  f"building {dwelling_config.building_index}, "
-                  f"heating {dwelling_config.heating_system_index}, "
-                  f"PV {dwelling_config.pv_system_index}, "
-                  f"solar thermal {dwelling_config.solar_thermal_index}, "
-                  f"cooling {dwelling_config.cooling_system_index}")
+        print(f"  Config: {dwelling_config.num_residents} residents, "
+              f"building {dwelling_config.building_index}, "
+              f"heating {dwelling_config.heating_system_index}, "
+              f"PV {dwelling_config.pv_system_index}, "
+              f"solar thermal {dwelling_config.solar_thermal_index}, "
+              f"cooling {dwelling_config.cooling_system_index}")
 
         # Create and run dwelling simulation
         dwelling = Dwelling(
