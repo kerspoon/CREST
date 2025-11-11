@@ -533,16 +533,20 @@ class LocalClimate:
 
     def get_irradiance(self, minute: int) -> float:
         """Get global horizontal irradiance at specified minute (W/m²)."""
-        return self.global_climate.g_o[minute]
+        # Convert 1-based to 0-based index
+        return self.global_climate.g_o[minute - 1]
 
     def get_clearsky_irradiance(self, minute: int) -> float:
         """Get clear sky irradiance at specified minute (W/m²)."""
-        return self.global_climate.g_o_clearsky[minute]
+        # Convert 1-based to 0-based index
+        return self.global_climate.g_o_clearsky[minute - 1]
 
     def get_temperature(self, minute: int) -> float:
         """Get outdoor temperature at specified minute (°C)."""
-        return self.global_climate.theta_o[minute]
+        # Convert 1-based to 0-based index
+        return self.global_climate.theta_o[minute - 1]
 
     def get_clearness_index(self, minute: int) -> float:
         """Get clearness index at specified minute (0-1)."""
-        return self.global_climate.clearness_index[minute]
+        # Convert 1-based to 0-based index
+        return self.global_climate.clearness_index[minute - 1]

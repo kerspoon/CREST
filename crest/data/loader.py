@@ -285,8 +285,11 @@ class CRESTDataLoader:
 
     def load_bulbs(self) -> pd.DataFrame:
         """Load example bulb configurations for dwellings."""
-        # Skip 3 header rows, use row 4 as column headers
-        return self._load_csv("bulbs.csv", skiprows=3, header=0)
+        # Skip 10 header/description rows (rows 1-10 in 1-indexed counting)
+        # Row 10 has "Number,count,..." which are sub-labels, skip it too
+        # Data starts at row 11 (1-indexed) = row 10 (0-indexed)
+        # With skiprows=10, row 10 (file) becomes index 0 in DataFrame
+        return self._load_csv("bulbs.csv", skiprows=10, header=None)
 
     # ===============================================================================================
     # HOT WATER DATA

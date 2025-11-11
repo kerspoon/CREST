@@ -15,7 +15,9 @@ from ..core.heating import HeatingSystem, HeatingSystemConfig
 from ..core.controls import HeatingControls, HeatingControlsConfig
 from ..core.appliances import Appliances, AppliancesConfig
 from ..core.lighting import Lighting, LightingConfig
-from ..core.renewables import PVSystem, SolarThermal, CoolingSystem, PVConfig, SolarThermalConfig, CoolingConfig
+from ..core.pv import PVSystem
+from ..core.solar_thermal import SolarThermal
+from ..core.cooling import CoolingSystem
 from ..data.loader import CRESTDataLoader
 from ..utils.random import RandomGenerator
 from ..simulation.config import (
@@ -154,23 +156,46 @@ class Dwelling:
 
         # Create renewable systems
         if config.has_pv:
-            self.pv_system = PVSystem(PVConfig())
-            self.pv_system.set_local_climate(self.local_climate)
+            self.pv_system = PVSystem(data_loader, self.rng)
+            # Use run_number=1 for single dwelling simulation
+            # Default to PV system index 2 (10m² array, 10% efficiency)
+            self.pv_system.initialize(
+                dwelling_index=config.dwelling_index,
+                run_number=1,
+                climate=self.local_climate,
+                appliances=self.appliances,
+                lighting=self.lighting,
+                pv_system_index=2  # TODO: Get from DwellingConfig
+            )
         else:
             self.pv_system = None
 
         if config.has_solar_thermal:
-            self.solar_thermal = SolarThermal(SolarThermalConfig())
-            self.solar_thermal.set_local_climate(self.local_climate)
+            self.solar_thermal = SolarThermal(data_loader, self.rng)
+            # Use run_number=1 for single dwelling simulation
+            # Default to solar thermal system index 2 (evacuated tube collector)
+            self.solar_thermal.initialize(
+                dwelling_index=config.dwelling_index,
+                run_number=1,
+                climate=self.local_climate,
+                building=self.building,
+                solar_thermal_index=2  # TODO: Get from DwellingConfig
+            )
             self.building.set_solar_thermal(self.solar_thermal)
         else:
             self.solar_thermal = None
 
         # Create cooling system
         if config.cooling_system_index > 0:
-            self.cooling_system = CoolingSystem(CoolingConfig())
-            self.cooling_system.set_heating_controls(self.heating_controls)
-            self.cooling_system.set_building(self.building)
+            self.cooling_system = CoolingSystem(data_loader, self.rng)
+            # Use run_number=1 for single dwelling simulation
+            self.cooling_system.initialize(
+                dwelling_index=config.dwelling_index,
+                run_number=1,
+                controls=self.heating_controls,
+                building=self.building,
+                cooling_system_index=config.cooling_system_index
+            )
             self.building.set_cooling_system(self.cooling_system)
         else:
             self.cooling_system = None
@@ -193,12 +218,13 @@ class Dwelling:
         # 4. Run lighting simulation (generates electrical demand)
         self.lighting.run_simulation()
 
-        # 5. Run renewable systems
+        # 5. Run PV system (runs once per day, pre-simulation)
         if self.pv_system:
-            self.pv_system.calculate_output()
+            self.pv_system.calculate_pv_output()
+            self.pv_system.calculate_net_demand()
+            self.pv_system.calculate_self_consumption()
 
-        if self.solar_thermal:
-            self.solar_thermal.calculate_output()
+        # Note: Solar thermal runs in thermal loop (timestep-by-timestep), not here
 
         # 6. Initialize building temperatures
         initial_outdoor_temp = self.local_climate.get_temperature(0)
@@ -217,12 +243,16 @@ class Dwelling:
             # Update heating controls
             self.heating_controls.calculate_control_states(timestep)
 
+            # Calculate solar thermal output (runs in thermal loop)
+            if self.solar_thermal:
+                self.solar_thermal.calculate_solar_thermal_output(timestep)
+
             # Calculate heating system output
             self.heating_system.calculate_heat_output(timestep)
 
             # Calculate cooling system output
             if self.cooling_system:
-                self.cooling_system.calculate_cooling(timestep)
+                self.cooling_system.calculate_cooling_output(timestep)
 
             # Calculate building thermal response
             self.building.calculate_temperature_change(timestep)
@@ -239,10 +269,14 @@ class Dwelling:
         total += self.heating_system.get_heating_system_power_demand(timestep)
 
         if self.cooling_system:
-            total += self.cooling_system.get_electricity_demand(timestep)
+            total += self.cooling_system.get_cooling_system_power_demand(timestep)
+
+        # Add solar thermal pump electricity
+        if self.solar_thermal:
+            total += self.solar_thermal.get_P_pumpsolar(timestep)
 
         # Subtract PV generation
         if self.pv_system:
-            total -= self.pv_system.get_power_output(timestep)
+            total -= self.pv_system.get_pv_output(timestep)
 
         return total

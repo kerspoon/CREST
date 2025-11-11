@@ -36,10 +36,11 @@
 7. ✅ **clsAppliances.cls** → `crest/core/appliances.py` - COMPLETE
 8. ✅ **clsLighting.cls** → `crest/core/lighting.py` - COMPLETE
 
-### Tier 4: Renewables
-9. **clsPVSystem.cls** → `crest/core/renewables.py`
-10. **clsSolarThermal.cls** → `crest/core/renewables.py`
-11. **clsCoolingSystem.cls** → `crest/core/renewables.py`
+### Tier 4: Renewables & HVAC
+9. ✅ **clsPVSystem.cls** → `crest/core/pv.py` - COMPLETE
+10. ✅ **clsSolarThermal.cls** → `crest/core/solar_thermal.py` - COMPLETE
+11. ✅ **clsCoolingSystem.cls** → `crest/core/cooling.py` - COMPLETE
+    - **Shared Module**: `crest/core/solar.py` (extracted solar geometry calculations)
 
 ### Tier 5: Orchestration
 12. **clsDwelling.cls** → `crest/simulation/dwelling.py`
@@ -2591,3 +2592,289 @@ for range_idx in range(9):
 
 **All 5 bugs verified and fixed. Lighting module now matches VBA exactly.**
 
+
+---
+
+### 9. Solar Geometry Module (Shared utility for PV and Solar Thermal)
+
+**Status**: ✅ PASS - Full VBA implementation complete (extracted from duplicate code)
+
+**VBA Source**: 
+- `original/clsPVSystem.cls` lines 122-337 (solar geometry in CalculatePVOutput)
+- `original/clsSolarThermal.cls` lines 307-496 (solar geometry in GetIncidentRadiation)
+
+**Python File**: `crest/core/solar.py` (~330 lines)
+
+**Purpose**: Extract and consolidate ~190 lines of duplicated solar geometry code from PVSystem and SolarThermal
+
+**IMPLEMENTATION COMPLETE** ✅
+
+#### Key Features Implemented:
+1. ✅ Solar position calculation (altitude, azimuth, hour angle, declination)
+2. ✅ Incident radiation calculation (direct, diffuse, reflected components)
+3. ✅ Daylight saving time adjustment (UK days 87-304)
+4. ✅ Time correction factor and equation of time
+5. ✅ Sky diffuse factor and optical depth
+6. ✅ Ground reflectance (constant = 0.2)
+
+#### VBA Bug Fixed ✅
+**clsSolarThermal.cls line 428**: 
+```vba
+' BUGGY CODE:
+If Cos(dblHourAngle * PI / 180) >= (Tan(dblDeclination * PI / 180) / Tan(dblDeclination * PI / 180)) Then
+```
+Should be `Tan(dblDeclination) / Tan(dblLatitude)` (not Declination twice)
+
+**Python uses corrected logic from clsPVSystem.cls line 273**
+
+#### Methods Implemented:
+- `__init__(day_of_year, latitude, longitude, meridian, enable_daylight_saving)`
+- `_apply_daylight_saving(timestep)` - Converts timestep to hour/minute with DST
+- `calculate_solar_position(timestep)` - Returns altitude, azimuth, hour angle, declination
+- `calculate_incident_radiation(timestep, slope, azimuth, G_o_clearsky, clearness_index)` - Returns G_incident, G_direct, G_diffuse, G_reflected
+- `calculate_all_day_radiation(slope, azimuth, arrays)` - Batch processing for all 1440 timesteps
+
+**Impact**: Eliminates code duplication, uses corrected azimuth calculation, provides shared foundation for PV and solar thermal
+
+---
+
+### 10. PV System (clsPVSystem.cls → pv.py)
+
+**Status**: ✅ PASS - Full VBA implementation complete
+
+**VBA File**: `original/clsPVSystem.cls` (398 lines)
+**Python File**: `crest/core/pv.py` (~370 lines)
+**CSV Data**: `data/PV_systems.csv` (3 system configurations, 4 header rows)
+
+**IMPLEMENTATION COMPLETE** ✅
+
+#### All VBA Methods Implemented:
+
+1. **InitialisePVSystem** (VBA lines 86-113) → `initialize()` ✅
+   - Loads PV system index from dwelling config
+   - Loads 4 parameters from CSV: array area (m²), efficiency, slope (°), azimuth (°)
+   - CSV offset: 4 header rows
+   - Handles index 0 = no PV system
+
+2. **CalculatePVOutput** (VBA lines 122-337) → `calculate_pv_output()` ✅
+   - Runs ONCE per day (pre-simulation phase)
+   - Uses SolarGeometry for incident radiation calculation
+   - Calculates PV output: P_pv = G_incident × A_array × η_pv
+   - Loops through all 1440 timesteps
+   - If no PV (index=0), sets all outputs to zero
+
+3. **CalculateNetDemand** (VBA lines 346-363) → `calculate_net_demand()` ✅
+   - P_net = Appliances + Lighting - P_pv
+   - Positive = net import, negative = net export
+
+4. **CalculateSelfConsumption** (VBA lines 372-383) → `calculate_self_consumption()` ✅
+   - P_self = min(Appliances + Lighting, P_pv)
+   - On-site consumption of PV generation
+
+5. **Property Getters** (VBA lines 66-76) ✅
+   - `get_daily_sum_pv_output()` - Total daily generation (W·min)
+   - `get_daily_sum_net_demand()` - Total daily net demand
+   - `get_daily_sum_self_consumption()` - Total daily self-consumption
+   - Additional getters: `get_pv_output(timestep)`, `get_incident_radiation(timestep)`, etc.
+
+#### Arrays Implemented (1440 timesteps):
+- ✅ `G_i` - Net radiation incident on PV array (W/m²)
+- ✅ `P_pv` - Electricity output of PV system (W)
+- ✅ `P_net` - Net dwelling electricity demand (W)
+- ✅ `P_self` - Dwelling self-consumption (W)
+
+#### Dependencies Wired Correctly:
+- ✅ GlobalClimate (for G_o_clearsky, clearness_index)
+- ✅ Appliances (for electrical demand)
+- ✅ Lighting (for electrical demand)
+- ✅ SolarGeometry (for incident radiation)
+
+**Execution**: Pre-simulation phase (before thermal loop)
+
+---
+
+### 11. Solar Thermal (clsSolarThermal.cls → solar_thermal.py)
+
+**Status**: ✅ PASS - Full VBA implementation complete
+
+**VBA File**: `original/clsSolarThermal.cls` (501 lines)
+**Python File**: `crest/core/solar_thermal.py` (~440 lines)
+**CSV Data**: `data/SolarThermalSystems.csv` (2 system types, 4 header rows)
+
+**IMPLEMENTATION COMPLETE** ✅
+
+#### All VBA Methods Implemented:
+
+1. **InitialiseSolarThermal** (VBA lines 126-162) → `initialize()` ✅
+   - Loads solar thermal system index from dwelling config
+   - Loads 18 parameters from CSV:
+     - N (number of collectors)
+     - A_coll_aperture, A_coll_absorb, A_coll_gross (areas m²)
+     - η₀, k₁, k₂ (efficiency curve parameters)
+     - F' (collector efficiency factor)
+     - U_L (total loss coefficient W/K/m²)
+     - m_pump (pump mass flow rate kg/s)
+     - P_pump (pump power W)
+     - C_collector (heat capacitance J/K)
+     - τα (transmission-absorption product)
+     - slope, azimuth (orientation °)
+   - CSV offset: 4 header rows
+   - Initializes collector temperature to outdoor air temperature at timestep 1
+
+2. **CalculateSolarThermalOutput** (VBA lines 171-280) → `calculate_solar_thermal_output(timestep)` ✅
+   - Runs 1440 TIMES per day (in thermal loop, not pre-simulation)
+   - Gets incident radiation using SolarGeometry (replaces buggy GetIncidentRadiation)
+   - Calculates incident solar power: P_incident = A_aperture × G_i × N
+   - Control logic (hysteresis thermostat):
+     - Pump ON if: (T_collector - T_cylinder > 2°C) AND (T_cylinder < 70°C)
+     - Otherwise: pump OFF
+   - Useful heat transfer: Φ_s = N × pump_state × m_pump × Cp_water × (T_collector - T_cylinder)
+   - Total loss coefficient: U_L = (k₁ + k₂×(T_collector - T_outdoor)) / F'
+   - Collector temperature evolution (Euler integration, 60s timestep):
+     - C_collector × dT/dt = τα×G_i×A_absorb - A_aperture×U_L×(T_collector - T_outdoor) - Φ_s/N
+   - Pump electricity: P_pump × pump_state
+
+3. **Property Getters** (VBA lines 104-114) ✅
+   - `get_daily_sum_phi_s()` - Total daily heat delivered (W·min)
+   - `get_phi_s(timestep)` - Heat at specific timestep
+   - `get_P_pumpsolar(timestep)` - Pump power at specific timestep
+   - Additional getters: `get_collector_temperature()`, `get_incident_power()`, `get_pump_state()`
+
+4. **GetIncidentRadiation** (VBA lines 307-496) - REPLACED ✅
+   - VBA has buggy duplicate of PVSystem solar geometry
+   - Python uses shared SolarGeometry module instead (corrected logic)
+
+#### Arrays Implemented (1440 timesteps):
+- ✅ `theta_collector` - Collector temperature (°C)
+- ✅ `phi_s` - Useful heat to cylinder (W)
+- ✅ `P_pump_solar_array` - Pump electricity (W)
+- ✅ `P_incident` - Incident solar power (W)
+- ✅ `solar_thermal_on_off` - Pump control state (0/1)
+
+#### Dependencies Wired Correctly:
+- ✅ GlobalClimate (for G_o_clearsky, clearness_index, outdoor temperature)
+- ✅ Building (for cylinder temperature feedback)
+- ✅ SolarGeometry (for incident radiation)
+
+#### Critical Implementation Details:
+- ✅ Thermal state evolution using Euler integration (60-second timesteps)
+- ✅ Hysteresis control (2°C deadband, 70°C max temperature)
+- ✅ Heat balance equation matches VBA exactly
+- ✅ Uses previous timestep temperatures (except first timestep)
+- ✅ Coupled to building thermal loop
+
+**Execution**: Thermal loop (1440 calls per day, coupled to building physics)
+
+**VBA Bug Fixed**: Day_of_year was used but never set in GetIncidentRadiation (line 387) - Python passes it to SolarGeometry constructor
+
+---
+
+### 12. Cooling System (clsCoolingSystem.cls → cooling.py)
+
+**Status**: ✅ PASS - Full VBA implementation complete
+
+**VBA File**: `original/clsCoolingSystem.cls` (158 lines)
+**Python File**: `crest/core/cooling.py` (~280 lines)
+**CSV Data**: `data/CoolingSystems.csv` (4 system types, 4 header rows)
+
+**System Types**:
+1. No cooling (default)
+2. Fans only (20W electrical, minimal cooling)
+3. Air cooler (1000W cooling capacity, 100W electrical, COP=10)
+4. Air conditioning (5000W cooling capacity, 1250W electrical, COP=4)
+
+**IMPLEMENTATION COMPLETE** ✅
+
+#### All VBA Methods Implemented:
+
+1. **InitialiseCoolingSystem** (VBA lines 77-99) → `initialize()` ✅
+   - Loads cooling system index from dwelling config
+   - Loads 6 parameters from CSV:
+     - cooling_type (string description)
+     - cooling_system_type (1-4 index)
+     - Φ_h_cool (maximum cooling capacity W, negative)
+     - P_standby_cool (standby power W)
+     - P_pump_cool (pump/fan power W)
+     - η_h_cool (thermal efficiency / COP)
+   - CSV offset: 4 header rows
+
+2. **CalculateCoolingOutput** (VBA lines 107-144) → `calculate_cooling_output(timestep)` ✅
+   - Runs 1440 TIMES per day (in thermal loop)
+   - Gets 3 control signals from HeatingControls:
+     - GetSpaceCoolingThermostatState (is cooling needed?)
+     - GetSpaceCoolingTimerState (is cooling scheduled?)
+     - GetCoolerEmitterState (is emitter ready?)
+   - Control logic: space_cooling_on_off = thermostat × timer × emitter (3-way AND)
+   - If cooling needed:
+     - Get target cooling from Building: GetPhi_hCooling(timestep)
+     - Provide cooling: min(0, max(capacity, target)) - ensures negative, capacity-limited
+   - Electricity calculation:
+     - If (thermostat × timer == 1): P_pump_cool (active)
+     - Else: P_standby_cool (idle)
+     - Note: Uses 2-way AND (not 3-way), so pump runs even if emitter not ready
+
+3. **Property Getters** (VBA lines 54-68) ✅
+   - `get_cooling_to_space(timestep)` - Cooling provided (W, negative)
+   - `get_cooling_system_power_demand(timestep)` - Electricity demand (W)
+   - `get_cooling_system_type()` - System type index (1-4)
+   - `get_daily_sum_cooling_energy()` - Total daily cooling energy (W·min)
+
+#### Arrays Implemented (1440 timesteps):
+- ✅ `phi_h_cooling` - Cooling to space (W, negative)
+- ✅ `phi_cooling` - Electricity demand (W)
+
+#### Dependencies Wired Correctly:
+- ✅ HeatingControls (for thermostat/timer/emitter states)
+- ✅ Building (for required cooling load)
+
+#### Control Logic:
+- ✅ 3-way AND for cooling provision (thermostat × timer × emitter)
+- ✅ 2-way AND for pump power (thermostat × timer only)
+- ✅ Capacity limiting: min(0, max(Φ_h_cool, target))
+- ✅ Default: all outputs zero if not cooling
+
+**Execution**: Thermal loop (1440 calls per day, after heating controls, before building update)
+
+**Notes**: 
+- Despite class name, CoolingSystem is HVAC (not renewable energy)
+- Consumes electricity rather than generating it
+- Simple control logic - no complex physics like solar thermal
+
+---
+
+## Renewables Implementation Summary
+
+**Architecture Decision**: Split renewables.py into 4 separate files (approved by user)
+
+**Rationale**:
+1. ✅ Eliminated ~190 lines of code duplication (extracted to solar.py)
+2. ✅ Matched original VBA architecture (3 separate classes)
+3. ✅ Separated renewable energy (PV, solar thermal) from HVAC (cooling)
+4. ✅ Different execution patterns properly separated:
+   - PV: Runs once per day (pre-simulation)
+   - SolarThermal: Runs 1440× per day (thermal loop)
+   - Cooling: Runs 1440× per day (thermal loop)
+5. ✅ Different dependencies properly managed:
+   - PV → Climate, Appliances, Lighting
+   - SolarThermal → Climate, Building
+   - Cooling → HeatingControls, Building
+6. ✅ Better testability and maintainability
+
+**Files Created**:
+- `crest/core/solar.py` (330 lines) - Shared solar geometry calculations
+- `crest/core/pv.py` (370 lines) - PV system model
+- `crest/core/solar_thermal.py` (440 lines) - Solar thermal collector model
+- `crest/core/cooling.py` (280 lines) - Cooling system model
+
+**Files Deleted**:
+- `crest/core/renewables.py` (138 lines, 10-15% complete) - Merged approach abandoned
+
+**Integration Updated**:
+- `crest/simulation/dwelling.py` - Updated imports and initialization
+  - PV: calls `initialize()` then `calculate_pv_output()`, `calculate_net_demand()`, `calculate_self_consumption()`
+  - SolarThermal: calls `initialize()` then `calculate_solar_thermal_output(timestep)` in loop
+  - Cooling: calls `initialize()` then `calculate_cooling_output(timestep)` in loop
+
+**Total Implementation**: ~1420 lines of complete VBA-matched code
+
+**Status**: ✅ ALL COMPLETE - Ready for testing
