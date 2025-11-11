@@ -382,6 +382,99 @@ class CRESTDataLoader:
         self.load_solar_thermal_systems()
         self.load_dwellings()
 
+    def load_resident_proportions(self) -> np.ndarray:
+        """
+        Load proportion of dwellings by number of residents (1-5).
+
+        VBA Reference: rPrNumberResidents range in ActivityStats worksheet
+        Returns array of 5 probabilities summing to 1.0
+        """
+        df = self.load_activity_stats()
+        # Pandas rows 8-12 contain resident proportions for 1-5 residents
+        # Column C (index 2) contains the proportions
+        proportions = []
+        for i in range(8, 13):  # Pandas rows 8-12 = residents 1-5
+            proportions.append(df.iloc[i, 2])
+        return np.array(proportions, dtype=float)
+
+    def load_building_proportions(self) -> np.ndarray:
+        """
+        Load proportion of dwellings by building type.
+
+        VBA Reference: rBuildingProportion range in Buildings worksheet (Column B)
+        Returns array of proportions (one per building type)
+        """
+        df = self.load_buildings()
+        # Skip header rows (4 rows), then column B (index 1) has proportions
+        return df.iloc[4:, 1].values.astype(float)
+
+    def load_heating_proportions(self) -> np.ndarray:
+        """
+        Load proportion of dwellings by heating system type.
+
+        VBA Reference: rPrimaryHeatingSystemProportion range in PrimaryHeatingSystems worksheet
+        Returns array of proportions (one per heating system type)
+        """
+        df = self.load_primary_heating_systems()
+        # Skip header rows (4 rows), then column B (index 1) has proportions
+        return df.iloc[4:, 1].values.astype(float)
+
+    def load_pv_proportions(self) -> np.ndarray:
+        """
+        Load proportion of dwellings by PV system type.
+
+        VBA Reference: rPVProportion range in PV_systems worksheet
+        Returns array of proportions (index 0 = no PV, index 1+ = PV system types)
+        """
+        df = self.load_pv_systems()
+        # Skip header rows (4 rows), then column B (index 1) has proportions
+        return df.iloc[4:, 1].values.astype(float)
+
+    def load_solar_thermal_proportions(self) -> np.ndarray:
+        """
+        Load proportion of dwellings by solar thermal system type.
+
+        VBA Reference: rSolarThermalProportion range in SolarThermalSystems worksheet
+        Returns array of proportions (index 0 = no solar thermal, index 1+ = system types)
+        """
+        df = self.load_solar_thermal_systems()
+        # Skip header rows (4 rows), then column B (index 1) has proportions
+        return df.iloc[4:, 1].values.astype(float)
+
+    def load_cooling_proportions(self) -> np.ndarray:
+        """
+        Load proportion of dwellings by cooling system type.
+
+        VBA Reference: rCoolingSystemProportion range in CoolingSystems worksheet
+        Returns array of proportions (index 0 = no cooling, index 1+ = system types)
+        """
+        df = self.load_cooling_systems()
+        # Skip header rows (4 rows), then column B (index 1) has proportions
+        return df.iloc[4:, 1].values.astype(float)
+
+    def get_heating_type(self, heating_index: int) -> int:
+        """
+        Get heating system type code for a given heating system index.
+
+        Used to check if heating system is a combi boiler (type 2), which
+        precludes solar thermal installation.
+
+        Parameters
+        ----------
+        heating_index : int
+            Heating system index (1-based)
+
+        Returns
+        -------
+        int
+            Heating system type code
+        """
+        df = self.load_primary_heating_systems()
+        # Skip header rows (4), then get the type from the appropriate row
+        # Column E (index 4) contains the system type
+        row_idx = 3 + heating_index  # 4 header rows, then 0-based indexing
+        return int(df.iloc[row_idx, 4])
+
 
 # Singleton instance for convenience
 _default_loader: Optional[CRESTDataLoader] = None

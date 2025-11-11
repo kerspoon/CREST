@@ -21,11 +21,15 @@ from crest.simulation.config import Country, City, UrbanRural
 from crest.output.writer import ResultsWriter, OutputConfig
 from crest.utils import random as rng_module
 import numpy as np
+import pandas as pd
 
 
 def load_activity_statistics(data_loader: CRESTDataLoader) -> dict:
     """
     Load activity statistics into a dictionary.
+
+    VBA Reference: LoadActivityStatistics (mdlThermalElectricalModel.bas lines 761-801)
+    Reads 72 activity profiles from ActivityStats.csv rows 30-101.
 
     Parameters
     ----------
@@ -35,20 +39,53 @@ def load_activity_statistics(data_loader: CRESTDataLoader) -> dict:
     Returns
     -------
     dict
-        Activity statistics indexed by key (weekend_activeoccupants_profile)
+        Activity statistics indexed by key "{weekend}_{active_occupants}_{profile_id}"
+        Each value is a numpy array of 144 ten-minute modifier values.
     """
     activity_stats = {}
     activity_df = data_loader.load_activity_stats()
 
-    # Parse activity statistics (simplified)
-    # In production, would parse all activity profiles from CSV
-    # For now, create placeholder structure
-    for weekend in [0, 1]:
-        for occupants in range(7):  # 0-6 active occupants
-            for profile in ['Active', 'Washing', 'Cooking', 'Ironing', 'HouseCleaning']:
-                key = f"{weekend}_{occupants}_{profile}"
-                # Default to low activity probability
-                activity_stats[key] = np.full(144, 0.01)
+    # VBA: For i = 30 To 101 (rows 30-101 in Excel contain the 72 activity profiles)
+    # Python: Due to CSV headers, these are at pandas rows 25-96 (0-indexed)
+    # Only process rows with valid activity profile IDs (starting with "Act_")
+    for row_idx in range(len(activity_df)):
+        row = activity_df.iloc[row_idx]
+
+        # Check if this row has valid activity data
+        weekend = row.iloc[1]
+        occupants = row.iloc[2]
+        profile_id = row.iloc[3]
+
+        # Skip rows without valid activity profile data
+        if pd.isna(weekend) or pd.isna(occupants) or pd.isna(profile_id):
+            continue
+        if not isinstance(profile_id, str) or not profile_id.startswith('Act_'):
+            continue
+
+        # VBA: objActivityStatsItem.IsWeekend = IIf(wsActivityStats.Range("B" + CStr(i)).Value = 1, True, False)
+        # Column B (index 1) = Weekend flag (0 or 1)
+        is_weekend = int(weekend)
+
+        # VBA: objActivityStatsItem.ActiveOccupantCount = wsActivityStats.Range("C" + CStr(i)).Value
+        # Column C (index 2) = Active occupant count (0-6)
+        active_occupants = int(occupants)
+
+        # VBA: objActivityStatsItem.ID = wsActivityStats.Range("D" + CStr(i)).Value
+        # Column D (index 3) = Activity ID (e.g., "Act_TV", "Act_Cooking")
+        profile_id = str(profile_id)
+
+        # VBA: For j = 0 To 143
+        #      objActivityStatsItem.Modifiers(j) = wsActivityStats.Range(strCell).Value
+        # Columns E onwards (indices 4-147) = 144 ten-minute modifiers
+        modifiers = row.iloc[4:148].values.astype(float)
+
+        # VBA: strKey = IIf(objActivityStatsItem.IsWeekend, "1", "0") + "_" +
+        #              CStr(objActivityStatsItem.ActiveOccupantCount) + "_" +
+        #              objActivityStatsItem.ID
+        key = f"{is_weekend}_{active_occupants}_{profile_id}"
+
+        # VBA: objActivityStatistics.Add Item:=objActivityStatsItem, Key:=strKey
+        activity_stats[key] = modifiers
 
     return activity_stats
 
