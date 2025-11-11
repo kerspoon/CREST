@@ -370,7 +370,7 @@ class HeatingControls:
         theta_i = self.building.get_internal_temperature(timestep - 1)
         theta_cyl = self.building.get_cylinder_temperature(timestep - 1)
         theta_em = self.building.get_emitter_temperature(timestep - 1)
-        theta_cool = self.building.theta_cool[prev_idx]  # Direct access for cooling
+        theta_cool = self.building.get_theta_cool(timestep - 1)  # VBA line 463
 
         # Hot water thermostat (hysteresis logic)
         if self.hot_water_thermostat[prev_idx]:
