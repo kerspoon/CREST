@@ -248,8 +248,8 @@ class PVSystem:
             timestep_1based = timestep_0based + 1
 
             # Get appliance and lighting demand (VBA lines 356-357)
-            total_appliance_demand = self.appliances.get_total_appliance_demand(timestep_1based)
-            total_lighting_demand = self.lighting.get_total_lighting_demand(timestep_1based)
+            total_appliance_demand = self.appliances.get_total_demand(timestep_1based)
+            total_lighting_demand = self.lighting.get_total_demand(timestep_1based)
 
             # Calculate net demand (VBA line 359)
             self.P_net[timestep_0based] = (
@@ -275,8 +275,8 @@ class PVSystem:
 
             # Get appliance and lighting demand (VBA line 378)
             total_demand = (
-                self.lighting.get_total_lighting_demand(timestep_1based) +
-                self.appliances.get_total_appliance_demand(timestep_1based)
+                self.lighting.get_total_demand(timestep_1based) +
+                self.appliances.get_total_demand(timestep_1based)
             )
 
             # Self-consumption is minimum of demand and generation (VBA lines 376-380)
