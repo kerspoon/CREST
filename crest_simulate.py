@@ -466,6 +466,25 @@ def load_dwelling_configs_from_csv(config_file: Path, country: Country, urban_ru
         solar_thermal_index = int(row.iloc[5]) if pd.notna(row.iloc[5]) else 0
         cooling_system_index = int(row.iloc[6]) if pd.notna(row.iloc[6]) else 0
 
+        # Load appliance ownership from columns 8-38 (31 appliances)
+        # Column 7 is empty separator in VBA format
+        appliance_ownership = None
+        if len(row) > 8:  # Has appliance columns
+            # Extract columns 8-38 (31 appliances)
+            appliance_ownership = []
+            for col_idx in range(8, min(39, len(row))):
+                val = row.iloc[col_idx]
+                if pd.notna(val):
+                    # Convert to bool: 1 or -1 means True, 0 means False
+                    appliance_ownership.append(bool(int(float(val))))
+                else:
+                    appliance_ownership.append(False)
+
+            # Ensure we have exactly 31 values (pad with False if needed)
+            while len(appliance_ownership) < 31:
+                appliance_ownership.append(False)
+            appliance_ownership = appliance_ownership[:31]  # Truncate if too many
+
         config = DwellingConfig(
             dwelling_index=dwelling_index,
             num_residents=num_residents,
@@ -476,7 +495,8 @@ def load_dwelling_configs_from_csv(config_file: Path, country: Country, urban_ru
             cooling_system_index=cooling_system_index,
             country=country,
             urban_rural=urban_rural,
-            is_weekend=is_weekend
+            is_weekend=is_weekend,
+            appliance_ownership=appliance_ownership
         )
         configs.append(config)
 
@@ -624,7 +644,8 @@ def main():
         month_of_year=args.month,
         city=city
     )
-    global_climate = GlobalClimate(climate_config, data_loader)
+    # Pass the global RNG for reproducible climate generation
+    global_climate = GlobalClimate(climate_config, data_loader, rng_module.get_rng())
     global_climate.run_all()
 
     # Initialize output writer if requested
@@ -722,11 +743,13 @@ def main():
               f"cooling {dwelling_config.cooling_system_index}")
 
         # Create and run dwelling simulation
+        # Pass the global RNG so all dwellings share the same seeded random sequence
         dwelling = Dwelling(
             dwelling_config,
             global_climate,
             data_loader,
-            activity_statistics
+            activity_statistics,
+            rng_module.get_rng()
         )
 
         print("  Running simulation...")

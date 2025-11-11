@@ -43,6 +43,7 @@ class AppliancesConfig:
     country: Country = Country.UK  # Country for appliance ownership
     urban_rural: UrbanRural = UrbanRural.URBAN  # Urban/Rural for appliance ownership
     run_number: int = 0
+    appliance_ownership: Optional[list[bool]] = None  # 31 bools for appliance ownership (from CSV)
 
 
 class Appliances:
@@ -172,9 +173,15 @@ class Appliances:
                     heat_gains_ratio=heat_gains_ratio
                 ))
 
+                # Use configured appliance ownership if provided, otherwise random
                 # VBA: aApplianceConfiguration(i, 1) = IIf(dblRan < dblProportion, True, False)
                 # VBA line 125
-                self.has_appliance.append(self.rng.random() < ownership)
+                if self.config.appliance_ownership is not None and i < len(self.config.appliance_ownership):
+                    # Use pre-configured appliance ownership from CSV
+                    self.has_appliance.append(self.config.appliance_ownership[i])
+                else:
+                    # Random ownership based on probability
+                    self.has_appliance.append(self.rng.random() < ownership)
 
     def set_occupancy(self, occupancy):
         """Set reference to occupancy model."""

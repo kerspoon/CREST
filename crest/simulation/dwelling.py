@@ -40,6 +40,7 @@ class DwellingConfig:
     pv_system_index: int = 0  # PV system index (0 = no PV)
     solar_thermal_index: int = 0  # Solar thermal system index (0 = no solar thermal)
     is_weekend: bool = False
+    appliance_ownership: Optional[list[bool]] = None  # 31 bools for appliance ownership (from CSV columns 8-38)
 
 
 class Dwelling:
@@ -138,7 +139,8 @@ class Dwelling:
         app_config = AppliancesConfig(
             dwelling_index=config.dwelling_index,
             country=config.country,
-            urban_rural=config.urban_rural
+            urban_rural=config.urban_rural,
+            appliance_ownership=config.appliance_ownership
         )
         self.appliances = Appliances(app_config, data_loader, activity_statistics, config.is_weekend, self.rng)
         self.appliances.set_occupancy(self.occupancy)
