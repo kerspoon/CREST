@@ -460,8 +460,10 @@ def main():
     # The load_*_proportions() methods in loader.py read from column B, which works correctly for UK.
     # India interpolation would require implementing year-based column selection in the loader.
     if country != Country.UK:
-        print(f"WARNING: India database selection not fully implemented. Using UK proportions.")
-        print(f"         To implement: interpolate between year columns {args.year} for {urban_rural.value}")
+        print("ERROR: The year-based interpolation for India simulations (2006-2031) is not implemented.")
+        print("       This affects appliance ownership, building types, heating systems, and cooling systems")
+        print("       for India simulations only. UK simulations are fully functional.")
+        sys.exit(1)
 
     # Set random seed if specified
     if args.seed is not None:
