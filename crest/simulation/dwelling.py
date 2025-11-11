@@ -37,9 +37,9 @@ class DwellingConfig:
     country: Country = Country.UK  # Country for appliance/water/lighting behavior
     urban_rural: UrbanRural = UrbanRural.URBAN  # Urban/Rural for appliance ownership
     cooling_system_index: int = 0
+    pv_system_index: int = 0  # PV system index (0 = no PV)
+    solar_thermal_index: int = 0  # Solar thermal system index (0 = no solar thermal)
     is_weekend: bool = False
-    has_pv: bool = False
-    has_solar_thermal: bool = False
 
 
 class Dwelling:
@@ -155,37 +155,41 @@ class Dwelling:
         self.building.set_lighting(self.lighting)
 
         # Create renewable systems
-        if config.has_pv:
+        # VBA Reference: clsPVSystem initialization (mdlThermalElectricalModel.bas lines 356-365)
+        # VBA: intPVSystemIndex from clsDwelling.InitialiseDwelling (line 42)
+        if config.pv_system_index > 0:
             self.pv_system = PVSystem(data_loader, self.rng)
             # Use run_number=1 for single dwelling simulation
-            # Default to PV system index 2 (10m² array, 10% efficiency)
             self.pv_system.initialize(
                 dwelling_index=config.dwelling_index,
                 run_number=1,
                 climate=self.local_climate,
                 appliances=self.appliances,
                 lighting=self.lighting,
-                pv_system_index=2  # TODO: Get from DwellingConfig
+                pv_system_index=config.pv_system_index
             )
         else:
             self.pv_system = None
 
-        if config.has_solar_thermal:
+        # VBA Reference: clsSolarThermal initialization (mdlThermalElectricalModel.bas lines 423-429)
+        # VBA: intSolarThermalIndex from wsDwellings (clsSolarThermal.cls line 77)
+        if config.solar_thermal_index > 0:
             self.solar_thermal = SolarThermal(data_loader, self.rng)
             # Use run_number=1 for single dwelling simulation
-            # Default to solar thermal system index 2 (evacuated tube collector)
             self.solar_thermal.initialize(
                 dwelling_index=config.dwelling_index,
                 run_number=1,
                 climate=self.local_climate,
                 building=self.building,
-                solar_thermal_index=2  # TODO: Get from DwellingConfig
+                solar_thermal_index=config.solar_thermal_index
             )
             self.building.set_solar_thermal(self.solar_thermal)
         else:
             self.solar_thermal = None
 
         # Create cooling system
+        # VBA Reference: clsCoolingSystem initialization (mdlThermalElectricalModel.bas lines 384-390)
+        # VBA: intCoolingSystemIndex from wsDwellings (clsCoolingSystem.cls line 80)
         if config.cooling_system_index > 0:
             self.cooling_system = CoolingSystem(data_loader, self.rng)
             # Use run_number=1 for single dwelling simulation
