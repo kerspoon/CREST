@@ -332,7 +332,9 @@ class Appliances:
 
         # After all appliances simulated, calculate totals
         # VBA: TotalApplianceDemand() called separately (lines 292-314)
-        self._calculate_total_demand()
+        # NOTE: This is now called AFTER thermal loop in dwelling.py
+        # so that heating/cooling electricity is included in totals
+        # self.calculate_total_demand()
 
         # VBA: CalculateThermalGains() called separately (lines 349-377)
         self._calculate_thermal_gains()
@@ -489,9 +491,12 @@ class Appliances:
         value = self.rng.normal(mean, std_dev)
         return int(value)
 
-    def _calculate_total_demand(self):
+    def calculate_total_demand(self):
         """
         Calculate total appliance demand including other systems.
+
+        This method is PUBLIC (not private) because it needs to be called
+        after the thermal loop to include heating/cooling electricity.
 
         VBA Reference: TotalApplianceDemand (lines 292-314)
         """

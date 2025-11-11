@@ -222,11 +222,11 @@ class Dwelling:
         # 4. Run lighting simulation (generates electrical demand)
         self.lighting.run_simulation()
 
-        # 5. Run PV system (runs once per day, pre-simulation)
+        # 5. Run PV system - ONLY calculate PV output (pre-simulation)
+        # Net demand and self-consumption calculated AFTER thermal loop
+        # VBA Reference: mdlThermalElectricalModel.bas lines 436-437
         if self.pv_system:
             self.pv_system.calculate_pv_output()
-            self.pv_system.calculate_net_demand()
-            self.pv_system.calculate_self_consumption()
 
         # Note: Solar thermal runs in thermal loop (timestep-by-timestep), not here
 
@@ -261,6 +261,18 @@ class Dwelling:
             # Calculate building thermal response
             self.building.calculate_temperature_change(timestep)
 
+        # 9. After thermal loop - calculate appliance totals including heating/cooling electricity
+        # VBA Reference: mdlThermalElectricalModel.bas lines 449-451
+        self.appliances.calculate_total_demand()
+
+        # 10. After thermal loop - calculate PV net demand and self-consumption
+        # CRITICAL: Must be AFTER appliances.calculate_total_demand() because
+        # PV calculations need total demand which includes heating/cooling electricity
+        # VBA Reference: mdlThermalElectricalModel.bas lines 454-461
+        if self.pv_system:
+            self.pv_system.calculate_net_demand()
+            self.pv_system.calculate_self_consumption()
+
     def get_total_electricity_demand(self, timestep: int) -> float:
         """
         Get total electricity demand at timestep (W).
@@ -284,3 +296,124 @@ class Dwelling:
             total -= self.pv_system.get_pv_output(timestep)
 
         return total
+
+    def write_dwelling_index(self, current_date, dwelling_index_row_offset: int = 0):
+        """
+        Write dwelling index, date, and time columns for output.
+
+        In the VBA version, this writes to Excel worksheet. In Python, we return
+        a list of tuples (dwelling_index, date, time) for each of 1440 timesteps.
+
+        Args:
+            current_date: Current date (datetime.date or similar)
+            dwelling_index_row_offset: Row offset for multi-dwelling output (not used in Python)
+
+        Returns:
+            List of tuples (dwelling_index, date, time_str) for each timestep
+
+        VBA Reference: clsDwelling.WriteDwellingIndex (lines 54-70)
+        """
+        import datetime
+
+        result = []
+        start_time = datetime.datetime.strptime("00:00", "%H:%M")
+
+        for minute in range(1, 1441):  # VBA 1-based: 1 To 1440
+            # VBA line 65-67: Write dwelling index, date, time
+            # .Range("A").Offset = intDwellingIndex
+            # .Range("B").Offset = currentDate
+            # .Range("C").Offset = DateAdd("n", intMinute - 1, strStartDate)
+
+            time_offset = datetime.timedelta(minutes=minute - 1)
+            current_time = start_time + time_offset
+            time_str = current_time.strftime("%H:%M")
+
+            result.append((self.config.dwelling_index, current_date, time_str))
+
+        return result
+
+    def get_daily_totals(self):
+        """
+        Calculate daily totals for all energy flows.
+
+        Returns a dictionary with daily aggregated values:
+        - mean_active_occupancy: Mean number of active occupants
+        - proportion_actively_occupied: Proportion of time actively occupied
+        - lighting_demand: Daily lighting demand (kWh)
+        - appliance_demand: Daily appliance demand (kWh)
+        - pv_output: Daily PV generation (kWh)
+        - total_electricity_demand: Daily total electricity (kWh)
+        - self_consumption: Daily PV self-consumption (kWh)
+        - net_electricity_demand: Daily net demand after PV (kWh)
+        - hot_water_demand: Daily hot water demand (litres)
+        - average_indoor_temperature: Mean internal temperature (°C)
+        - thermal_energy_space: Daily space heating energy (kWh)
+        - thermal_energy_water: Daily water heating energy (kWh)
+        - gas_demand: Daily gas/fuel demand (kWh)
+        - space_thermostat_setpoint: Space heating setpoint (°C)
+        - solar_thermal_output: Daily solar thermal output (kWh)
+
+        VBA Reference: mdlThermalElectricalModel.DailyTotals (lines 1057-1121)
+        """
+        # VBA lines 1081-1082: Occupancy metrics
+        mean_active_occupancy = self.occupancy.get_mean_active_occupancy()
+        proportion_actively_occupied = self.occupancy.get_proportion_actively_occupied()
+
+        # VBA lines 1083-1084: Lighting and appliances (convert W·min to kWh)
+        # VBA: / 60 / 1000 (minutes to hours, W to kW)
+        lighting_demand = self.lighting.get_daily_sum_lighting() / 60 / 1000
+        appliance_demand = self.appliances.get_daily_sum_appliance_demand() / 60 / 1000
+
+        # VBA line 1086: Total electricity before PV
+        total_electricity_demand = lighting_demand + appliance_demand
+
+        # VBA lines 1087-1090: PV metrics
+        if self.pv_system:
+            pv_output = self.pv_system.get_daily_sum_pv_output() / 60 / 1000
+            net_electricity_demand = self.pv_system.get_daily_sum_net_demand() / 60 / 1000
+            self_consumption = self.pv_system.get_daily_sum_self_consumption() / 60 / 1000
+        else:
+            pv_output = 0.0
+            net_electricity_demand = total_electricity_demand
+            self_consumption = 0.0
+
+        # VBA line 1092: Hot water demand (already in litres)
+        hot_water_demand = self.hot_water.get_daily_sum_hot_water_demand()
+
+        # VBA line 1094: Average indoor temperature
+        average_indoor_temperature = self.building.get_mean_theta_i()
+
+        # VBA lines 1096-1097: Heating system thermal energy
+        thermal_energy_space = self.heating_system.get_daily_sum_thermal_energy_space() / 60 / 1000
+        thermal_energy_water = self.heating_system.get_daily_sum_thermal_energy_water() / 60 / 1000
+
+        # VBA line 1099: Gas/fuel demand (convert W·min to kWh)
+        # VBA: / 60 (minutes to hours, already in kW units)
+        gas_demand = self.heating_system.get_daily_sum_fuel_flow() / 60
+
+        # VBA line 1118: Space thermostat setpoint
+        space_thermostat_setpoint = self.heating_controls.get_space_thermostat_setpoint()
+
+        # VBA line 1119: Solar thermal output
+        if self.solar_thermal:
+            solar_thermal_output = self.solar_thermal.get_daily_sum_phi_s() / 60 / 1000
+        else:
+            solar_thermal_output = 0.0
+
+        return {
+            'mean_active_occupancy': mean_active_occupancy,
+            'proportion_actively_occupied': proportion_actively_occupied,
+            'lighting_demand': lighting_demand,
+            'appliance_demand': appliance_demand,
+            'pv_output': pv_output,
+            'total_electricity_demand': total_electricity_demand,
+            'self_consumption': self_consumption,
+            'net_electricity_demand': net_electricity_demand,
+            'hot_water_demand': hot_water_demand,
+            'average_indoor_temperature': average_indoor_temperature,
+            'thermal_energy_space': thermal_energy_space,
+            'thermal_energy_water': thermal_energy_water,
+            'gas_demand': gas_demand,
+            'space_thermostat_setpoint': space_thermostat_setpoint,
+            'solar_thermal_output': solar_thermal_output
+        }

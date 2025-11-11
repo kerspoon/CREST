@@ -8,7 +8,10 @@ When checking a python file, read the FULL contents of the relevant Excel vba co
 CRITICAL: The aim is to slowly and carefully ensure we have 100% feature matching. If something cannot be implemented STOP and warn the user. Do not leave TODOs or and missing features, however small or hoverwever tricky to implement. Never leave TODO comments in audited files. If the VBA has functionality that isn't implemented, the audit is NOT complete. Either implement the full functionality or document why it's being
   deferred as a conscious decision with user approval. Marking an audit complete with TODOs is a failure.
 
-Please start by reading the AUDIT LOG with `head -n 200 AUDIT_LOG.md` to see what the next file to work on is. 
+Please start by: 
+
+- reading the AUDIT LOG with `head -n 200 AUDIT_LOG.md` to see what the next file to work on is. 
+- check the current file structure `tree -P "*.py" -h --prune crest`
 
 Then confirm back to me your plan and wait for my confirmation before we begin.
 
