@@ -202,8 +202,13 @@ class CRESTDataLoader:
 
     def load_cooling_systems(self) -> pd.DataFrame:
         """Load cooling system specifications."""
-        # Skip 4 header rows, use row 5 as column headers
-        return self._load_csv("CoolingSystems.csv", skiprows=4, header=0)
+        # Skip title, symbols, and units rows; use row 1 (descriptive names) as header
+        # Row 0: Title
+        # Row 1: Long column descriptions (use as header)
+        # Row 2: Short symbols/codes
+        # Row 3: Units
+        # Row 4+: Data
+        return self._load_csv("CoolingSystems.csv", skiprows=[0, 2, 3], header=0)
 
     def load_heating_controls(self) -> pd.DataFrame:
         """Load heating control specifications (thermostats, timers)."""
@@ -306,13 +311,23 @@ class CRESTDataLoader:
 
     def load_pv_systems(self) -> pd.DataFrame:
         """Load PV system specifications."""
-        # Skip 4 header rows, use row 5 as column headers
-        return self._load_csv("PV_systems.csv", skiprows=4, header=0)
+        # Skip title, symbols, and units rows; use row 1 (descriptive names) as header
+        # Row 0: Title
+        # Row 1: Long column descriptions (use as header)
+        # Row 2: Short symbols
+        # Row 3: Units
+        # Row 4+: Data
+        return self._load_csv("PV_systems.csv", skiprows=[0, 2, 3], header=0)
 
     def load_solar_thermal_systems(self) -> pd.DataFrame:
         """Load solar thermal system specifications."""
-        # Skip 3 header rows, use row 4 as column headers
-        return self._load_csv("SolarThermalSystems.csv", skiprows=3, header=0)
+        # Skip title, symbols, and units rows; use row 1 (descriptive names) as header
+        # Row 0: Title
+        # Row 1: Long column descriptions (use as header)
+        # Row 2: Short symbols
+        # Row 3: Units
+        # Row 4+: Data
+        return self._load_csv("SolarThermalSystems.csv", skiprows=[0, 2, 3], header=0)
 
     # ===============================================================================================
     # DWELLING CONFIGURATION
@@ -320,8 +335,13 @@ class CRESTDataLoader:
 
     def load_dwellings(self) -> pd.DataFrame:
         """Load dwelling configuration and assignments."""
-        # Skip 3 header rows, use row 4 as column headers
-        return self._load_csv("Dwellings.csv", skiprows=3, header=0)
+        # Skip title and blank rows; use row 1 (descriptive names) as header
+        # Row 0: Title
+        # Row 1: Column descriptions (use as header)
+        # Row 2: Blank
+        # Row 3: Blank
+        # Row 4+: Data
+        return self._load_csv("Dwellings.csv", skiprows=[0, 2, 3], header=0)
 
     # ===============================================================================================
     # UTILITY FUNCTIONS
