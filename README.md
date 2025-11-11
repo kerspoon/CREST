@@ -30,6 +30,7 @@ Purpose:
 Convert the VBA Excel model to Python like-for-like - exact functionality match so outputs are identical (same inputs, same random seeds → same results, accounting for floating point differences).
 
 
+
 ### Data Files
 
 37 CSV files extracted from Excel sheets in original/excel_data/:
@@ -73,15 +74,19 @@ This loads dwelling parameters (residents, building type, heating system, PV, so
 
 ```bash
 # Compare Python output against Excel baseline
-venv/bin/python3 scripts/compare_results.py \
-  output/python_100dwellings \
-  results/excel_100houses
+python scripts/compare.py results/excel_100houses output/python_100dwellings
+
+# For detailed analysis (includes distribution histograms)
+python scripts/compare.py results/excel_100houses output/python_100dwellings --detailed
 ```
 
-The comparison script performs:
-- **Daily summary statistics**: Mean/std comparison for electricity, gas, hot water, temperature
-- **Distribution tests**: Kolmogorov-Smirnov test to verify statistical similarity
-- **Time-series analysis**: Correlation, RMSE, MAE for minute-level data
+The comparison tool provides:
+- **Dwelling-by-dwelling comparison**: Side-by-side results with color-coded status (✓/⚠/✗)
+- **Outlier analysis**: Identifies best/worst matching dwellings with percentile distributions
+- **Aggregate statistics**: Mean, median, std dev, quartiles for all metrics
+- **Statistical tests**: KS test (distributions) and t-test (means) if scipy available
+- **Component breakdown**: Separate analysis for appliances, lighting, heating
+- **Executive summary**: Clear EXCELLENT/GOOD/FAIR/POOR verdict
 
 ### Expected Results
 
