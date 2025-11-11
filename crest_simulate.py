@@ -9,7 +9,6 @@ domestic energy demand simulator.
 import argparse
 import sys
 from pathlib import Path
-import json
 
 # Add crest package to path
 sys.path.insert(0, str(Path(__file__).parent))
@@ -90,6 +89,138 @@ def load_activity_statistics(data_loader: CRESTDataLoader) -> dict:
     return activity_stats
 
 
+def _select_from_distribution(proportions: np.ndarray, rng: np.random.Generator) -> int:
+    """
+    Inverse transform sampling from discrete probability distribution.
+
+    VBA Reference: Inverse transform logic in AssignDwellingParameters (lines 1194-1275)
+
+    The VBA algorithm:
+    1. Generate random number: dblRand = Rnd()
+    2. Loop through proportions, accumulating cumulative probability
+    3. Return first index where dblRand < dblCumulativeP
+
+    Parameters
+    ----------
+    proportions : np.ndarray
+        Array of probabilities (must sum to ~1.0)
+    rng : np.random.Generator
+        Random number generator
+
+    Returns
+    -------
+    int
+        Selected index (0-based)
+
+    Examples
+    --------
+    >>> proportions = np.array([0.2, 0.3, 0.5])
+    >>> index = _select_from_distribution(proportions, rng)
+    >>> # Returns 0, 1, or 2 with probabilities 20%, 30%, 50%
+    """
+    # VBA lines 1195-1204: Generate random and find first cumulative match
+    cumulative = np.cumsum(proportions)
+    rand_value = rng.random()
+
+    # VBA: If dblRand < dblCumulativeP Then ... Exit For
+    # np.searchsorted finds the first index where rand_value < cumulative[index]
+    index = int(np.searchsorted(cumulative, rand_value))
+
+    # Clamp to valid range (in case of floating point errors where sum != 1.0)
+    return min(index, len(proportions) - 1)
+
+
+def assign_dwelling_parameters(
+    data_loader: CRESTDataLoader,
+    dwelling_index: int,
+    rng: np.random.Generator
+) -> DwellingConfig:
+    """
+    Stochastically assign all parameters for one dwelling.
+
+    VBA Reference: AssignDwellingParameters (mdlThermalElectricalModel.bas lines 1130-1288)
+    Uses inverse transform sampling on cumulative probability distributions.
+
+    Parameters
+    ----------
+    data_loader : CRESTDataLoader
+        Data loader with proportion arrays
+    dwelling_index : int
+        Dwelling identifier (0-based)
+    rng : np.random.Generator
+        Random number generator for reproducibility
+
+    Returns
+    -------
+    DwellingConfig
+        Stochastically generated dwelling configuration
+
+    Notes
+    -----
+    Special logic: Combi boiler (type 2) precludes solar thermal system
+    VBA lines 1248-1262: If heating type = 2, solar_thermal_index = 0
+    """
+    # VBA lines 1197-1205: Determine number of residents (1-5)
+    # VBA: For intRow = 1 To intMaxNumberResidents (1-based)
+    # Python: Returns 0-4, add 1 to get 1-5 residents
+    resident_props = data_loader.load_resident_proportions()
+    num_residents_index = _select_from_distribution(resident_props, rng)
+    num_residents = num_residents_index + 1  # Convert 0-based to 1-5 range
+
+    # VBA lines 1207-1218: Determine building index
+    # VBA: lngDwellingBuildingIndex = lngRow (1-based)
+    # Python: Returns 0-based index, add 1 for 1-based
+    building_props = data_loader.load_building_proportions()
+    building_index_0based = _select_from_distribution(building_props, rng)
+    building_index = building_index_0based + 1  # 1-based indexing
+
+    # VBA lines 1220-1231: Determine primary heating system index
+    # VBA: lngDwellingPrimaryHeatingSystemIndex = lngRow (1-based)
+    heating_props = data_loader.load_heating_proportions()
+    heating_index_0based = _select_from_distribution(heating_props, rng)
+    heating_index = heating_index_0based + 1  # 1-based indexing
+
+    # VBA lines 1233-1244: Determine PV system index
+    # VBA: lngDwellingPvSystemIndex = lngRow
+    # Note: Index 0 = no PV, Index 1+ = PV system types
+    pv_props = data_loader.load_pv_proportions()
+    pv_index = _select_from_distribution(pv_props, rng)
+    # Already 0-based where 0 = no PV
+
+    # VBA lines 1246-1262: Determine solar thermal index
+    # SPECIAL LOGIC: Combi boiler (type 2) precludes solar thermal
+    # VBA line 1248: If wsPrimaryHeatingSystems.Cells(4 + lngDwellingPrimaryHeatingSystemIndex, 4) = 2
+    heating_type = data_loader.get_heating_type(heating_index)
+    if heating_type == 2:  # Combi boiler
+        # VBA line 1249: lngDwellingSolarThermalIndex = 0
+        solar_thermal_index = 0
+    else:
+        # VBA lines 1251-1261: Select stochastically
+        solar_thermal_props = data_loader.load_solar_thermal_proportions()
+        solar_thermal_index = _select_from_distribution(solar_thermal_props, rng)
+        # Already 0-based where 0 = no solar thermal
+
+    # VBA lines 1264-1275: Determine cooling system index
+    # Note: Index 0 = no cooling, Index 1+ = cooling system types
+    cooling_props = data_loader.load_cooling_proportions()
+    cooling_index = _select_from_distribution(cooling_props, rng)
+    # Already 0-based where 0 = no cooling
+
+    # VBA lines 1278-1286: Write parameters (we return DwellingConfig instead)
+    return DwellingConfig(
+        dwelling_index=dwelling_index,
+        num_residents=num_residents,
+        building_index=building_index,
+        heating_system_index=heating_index,
+        pv_system_index=pv_index,
+        solar_thermal_index=solar_thermal_index,
+        cooling_system_index=cooling_index,
+        country=Country.UK,  # Will be set by caller based on CLI args
+        urban_rural=UrbanRural.URBAN,  # Will be set by caller based on CLI args
+        is_weekend=False  # Will be set by caller based on CLI args
+    )
+
+
 def main():
     """Main simulation entry point."""
     parser = argparse.ArgumentParser(
@@ -104,8 +235,8 @@ def main():
     parser.add_argument(
         "--residents",
         type=int,
-        default=2,
-        help="Number of residents per dwelling (default: 2)"
+        default=None,
+        help="Number of residents for single dwelling simulations (default: stochastic)"
     )
     parser.add_argument(
         "--weekend",
@@ -146,12 +277,6 @@ def main():
         "--save-detailed",
         action="store_true",
         help="Save minute-level detailed results (large files)"
-    )
-    parser.add_argument(
-        "--config-file",
-        type=Path,
-        default=None,
-        help="JSON file with per-dwelling configurations (overrides --residents and other dwelling params)"
     )
     parser.add_argument(
         "--country",
@@ -222,53 +347,55 @@ def main():
         # Write global climate data once
         results_writer.write_global_climate(global_climate)
 
-    # Load dwelling configurations if provided
-    dwelling_configs_list = None
-    if args.config_file:
-        print(f"Loading dwelling configurations from: {args.config_file}")
-        with open(args.config_file, 'r') as f:
-            dwelling_configs_list = json.load(f)
-        print(f"  Loaded {len(dwelling_configs_list)} dwelling configurations")
-        # Override num_dwellings to match config file
-        args.num_dwellings = len(dwelling_configs_list)
-
     # Simulate dwellings
+    # VBA Reference: RunThermalElectricalDemandModel main loop (lines 282-488)
     results = []
     dwellings = []  # Store dwelling objects for output
+
+    # Create RNG for stochastic parameter assignment
+    # Use the global RNG if seed was set, otherwise create a new one
+    param_rng = rng_module.get_rng()
 
     for dwelling_idx in range(args.num_dwellings):
         print(f"\nSimulating dwelling {dwelling_idx + 1}/{args.num_dwellings}...")
 
-        # Configure dwelling - either from config file or command-line args
-        if dwelling_configs_list:
-            # Load from config file
-            cfg = dwelling_configs_list[dwelling_idx]
-            dwelling_config = DwellingConfig(
-                dwelling_index=dwelling_idx,
-                num_residents=cfg['num_residents'],
-                building_index=cfg['building_index'],
-                heating_system_index=cfg['heating_system_index'],
-                country=country,  # Use CLI-specified country
-                urban_rural=urban_rural,  # Use CLI-specified urban/rural
-                cooling_system_index=cfg.get('cooling_system_index', 0),
-                pv_system_index=cfg.get('pv_system_index', 0),
-                solar_thermal_index=cfg.get('solar_thermal_index', 0),
-                is_weekend=args.weekend
-            )
-        else:
-            # Use command-line defaults
+        # Stochastically assign dwelling parameters
+        # VBA Reference: AssignDwellingParameters (lines 1130-1288)
+        # VBA line 296: If wsMain.Shapes("objAssignDwellingParameters").ControlFormat.Value = 1
+        if args.num_dwellings == 1 and args.residents is not None:
+            # Single dwelling with --residents specified: Use manual configuration
+            # This allows users to test specific configurations
             dwelling_config = DwellingConfig(
                 dwelling_index=dwelling_idx,
                 num_residents=args.residents,
                 building_index=1,  # Use building index 1 (1-based indexing)
                 heating_system_index=1,  # Use heating system index 1 (1-based indexing)
-                country=country,  # Use CLI-specified country
-                urban_rural=urban_rural,  # Use CLI-specified urban/rural
+                country=country,
+                urban_rural=urban_rural,
                 cooling_system_index=0,
                 pv_system_index=0,  # No PV by default
                 solar_thermal_index=0,  # No solar thermal by default
                 is_weekend=args.weekend
             )
+        else:
+            # Multi-dwelling or no --residents specified: Use stochastic generation
+            # VBA line 298: AssignDwellingParameters intDwellingIndex
+            dwelling_config = assign_dwelling_parameters(
+                data_loader=data_loader,
+                dwelling_index=dwelling_idx,
+                rng=param_rng
+            )
+            # Override country/urban_rural/weekend from CLI args
+            dwelling_config.country = country
+            dwelling_config.urban_rural = urban_rural
+            dwelling_config.is_weekend = args.weekend
+
+            print(f"  Stochastic config: {dwelling_config.num_residents} residents, "
+                  f"building {dwelling_config.building_index}, "
+                  f"heating {dwelling_config.heating_system_index}, "
+                  f"PV {dwelling_config.pv_system_index}, "
+                  f"solar thermal {dwelling_config.solar_thermal_index}, "
+                  f"cooling {dwelling_config.cooling_system_index}")
 
         # Create and run dwelling simulation
         dwelling = Dwelling(

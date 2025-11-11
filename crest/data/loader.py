@@ -426,7 +426,11 @@ class CRESTDataLoader:
         """
         df = self.load_buildings()
         # Skip header rows (4 rows), then column B (index 1) has proportions
-        return df.iloc[4:, 1].values.astype(float)
+        # Stop at first NaN value (blank row)
+        proportions = df.iloc[4:, 1].values
+        # Filter out NaN values
+        proportions = proportions[~pd.isna(proportions)]
+        return proportions.astype(float)
 
     def load_heating_proportions(self) -> np.ndarray:
         """
@@ -437,7 +441,10 @@ class CRESTDataLoader:
         """
         df = self.load_primary_heating_systems()
         # Skip header rows (4 rows), then column B (index 1) has proportions
-        return df.iloc[4:, 1].values.astype(float)
+        # Filter out NaN values
+        proportions = df.iloc[4:, 1].values
+        proportions = proportions[~pd.isna(proportions)]
+        return proportions.astype(float)
 
     def load_pv_proportions(self) -> np.ndarray:
         """
@@ -448,7 +455,10 @@ class CRESTDataLoader:
         """
         df = self.load_pv_systems()
         # Skip header rows (4 rows), then column B (index 1) has proportions
-        return df.iloc[4:, 1].values.astype(float)
+        # Filter out NaN values
+        proportions = df.iloc[4:, 1].values
+        proportions = proportions[~pd.isna(proportions)]
+        return proportions.astype(float)
 
     def load_solar_thermal_proportions(self) -> np.ndarray:
         """
@@ -459,7 +469,10 @@ class CRESTDataLoader:
         """
         df = self.load_solar_thermal_systems()
         # Skip header rows (4 rows), then column B (index 1) has proportions
-        return df.iloc[4:, 1].values.astype(float)
+        # Filter out NaN values
+        proportions = df.iloc[4:, 1].values
+        proportions = proportions[~pd.isna(proportions)]
+        return proportions.astype(float)
 
     def load_cooling_proportions(self) -> np.ndarray:
         """
@@ -470,7 +483,10 @@ class CRESTDataLoader:
         """
         df = self.load_cooling_systems()
         # Skip header rows (4 rows), then column B (index 1) has proportions
-        return df.iloc[4:, 1].values.astype(float)
+        # Filter out NaN values
+        proportions = df.iloc[4:, 1].values
+        proportions = proportions[~pd.isna(proportions)]
+        return proportions.astype(float)
 
     def get_heating_type(self, heating_index: int) -> int:
         """
@@ -487,13 +503,13 @@ class CRESTDataLoader:
         Returns
         -------
         int
-            Heating system type code
+            Heating system type code (1=regular, 2=combi, 4=no heating, 5=electric water heater)
         """
         df = self.load_primary_heating_systems()
         # Skip header rows (4), then get the type from the appropriate row
-        # Column E (index 4) contains the system type
+        # Column D (index 3) contains the "Type of system" (1=regular, 2=combi, etc.)
         row_idx = 3 + heating_index  # 4 header rows, then 0-based indexing
-        return int(df.iloc[row_idx, 4])
+        return int(df.iloc[row_idx, 3])
 
 
 # Singleton instance for convenience

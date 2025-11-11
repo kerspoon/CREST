@@ -11,7 +11,7 @@ CRITICAL: The aim is to slowly and carefully ensure we have 100% feature matchin
 Please start by: 
 
 - reading the AUDIT LOG with `head -n 200 AUDIT_LOG.md` to see what the next file to work on is. 
-- check the current file structure `tree -P "*.py" -h --prune crest`
+- check the current file structure `tree -P "*.py" -h --prune crest`, `tree original`
 
 Then confirm back to me your plan and wait for my confirmation before we begin.
 
