@@ -96,6 +96,19 @@ For a valid port:
 - Time-series correlation > 0.95 for individual dwellings
 - Temperature matching within 0.4°C
 
+## Scripts
+
+The `scripts/` directory contains utility scripts for validation, diagnostics, and data processing:
+
+- **compare.py** - Compare Python output against Excel baseline with detailed statistical analysis
+- **read_excel_100houses.py** - Extract data from Excel/VBA 100-house simulation file to CSV format
+- **clean_excel_data.py** - Clean and reformat extracted Excel data to match Python output format
+- **parse_excel_configs.py** - Parse Excel dwelling configurations into JSON format for Python simulation
+- **run_monte_carlo.py** - Run Monte Carlo simulations for test dwellings with multiple random seeds
+- **analyse_montecarlo.py** - Analyze Monte Carlo results distribution and compare to VBA baseline
+- **diagnose_occupancy.py** - Diagnostic tool for debugging occupancy TPM extraction and state selection
+- **diagnose_activity_stats.py** - Diagnostic tool for checking activity statistics loading and usage
+
 # Type Checking
 
 This project uses [mypy](https://mypy-lang.org/) for static type checking to catch interface bugs before runtime. 
