@@ -187,7 +187,7 @@ class CoolingSystem:
         # If cooling is needed (VBA lines 129-142)
         if space_cooling_on_off:
             # Get target cooling load from building (VBA line 131)
-            phi_h_cooling_target = self.building.get_phi_h_cooling(current_timestep)
+            phi_h_cooling_target = self.building.get_target_cooling(current_timestep)
 
             # Calculate cooling provided (VBA line 133)
             # Min(0, Max(capacity, target)) ensures:
@@ -198,13 +198,14 @@ class CoolingSystem:
             phi_h_cooling = min(0.0, max(self.phi_h_cool, phi_h_cooling_target))
             self.phi_h_cooling[timestep_0based] = phi_h_cooling
 
-        # Calculate electricity demand (VBA lines 136-139)
-        # Note: Electricity is based on thermostat × timer (NOT the full 3-way AND!)
-        # This means pump runs if thermostat and timer are on, even if emitter isn't ready
-        if space_cooling_thermostat * space_cooling_timer == 1:
-            self.phi_cooling[timestep_0based] = self.P_pump_cool
-        else:
-            self.phi_cooling[timestep_0based] = self.P_standby_cool
+            # Calculate electricity demand (VBA lines 136-139)
+            # CRITICAL: Electricity calculation is INSIDE the space_cooling_on_off block
+            # When space_cooling_on_off is False, phi_cooling is NOT SET (remains at previous value, typically 0)
+            # Note: Electricity uses 2-way AND (thermostat × timer), NOT 3-way AND with emitter
+            if space_cooling_thermostat * space_cooling_timer == 1:
+                self.phi_cooling[timestep_0based] = self.P_pump_cool
+            else:
+                self.phi_cooling[timestep_0based] = self.P_standby_cool
 
     # ===============================================================================================
     # Getter Methods (VBA Property Get)

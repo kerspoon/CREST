@@ -218,7 +218,7 @@ class Building:
         self.phi_c[idx] = phi_c
 
         # Solar thermal collector gains (if any)
-        phi_collector = self.solar_thermal.get_collector_heat(timestep) if self.solar_thermal else 0.0
+        phi_collector = self.solar_thermal.get_phi_s(timestep) if self.solar_thermal else 0.0
 
         # Hot water demand heat transfer coefficient (variable)
         h_dhw = self.hot_water.get_h_demand(timestep) if self.hot_water else 0.0
@@ -329,6 +329,22 @@ class Building:
     def get_external_temperature(self, timestep: int) -> float:
         """Get external building node temperature at specified timestep (1-based)."""
         return self.theta_b[timestep - 1]
+
+    def get_theta_cool(self, timestep: int) -> float:
+        """
+        Get cooling emitter temperature at specified timestep (1-based).
+
+        VBA: GetTheta_cool property (clsBuilding.cls lines 115-117)
+        """
+        return self.theta_cool[timestep - 1]
+
+    def get_mean_theta_i(self) -> float:
+        """
+        Get mean internal temperature over the entire day.
+
+        VBA: GetMeanTheta_i property (clsBuilding.cls lines 119-121)
+        """
+        return float(np.mean(self.theta_i))
 
     def get_target_heat_space(self, timestep: int) -> float:
         """

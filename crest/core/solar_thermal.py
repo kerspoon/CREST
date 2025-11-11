@@ -275,12 +275,12 @@ class SolarThermal:
         # Get temperatures from previous timestep (VBA lines 233-245)
         if current_timestep == 1:
             # First timestep - use current values (VBA lines 236-239)
-            theta_cyl = self.building.get_theta_cyl(current_timestep)
+            theta_cyl = self.building.get_cylinder_temperature(current_timestep)
             theta_collector = self.theta_collector[timestep_0based]
             theta_o = self.climate.get_temperature(current_timestep)
         else:
             # Use previous timestep values (VBA lines 241-243)
-            theta_cyl = self.building.get_theta_cyl(current_timestep - 1)
+            theta_cyl = self.building.get_cylinder_temperature(current_timestep - 1)
             theta_collector = self.theta_collector[timestep_0based - 1]
             theta_o = self.climate.get_temperature(current_timestep - 1)
 
