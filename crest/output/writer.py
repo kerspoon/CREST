@@ -202,8 +202,12 @@ class ResultsWriter:
             return
 
         # Calculate daily totals
-        total_electricity = sum(dwelling.get_total_electricity_demand(t)
-                               for t in range(1, 1441)) / 60.0  # Wh
+        # VBA line 1086: dblTotalElectricityDemand = dblLightingDemand + dblApplianceDemand
+        # NOTE: This does NOT include heating/cooling/pump electricity - only lighting + appliances
+        lighting_kwh = dwelling.lighting.get_daily_energy() / 60.0 / 1000.0
+        appliances_kwh = dwelling.appliances.get_daily_energy() / 60.0 / 1000.0
+        total_electricity = (lighting_kwh + appliances_kwh) * 1000.0  # Convert back to Wh for consistency
+
         total_gas = dwelling.heating_system.get_daily_fuel_consumption() / 60.0  # m³ (sum of rates in m³/h, divide by 60)
         total_hot_water = dwelling.hot_water.get_daily_hot_water_volume()  # litres
 
