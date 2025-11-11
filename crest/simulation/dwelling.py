@@ -361,8 +361,8 @@ class Dwelling:
 
         # VBA lines 1083-1084: Lighting and appliances (convert W·min to kWh)
         # VBA: / 60 / 1000 (minutes to hours, W to kW)
-        lighting_demand = self.lighting.get_daily_sum_lighting() / 60 / 1000
-        appliance_demand = self.appliances.get_daily_sum_appliance_demand() / 60 / 1000
+        lighting_demand = self.lighting.get_daily_energy() / 60 / 1000
+        appliance_demand = self.appliances.get_daily_energy() / 60 / 1000
 
         # VBA line 1086: Total electricity before PV
         total_electricity_demand = lighting_demand + appliance_demand
@@ -378,18 +378,18 @@ class Dwelling:
             self_consumption = 0.0
 
         # VBA line 1092: Hot water demand (already in litres)
-        hot_water_demand = self.hot_water.get_daily_sum_hot_water_demand()
+        hot_water_demand = self.hot_water.get_daily_hot_water_volume()
 
         # VBA line 1094: Average indoor temperature
         average_indoor_temperature = self.building.get_mean_theta_i()
 
         # VBA lines 1096-1097: Heating system thermal energy
-        thermal_energy_space = self.heating_system.get_daily_sum_thermal_energy_space() / 60 / 1000
-        thermal_energy_water = self.heating_system.get_daily_sum_thermal_energy_water() / 60 / 1000
+        thermal_energy_space = self.heating_system.get_daily_thermal_energy_space() / 60 / 1000
+        thermal_energy_water = self.heating_system.get_daily_thermal_energy_water() / 60 / 1000
 
         # VBA line 1099: Gas/fuel demand (convert W·min to kWh)
         # VBA: / 60 (minutes to hours, already in kW units)
-        gas_demand = self.heating_system.get_daily_sum_fuel_flow() / 60
+        gas_demand = self.heating_system.get_daily_fuel_consumption() / 60
 
         # VBA line 1118: Space thermostat setpoint
         space_thermostat_setpoint = self.heating_controls.get_space_thermostat_setpoint()
