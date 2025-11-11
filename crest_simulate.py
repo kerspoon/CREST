@@ -251,22 +251,23 @@ def main():
                 country=country,  # Use CLI-specified country
                 urban_rural=urban_rural,  # Use CLI-specified urban/rural
                 cooling_system_index=cfg.get('cooling_system_index', 0),
-                is_weekend=args.weekend,
-                has_pv=cfg.get('has_pv', False),
-                has_solar_thermal=cfg.get('has_solar_thermal', False)
+                pv_system_index=cfg.get('pv_system_index', 0),
+                solar_thermal_index=cfg.get('solar_thermal_index', 0),
+                is_weekend=args.weekend
             )
         else:
             # Use command-line defaults
             dwelling_config = DwellingConfig(
                 dwelling_index=dwelling_idx,
                 num_residents=args.residents,
-                building_index=0,  # Simplified: use first building type
-                heating_system_index=0,  # Simplified: use first heating system
+                building_index=1,  # Use building index 1 (1-based indexing)
+                heating_system_index=1,  # Use heating system index 1 (1-based indexing)
                 country=country,  # Use CLI-specified country
                 urban_rural=urban_rural,  # Use CLI-specified urban/rural
-                is_weekend=args.weekend,
-                has_pv=False,
-                has_solar_thermal=False
+                cooling_system_index=0,
+                pv_system_index=0,  # No PV by default
+                solar_thermal_index=0,  # No solar thermal by default
+                is_weekend=args.weekend
             )
 
         # Create and run dwelling simulation
@@ -284,21 +285,92 @@ def main():
         dwellings.append(dwelling)
 
         # Collect results
+        # VBA Reference: DailyTotals (mdlThermalElectricalModel.bas lines 1057-1121)
         print("  Calculating daily totals...")
-        daily_electricity = sum(dwelling.get_total_electricity_demand(t) for t in range(1, 1441)) / 60.0  # Wh
-        daily_gas = dwelling.heating_system.get_daily_fuel_consumption()  # m³
-        daily_hot_water = dwelling.hot_water.get_daily_hot_water_volume()  # litres
 
+        # VBA line 1081: GetMeanActiveOccupancy
+        mean_active_occupancy = dwelling.occupancy.get_mean_active_occupancy()
+
+        # VBA line 1082: GetPrActivelyOccupied
+        proportion_actively_occupied = dwelling.occupancy.get_probability_actively_occupied()
+
+        # VBA line 1083: GetDailySumLighting / 60 / 1000 (W·min → kWh)
+        lighting_demand_kwh = dwelling.lighting.get_daily_energy() / 60.0 / 1000.0
+
+        # VBA line 1084: GetDailySumApplianceDemand / 60 / 1000 (W·min → kWh)
+        appliance_demand_kwh = dwelling.appliances.get_daily_energy() / 60.0 / 1000.0
+
+        # VBA line 1086: Total = Lighting + Appliances
+        total_electricity_kwh = lighting_demand_kwh + appliance_demand_kwh
+
+        # VBA line 1087: GetDailySumPvOutput / 60 / 1000 (W·min → kWh)
+        if dwelling.pv_system is not None:
+            pv_output_kwh = dwelling.pv_system.get_daily_sum_pv_output() / 60.0 / 1000.0
+        else:
+            pv_output_kwh = 0.0
+
+        # VBA line 1088: GetDailySumP_net / 60 / 1000 (W·min → kWh)
+        if dwelling.pv_system is not None:
+            net_electricity_kwh = dwelling.pv_system.get_daily_sum_net_demand() / 60.0 / 1000.0
+        else:
+            net_electricity_kwh = total_electricity_kwh
+
+        # VBA line 1090: GetDailySumP_self / 60 / 1000 (W·min → kWh)
+        if dwelling.pv_system is not None:
+            self_consumption_kwh = dwelling.pv_system.get_daily_sum_self_consumption() / 60.0 / 1000.0
+        else:
+            self_consumption_kwh = 0.0
+
+        # VBA line 1092: GetDailySumHotWaterDemand (litres, no conversion)
+        hot_water_litres = dwelling.hot_water.get_daily_hot_water_volume()
+
+        # VBA line 1094: GetMeanTheta_i (°C, no conversion)
+        average_indoor_temp = dwelling.building.get_mean_theta_i()
+
+        # VBA line 1096: GetDailySumThermalEnergySpace / 60 / 1000 (W·min → kWh)
+        thermal_energy_space_kwh = dwelling.heating_system.get_daily_thermal_energy_space() / 60.0 / 1000.0
+
+        # VBA line 1097: GetDailySumThermalEnergyWater / 60 / 1000 (W·min → kWh)
+        thermal_energy_water_kwh = dwelling.heating_system.get_daily_thermal_energy_water() / 60.0 / 1000.0
+
+        # VBA line 1099: GetDailySumFuelFlow / 60 (W·min/60 → m³)
+        gas_m3 = dwelling.heating_system.get_daily_fuel_consumption() / 60.0
+
+        # VBA line 1118: GetSpaceThermostatSetpoint (°C, no conversion)
+        space_setpoint = dwelling.heating_controls.get_space_thermostat_setpoint()
+
+        # VBA line 1119: GetDailySumPhi_s / 60 / 1000 (W·min → kWh)
+        if dwelling.solar_thermal is not None:
+            solar_thermal_kwh = dwelling.solar_thermal.get_daily_sum_phi_s() / 60.0 / 1000.0
+        else:
+            solar_thermal_kwh = 0.0
+
+        # Store all 17 metrics matching VBA DailyTotals output (lines 1103-1119)
         results.append({
-            'dwelling': dwelling_idx,
-            'electricity_kwh': daily_electricity / 1000.0,
-            'gas_m3': daily_gas,
-            'hot_water_litres': daily_hot_water
+            'dwelling_index': dwelling_idx,  # Column 1
+            'mean_active_occupancy': mean_active_occupancy,  # Column 3
+            'proportion_actively_occupied': proportion_actively_occupied,  # Column 4
+            'lighting_kwh': lighting_demand_kwh,  # Column 5
+            'appliances_kwh': appliance_demand_kwh,  # Column 6
+            'pv_output_kwh': pv_output_kwh,  # Column 7
+            'total_electricity_kwh': total_electricity_kwh,  # Column 8
+            'self_consumption_kwh': self_consumption_kwh,  # Column 9
+            'net_electricity_kwh': net_electricity_kwh,  # Column 10
+            'hot_water_litres': hot_water_litres,  # Column 11
+            'average_indoor_temp': average_indoor_temp,  # Column 12
+            'thermal_energy_space_kwh': thermal_energy_space_kwh,  # Column 13
+            'thermal_energy_water_kwh': thermal_energy_water_kwh,  # Column 14
+            'gas_m3': gas_m3,  # Column 15
+            'space_setpoint': space_setpoint,  # Column 16
+            'solar_thermal_kwh': solar_thermal_kwh  # Column 17
         })
 
-        print(f"  Daily electricity: {daily_electricity/1000.0:.2f} kWh")
-        print(f"  Daily gas: {daily_gas:.2f} m³")
-        print(f"  Daily hot water: {daily_hot_water:.2f} litres")
+        print(f"  Daily electricity: {total_electricity_kwh:.2f} kWh (lighting: {lighting_demand_kwh:.2f}, appliances: {appliance_demand_kwh:.2f})")
+        print(f"  Daily gas: {gas_m3:.2f} m³")
+        print(f"  Daily hot water: {hot_water_litres:.2f} litres")
+        if dwelling.pv_system is not None:
+            print(f"  PV output: {pv_output_kwh:.2f} kWh, Net demand: {net_electricity_kwh:.2f} kWh")
+        print(f"  Indoor temp: {average_indoor_temp:.1f}°C")
 
     # Write results to files if requested
     if results_writer:
@@ -316,12 +388,38 @@ def main():
     print("SIMULATION SUMMARY")
     print("="*60)
     if args.num_dwellings > 1:
-        avg_elec = np.mean([r['electricity_kwh'] for r in results])
+        # Calculate averages across all dwellings
+        avg_elec = np.mean([r['total_electricity_kwh'] for r in results])
+        avg_lighting = np.mean([r['lighting_kwh'] for r in results])
+        avg_appliances = np.mean([r['appliances_kwh'] for r in results])
+        avg_pv = np.mean([r['pv_output_kwh'] for r in results])
         avg_gas = np.mean([r['gas_m3'] for r in results])
         avg_water = np.mean([r['hot_water_litres'] for r in results])
-        print(f"Average electricity: {avg_elec:.2f} kWh/day")
+        avg_temp = np.mean([r['average_indoor_temp'] for r in results])
+
+        print(f"Average total electricity: {avg_elec:.2f} kWh/day")
+        print(f"  - Lighting: {avg_lighting:.2f} kWh/day")
+        print(f"  - Appliances: {avg_appliances:.2f} kWh/day")
+        if avg_pv > 0:
+            print(f"Average PV output: {avg_pv:.2f} kWh/day")
         print(f"Average gas: {avg_gas:.2f} m³/day")
         print(f"Average hot water: {avg_water:.2f} litres/day")
+        print(f"Average indoor temperature: {avg_temp:.1f}°C")
+    else:
+        # Single dwelling - show all metrics
+        r = results[0]
+        print(f"Total electricity: {r['total_electricity_kwh']:.2f} kWh/day")
+        print(f"  - Lighting: {r['lighting_kwh']:.2f} kWh/day")
+        print(f"  - Appliances: {r['appliances_kwh']:.2f} kWh/day")
+        if r['pv_output_kwh'] > 0:
+            print(f"PV output: {r['pv_output_kwh']:.2f} kWh/day")
+            print(f"Net demand: {r['net_electricity_kwh']:.2f} kWh/day")
+            print(f"Self-consumption: {r['self_consumption_kwh']:.2f} kWh/day")
+        print(f"Gas consumption: {r['gas_m3']:.2f} m³/day")
+        print(f"Hot water: {r['hot_water_litres']:.2f} litres/day")
+        print(f"Indoor temperature: {r['average_indoor_temp']:.1f}°C")
+        print(f"Space heating: {r['thermal_energy_space_kwh']:.2f} kWh/day")
+        print(f"Water heating: {r['thermal_energy_water_kwh']:.2f} kWh/day")
 
     print("\nSimulation complete!")
 
