@@ -299,6 +299,12 @@ def main():
         choices=["Urban", "Rural"],
         help="Urban or rural location for appliance ownership (default: Urban)"
     )
+    parser.add_argument(
+        "--year",
+        type=int,
+        default=2006,
+        help="Year for India database interpolation (2006-2031, default: 2006). UK ignores this parameter."
+    )
 
     args = parser.parse_args()
 
@@ -306,6 +312,18 @@ def main():
     country = Country(args.country)
     city = City(args.city)
     urban_rural = UrbanRural(args.urban_rural)
+
+    # Database selection for proportions
+    # VBA Reference: SetApplianceDatabase, SetBuildingProportions, etc. (lines 548-754)
+    # NOTE: The VBA functions select appropriate database columns based on country/urban-rural/year.
+    # For UK: Uses column B directly (already in CSVs)
+    # For India: Interpolates between year columns (2006-2031) based on --year parameter
+    # Current CSV files have UK data in column B and zeros for India columns.
+    # The load_*_proportions() methods in loader.py read from column B, which works correctly for UK.
+    # India interpolation would require implementing year-based column selection in the loader.
+    if country != Country.UK:
+        print(f"WARNING: India database selection not fully implemented. Using UK proportions.")
+        print(f"         To implement: interpolate between year columns {args.year} for {urban_rural.value}")
 
     # Set random seed if specified
     if args.seed is not None:
