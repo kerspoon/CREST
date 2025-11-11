@@ -23,7 +23,7 @@ from crest.core.solar import SolarGeometry
 if TYPE_CHECKING:
     from crest.data.loader import CRESTDataLoader
     from crest.utils.random import RandomGenerator
-    from crest.core.climate import GlobalClimate
+    from crest.core.climate import LocalClimate
     from crest.core.appliances import Appliances
     from crest.core.lighting import Lighting
 
@@ -71,7 +71,7 @@ class PVSystem:
         self.P_self = np.zeros(1440)  # Dwelling self-consumption (W)
 
         # Component references (set by initialize)
-        self.climate: 'GlobalClimate' = None
+        self.climate: 'LocalClimate' = None
         self.appliances: 'Appliances' = None
         self.lighting: 'Lighting' = None
 
@@ -84,7 +84,7 @@ class PVSystem:
     def initialize(self,
                    dwelling_index: int,
                    run_number: int,
-                   climate: 'GlobalClimate',
+                   climate: 'LocalClimate',
                    appliances: 'Appliances',
                    lighting: 'Lighting',
                    pv_system_index: int = None,

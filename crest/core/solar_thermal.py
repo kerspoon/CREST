@@ -29,7 +29,7 @@ from crest.simulation.config import SPECIFIC_HEAT_CAPACITY_WATER
 if TYPE_CHECKING:
     from crest.data.loader import CRESTDataLoader
     from crest.utils.random import RandomGenerator
-    from crest.core.climate import GlobalClimate
+    from crest.core.climate import LocalClimate
     from crest.core.building import Building
 
 
@@ -88,7 +88,7 @@ class SolarThermal:
         self.solar_thermal_on_off = np.zeros(1440)  # Pump control state (0/1)
 
         # Component references (set by initialize)
-        self.climate: 'GlobalClimate' = None
+        self.climate: 'LocalClimate' = None
         self.building: 'Building' = None
 
         # Location and time parameters (set by initialize)
@@ -103,7 +103,7 @@ class SolarThermal:
     def initialize(self,
                    dwelling_index: int,
                    run_number: int,
-                   climate: 'GlobalClimate',
+                   climate: 'LocalClimate',
                    building: 'Building',
                    solar_thermal_index: int = None,
                    latitude: float = 52.2,
