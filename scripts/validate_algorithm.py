@@ -64,17 +64,88 @@ class ValidationAnalyzer:
         
         # Try different naming patterns
         for i in range(1, 21):
-            for pattern in [f'vba_run_{i}.csv', f'run_{i}.csv', f'results_minute_level_run_{i}.csv']:
+            for pattern in [f'vba_run_{i}.csv', f'run_{i}.csv', f'results_minute_level_run_{i}.csv',
+                          f'results_minute_level.csv']:
                 file_path = vba_path / pattern
                 if file_path.exists():
-                    df = pd.read_csv(file_path)
+                    # VBA CSVs have multiple header rows - try with skiprows
+                    try:
+                        df = pd.read_csv(file_path, skiprows=3)
+                    except:
+                        df = pd.read_csv(file_path)
+                    
                     df['run_id'] = i
                     
-                    # Normalize column names
-                    if 'Dwelling' in df.columns:
-                        df['dwelling'] = df['Dwelling']
-                    if 'Minute' in df.columns:
-                        df['minute'] = self._parse_minute_column(df['Minute'])
+                    # Normalize column names (case-insensitive)
+                    df.columns = df.columns.str.strip()
+                    
+                    # Map VBA column names to standard names
+                    col_map = {
+                        'Dwelling index': 'dwelling',
+                        'Lighting demand': 'Lighting_W',
+                        'Appliance demand': 'Appliances_W',
+                        'Net dwelling electricity demand': 'Total_Electricity_W',
+                        'Internal building node temperature': 'Internal_Temp_C',
+                        'Hot water demand (litres)': 'Hot_Water_Demand_L_per_min',
+                        'Fuel flow rate (gas)': 'Gas_Consumption_m3_per_min'
+                    }
+                    
+                    for old_name, new_name in col_map.items():
+                        if old_name in df.columns:
+                            df[new_name] = pd.to_numeric(df[old_name], errors='coerce')
+                    
+                    # Ensure dwelling is integer (drop NaN first)
+                    if 'dwelling' in df.columns:
+                        df['dwelling'] = pd.to_numeric(df['dwelling'], errors='coerce')
+                        df = df.dropna(subset=['dwelling'])
+                        if len(df) > 0:
+                            df['dwelling'] = df['dwelling'].astype(int)
+                    
+                    # Find and normalize dwelling column (check if we already mapped it)
+                    if 'dwelling' not in df.columns:
+                        dwelling_col = None
+                        for col in df.columns:
+                            if col.lower() in ['dwelling_index', 'dwelling_id']:
+                                dwelling_col = col
+                                break
+                        
+                        if dwelling_col:
+                            df['dwelling'] = pd.to_numeric(df[dwelling_col], errors='coerce')
+                            df = df.dropna(subset=['dwelling'])
+                            if len(df) > 0:
+                                df['dwelling'] = df['dwelling'].astype(int)
+                        else:
+                            print(f"    WARNING: No dwelling column found in run {i}")
+                            print(f"    Available columns: {list(df.columns)[:10]}")
+                            continue
+                    
+                    # Double-check we have dwelling column now
+                    if 'dwelling' not in df.columns or len(df) == 0:
+                        print(f"    WARNING: Could not parse dwelling column for run {i}")
+                        continue
+                    
+                    # Find and normalize minute column
+                    minute_col = None
+                    for col in df.columns:
+                        if col.lower() in ['minute', 'time', 'timestep']:
+                            minute_col = col
+                            break
+                    
+                    if minute_col:
+                        df['minute'] = self._parse_minute_column(df[minute_col])
+                        df['minute'] = pd.to_numeric(df['minute'], errors='coerce')
+                        df = df.dropna(subset=['minute'])
+                        if len(df) > 0:
+                            df['minute'] = df['minute'].astype(int)
+                    else:
+                        print(f"    WARNING: No minute column found in run {i}")
+                        print(f"    Available columns: {list(df.columns)[:10]}")
+                        continue
+                    
+                    # Final check
+                    if 'minute' not in df.columns or len(df) == 0:
+                        print(f"    WARNING: No valid data after parsing run {i}")
+                        continue
                     
                     all_runs.append(df)
                     print(f"    Loaded run {i}")
@@ -86,15 +157,29 @@ class ValidationAnalyzer:
         return pd.concat(all_runs, ignore_index=True)
     
     def _parse_minute_column(self, minute_series):
-        """Parse minute column (handles time strings like '00:01:00')."""
+        """Parse minute column (handles time strings like '00:01:00' or '12:01:00 AM')."""
         if minute_series.dtype == 'object':
             def parse_time(t):
                 if pd.isna(t):
                     return None
-                parts = str(t).split(':')
+                t_str = str(t).strip()
+                
+                # Handle "12:00:00 AM" format
+                if 'AM' in t_str or 'PM' in t_str:
+                    from datetime import datetime
+                    try:
+                        dt = datetime.strptime(t_str, '%I:%M:%S %p')
+                        return dt.hour * 60 + dt.minute + 1  # 1-based
+                    except:
+                        pass
+                
+                # Handle "00:01:00" format (24-hour)
+                parts = t_str.split(':')
                 if len(parts) >= 2:
-                    return int(parts[0]) * 60 + int(parts[1]) + 1
+                    return int(parts[0]) * 60 + int(parts[1]) + 1  # 1-based
+                
                 return int(t)
+            
             return minute_series.apply(parse_time)
         return minute_series.astype(int)
     
@@ -106,6 +191,19 @@ class ValidationAnalyzer:
         """
         print("\nComputing IQR match rates...")
         
+        # Detect Python time column
+        py_time_col = None
+        for col in ['Minute', 'minute', 'time', 'timestep']:
+            if col in self.df_python.columns:
+                py_time_col = col
+                break
+        
+        if py_time_col is None:
+            print(f"ERROR: No time column in Python data. Columns: {list(self.df_python.columns)[:10]}")
+            return pd.DataFrame()
+        
+        print(f"  Using Python time column: '{py_time_col}'")
+        
         results = []
         
         for dwelling in range(1, 6):
@@ -114,8 +212,16 @@ class ValidationAnalyzer:
             py_dwelling = self.df_python[self.df_python['dwelling'] == dwelling]
             vba_dwelling = self.df_vba[self.df_vba['dwelling'] == dwelling]
             
+            if len(py_dwelling) == 0:
+                print(f"    WARNING: No Python data for dwelling {dwelling}")
+                continue
+            if len(vba_dwelling) == 0:
+                print(f"    WARNING: No VBA data for dwelling {dwelling}")
+                continue
+            
             for metric in METRICS:
                 if metric not in py_dwelling.columns or metric not in vba_dwelling.columns:
+                    print(f"    Skipping {metric}: not in both datasets")
                     continue
                 
                 # For each minute, compute Python IQR
@@ -123,10 +229,10 @@ class ValidationAnalyzer:
                 points_in_iqr = 0
                 
                 for minute in range(1, 1441):
-                    py_minute = py_dwelling[py_dwelling['Minute'] == minute][metric]
+                    py_minute = py_dwelling[py_dwelling[py_time_col] == minute][metric]
                     vba_minute = vba_dwelling[vba_dwelling['minute'] == minute][metric]
                     
-                    if len(py_minute) < 100 or len(vba_minute) == 0:
+                    if len(py_minute) < 10 or len(vba_minute) == 0:  # Need at least 10 samples
                         continue
                     
                     # Compute Python IQR
@@ -144,7 +250,12 @@ class ValidationAnalyzer:
                 
                 # Statistical test: is this significantly different from 50%?
                 # Binomial test: H0: p = 0.5
-                p_value = scipy_stats.binom_test(points_in_iqr, total_vba_points, 0.5, alternative='two-sided')
+                try:
+                    # Try new API (scipy >= 1.7)
+                    p_value = scipy_stats.binomtest(points_in_iqr, total_vba_points, 0.5, alternative='two-sided').pvalue
+                except AttributeError:
+                    # Fall back to old API
+                    p_value = scipy_stats.binom_test(points_in_iqr, total_vba_points, 0.5, alternative='two-sided')
                 
                 # 95% confidence interval for proportion
                 ci_low, ci_high = self._proportion_ci(points_in_iqr, total_vba_points)

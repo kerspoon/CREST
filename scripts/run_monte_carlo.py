@@ -9,7 +9,7 @@ import numpy as np
 import sys
 
 # Default values
-NUM_ITERATIONS = 200 # 1000
+NUM_ITERATIONS = 1000
 CONFIG_FILE = 'test_5_identical_dwellings.csv'
 TEMP_DIR = 'output/monte_carlo_temp'
 DAILY_RESULTS_FILE = 'monte_carlo_daily.csv'
