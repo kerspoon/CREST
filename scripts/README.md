@@ -24,6 +24,28 @@ Compares Python simulation results against Excel baseline.
 ### `clean_excel_data.py`
 Data cleaning utility for Excel outputs.
 
+### `compare_rng_logs.py`
+Compares Excel VBA and Python random number generator call sequences.
+- Validates that both implementations call RNG in identical order
+- Compares random values with configurable tolerance
+- Reports exact location where sequences diverge
+- Usage: `python compare_rng_logs.py excel_rnd_calls.txt debug_random_calls.log`
+- Options:
+  - `--tolerance/-t`: Set numerical tolerance (default: 1e-10)
+  - `--verbose/-v`: Show all comparisons, not just mismatches
+  - `--max-diff/-m`: Maximum differences to display (default: 50)
+
+**Log Formats:**
+- **Excel**: Alternating lines with location and value
+  ```
+  1: clsGlobalClimate:123 - transition steps
+  2: r 0.252345174783841
+  ```
+- **Python**: Single line per call (after header)
+  ```
+  Call #   1: 0.25234517478384078  @ climate.py:simulate_clearness_index:112
+  ```
+
 ## Workflow
 
 1. Run Excel simulation → generates baseline results

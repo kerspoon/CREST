@@ -104,6 +104,20 @@ The `scripts/` directory contains utility scripts for validation, diagnostics, a
 - **compare.py** - Compare Python output against Excel baseline with detailed statistical analysis
 - **validate_algorithm.py** - Definitive algorithm validation: test if VBA samples fall within Python's IQR at 50% rate (20 VBA runs vs 1000 Python runs)
 - **create_test_config.py** - Create 5-dwelling configuration for algorithm validation testing
+- **compare_rng_logs.py** - Compare Excel and Python RNG call sequences to verify identical random number generation order
+  ```bash
+  # Basic comparison
+  python3 scripts/compare_rng_logs.py excel_rnd_calls.txt debug_random_calls.log
+
+  # Verbose mode (shows all matches)
+  python3 scripts/compare_rng_logs.py excel_rnd_calls.txt debug_random_calls.log --verbose
+
+  # Custom tolerance
+  python3 scripts/compare_rng_logs.py excel_rnd_calls.txt debug_random_calls.log -t 1e-15
+
+  # Show more differences
+  python3 scripts/compare_rng_logs.py excel_rnd_calls.txt debug_random_calls.log --max-diff 100
+  ```
 
 ### Monte Carlo Analysis
 - **run_monte_carlo.py** - Run Monte Carlo simulations with multiple random seeds, outputs minute-level parquet and daily CSV
