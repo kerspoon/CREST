@@ -134,6 +134,64 @@ def compare_values(val1: float, val2: float, tolerance: float = 1e-10) -> Tuple[
     return (diff <= tolerance, diff)
 
 
+def extract_module_name(location: str, source: str) -> str:
+    """
+    Extract the module/class name from a location string.
+
+    Excel format: "clsGlobalClimate:123 - transition steps" -> "climate"
+    Python format: "climate.py:simulate_clearness_index:112" -> "climate"
+    """
+    if source == 'excel':
+        # Excel: clsGlobalClimate, clsOccupancy, etc.
+        # Remove 'cls' prefix and extract base name
+        match = re.match(r'cls(\w+)', location)
+        if match:
+            name = match.group(1).lower()
+            # Map VBA class names to Python module names
+            if 'climate' in name:
+                return 'climate'
+            elif 'occupancy' in name:
+                return 'occupancy'
+            elif 'lighting' in name:
+                return 'lighting'
+            elif 'appliance' in name:
+                return 'appliances'
+            elif 'water' in name or 'hotwater' in name:
+                return 'water'
+            elif 'heating' in name:
+                return 'heating'
+            elif 'cooling' in name:
+                return 'cooling'
+            elif 'solar' in name:
+                return 'solar'
+            elif 'pv' in name:
+                return 'pv'
+            return name
+        return location.lower()
+    else:  # python
+        # Python: "climate.py:simulate_clearness_index:112"
+        match = re.match(r'(\w+)\.py:', location)
+        if match:
+            return match.group(1)
+        return location
+
+
+def compare_locations(excel_loc: str, python_loc: str) -> Tuple[bool, str]:
+    """
+    Compare if two locations are from the same module/class.
+
+    Returns:
+        (match: bool, message: str)
+    """
+    excel_module = extract_module_name(excel_loc, 'excel')
+    python_module = extract_module_name(python_loc, 'python')
+
+    if excel_module == python_module:
+        return (True, "")
+    else:
+        return (False, f"Module mismatch: Excel={excel_module}, Python={python_module}")
+
+
 def compare_logs(excel_calls: List[RNGCall],
                 python_calls: List[RNGCall],
                 tolerance: float = 1e-10,
@@ -154,13 +212,15 @@ def compare_logs(excel_calls: List[RNGCall],
     print(f"{'='*80}\n")
 
     # Check if counts match
-    if len(excel_calls) != len(python_calls):
-        print(f"⚠️  WARNING: Different number of RNG calls!")
+    counts_match = len(excel_calls) == len(python_calls)
+    if not counts_match:
+        print(f"❌ FAILURE: Different number of RNG calls!")
         print(f"   Excel:  {len(excel_calls)} calls")
         print(f"   Python: {len(python_calls)} calls")
+        print(f"   Difference: {abs(len(excel_calls) - len(python_calls))} calls")
         print(f"   Will compare up to {min(len(excel_calls), len(python_calls))} calls\n")
 
-    all_match = True
+    all_match = counts_match
     differences = []
     max_calls = min(len(excel_calls), len(python_calls))
 
@@ -176,40 +236,51 @@ def compare_logs(excel_calls: List[RNGCall],
             all_match = False
             continue
 
-        # Compare values
-        match, diff = compare_values(excel.value, python.value, tolerance)
+        # Compare locations (module/class)
+        loc_match, loc_msg = compare_locations(excel.location, python.location)
 
-        if not match:
-            diff_msg = (f"Call #{excel.call_num}: VALUE MISMATCH\n"
-                       f"   Excel:  {excel.value:.17f}\n"
-                       f"   Python: {python.value:.17f}\n"
-                       f"   Diff:   {diff:.17e}\n"
-                       f"   Excel location:  {excel.location}\n"
-                       f"   Python location: {python.location}")
+        # Compare values
+        val_match, diff = compare_values(excel.value, python.value, tolerance)
+
+        if not val_match or not loc_match:
+            diff_msg = f"Call #{excel.call_num}: MISMATCH\n"
+            if not loc_match:
+                diff_msg += f"   {loc_msg}\n"
+            if not val_match:
+                diff_msg += (f"   Value difference: {diff:.17e}\n")
+            diff_msg += (f"   Excel:  {excel.value:.17f} from {excel.location}\n"
+                        f"   Python: {python.value:.17f} from {python.location}")
             differences.append(diff_msg)
             all_match = False
         elif verbose:
             print(f"✓ Call #{excel.call_num}: {excel.value:.15f} (match)")
 
     # Report results
-    if all_match:
+    if all_match and counts_match:
         print(f"✅ SUCCESS: All {max_calls} RNG calls match perfectly!\n")
         print("The Excel VBA and Python implementations are generating")
         print("identical random number sequences in the same order.\n")
         return True
     else:
-        print(f"❌ FAILURE: Found {len(differences)} difference(s)\n")
-        print(f"Showing first {min(len(differences), max_diff)} differences:\n")
-
-        for i, diff_msg in enumerate(differences[:max_diff]):
-            print(diff_msg)
-            print()
-
-        if len(differences) > max_diff:
-            print(f"... and {len(differences) - max_diff} more differences (use --max-diff to show more)\n")
-
-        # Report first divergence
+        # Determine what failed
+        failure_reasons = []
+        if not counts_match:
+            failure_reasons.append(f"Call count mismatch ({abs(len(excel_calls) - len(python_calls))} calls difference)")
         if differences:
+            failure_reasons.append(f"{len(differences)} value/location mismatch(es)")
+
+        print(f"❌ FAILURE: {', '.join(failure_reasons)}\n")
+
+        if differences:
+            print(f"Showing first {min(len(differences), max_diff)} differences:\n")
+            for i, diff_msg in enumerate(differences[:max_diff]):
+                print(diff_msg)
+                print()
+
+            if len(differences) > max_diff:
+                print(f"... and {len(differences) - max_diff} more differences (use --max-diff to show more)\n")
+
+            # Report first divergence
             first_diff = differences[0]
             match = re.search(r'Call #(\d+)', first_diff)
             if match:
