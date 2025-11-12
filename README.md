@@ -100,14 +100,35 @@ For a valid port:
 
 The `scripts/` directory contains utility scripts for validation, diagnostics, and data processing:
 
+### Validation & Comparison
 - **compare.py** - Compare Python output against Excel baseline with detailed statistical analysis
+- **validate_algorithm.py** - Definitive algorithm validation: test if VBA samples fall within Python's IQR at 50% rate (20 VBA runs vs 1000 Python runs)
+- **create_test_config.py** - Create 5-dwelling configuration for algorithm validation testing
+
+### Monte Carlo Analysis
+- **run_monte_carlo.py** - Run Monte Carlo simulations with multiple random seeds, outputs minute-level parquet and daily CSV
+- **analyse_montecarlo.py** - Comprehensive Monte Carlo analysis with quartile statistics, time-series plots, and VBA comparison
+
+### Data Processing
 - **read_excel_100houses.py** - Extract data from Excel/VBA 100-house simulation file to CSV format
 - **clean_excel_data.py** - Clean and reformat extracted Excel data to match Python output format
 - **parse_excel_configs.py** - Parse Excel dwelling configurations into JSON format for Python simulation
-- **run_monte_carlo.py** - Run Monte Carlo simulations for test dwellings with multiple random seeds
-- **analyse_montecarlo.py** - Analyze Monte Carlo results distribution and compare to VBA baseline
+
+### Diagnostics
 - **diagnose_occupancy.py** - Diagnostic tool for debugging occupancy TPM extraction and state selection
 - **diagnose_activity_stats.py** - Diagnostic tool for checking activity statistics loading and usage
+
+### Algorithm Validation Workflow
+
+To definitively validate that Python matches VBA algorithms:
+
+1. **Create test config**: `python scripts/create_test_config.py results/excel_100houses/dwellings_config.csv`
+2. **Run Python Monte Carlo**: `python scripts/run_monte_carlo.py` (1000 iterations, ~30-60 min)
+3. **Run VBA 20 times**: Manually run Excel simulation 20 times, save as `vba_20_runs/vba_run_1.csv` through `vba_run_20.csv`
+4. **Validate**: `python scripts/validate_algorithm.py monte_carlo_minute.parquet vba_20_runs/`
+5. **Check results**: Open `validation_output/validation_report.txt` - algorithms match if all dwellings show 49-51% in IQR
+
+See detailed instructions in the validation plan document.
 
 # Type Checking
 
