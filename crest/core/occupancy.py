@@ -138,10 +138,30 @@ class Occupancy:
 
         Uses the starting states distribution to randomly select an initial state.
 
+        State encoding (based on four-state occupancy model):
+        -------------------------------------------------------
+        The model tracks four states per resident:
+        1. At home and active
+        2. At home and asleep
+        3. Away from home and active
+        4. Away from home and asleep
+
+        These are aggregated into a two-digit state string "XY":
+        - X = number of residents AT HOME (active or asleep)
+        - Y = number of residents ACTIVE (at home or away)
+
+        Examples:
+        - "31" = 3 at home, 1 active (could be 1 at-home+active, 2 at-home+asleep)
+        - "01" = 0 at home, 1 active (1 away+active, others away+asleep) - VALID state
+        - "52" = 5 at home, 2 active (could be 2 at-home+active, 3 at-home+asleep)
+
+        The VBA comment "they are not necessarily at home" (line 345-349) refers to
+        the fact that active residents can be away from home (states 3 and 4).
+
         Returns
         -------
         str
-            Initial state (e.g., "10", "11")
+            Initial state (e.g., "10", "11", "31")
         """
         # Column index for this number of residents (1-indexed in CSV)
         col_idx = self.config.num_residents  # Assuming 0-based, column 1 is for 1 resident
@@ -171,8 +191,9 @@ class Occupancy:
 
         rng_value = self.rng.random()
         state_idx = markov.select_next_state(state_probs, rng_value)
+        selected_state = str(state_labels[state_idx])
 
-        return str(state_labels[state_idx])
+        return selected_state
 
     def _determine_24hr_occupancy(self) -> bool:
         """

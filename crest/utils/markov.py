@@ -46,6 +46,24 @@ def normalize_probabilities(probabilities: np.ndarray, zero_threshold: float = 1
     If all probabilities are zero (or below threshold), sets the first probability to 1.0
     as per the VBA model's handling of "dead-end" states.
 
+    Dead-End States (Known Limitation from Source Data):
+    -----------------------------------------------------
+    The occupancy TPMs contain a small number of "dead-end" states where all transition
+    probabilities are zero. This is a data artifact noted in the Excel changelog:
+
+    "Bug fixed where very occasionally occupancy model would encounter a transition
+    probability 'dead end' i.e. a row consisting of all zeros. This is likely an artefact
+    caused by the fact that the time-use survey data starts and ends at 4am and has some
+    occupancy states at the end of the survey that are not found at the beginning."
+
+    The VBA code handles this by forcing transition to the first state (state "00"),
+    as implemented here. This can cause households to get stuck in unoccupied states
+    (everyone away) for extended periods. With random per-dwelling seeding (VBA), this
+    is extremely rare. With fixed global seeding (Python), specific dwellings may
+    deterministically hit these states.
+
+    VBA Reference: clsOccupancy.cls lines 280-292
+
     Parameters
     ----------
     probabilities : np.ndarray
@@ -61,7 +79,8 @@ def normalize_probabilities(probabilities: np.ndarray, zero_threshold: float = 1
     prob_sum = np.sum(probabilities)
 
     if prob_sum < zero_threshold:
-        # Dead-end state: force transition to first state
+        # Dead-end state: force transition to first state (state "00")
+        # VBA: If dblSum = 0 Then aTPR(1, 1) = 1
         normalized = np.zeros_like(probabilities)
         normalized[0] = 1.0
         return normalized
