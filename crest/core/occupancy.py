@@ -91,28 +91,60 @@ class Occupancy:
         # Load 24-hour occupancy data
         self.occupancy_24hr_df = self.data_loader.load_24hr_occupancy()
 
+        # Lazy initialization state
+        self._initialized = False
+        self._initial_state = None
+        self._is_24hr_occupancy_dwelling = False
+
+    def initialize(self):
+        """
+        Initialize occupancy state (2 RNG calls).
+
+        VBA Reference: clsOccupancy lines 204-238
+        - Select initial state at 00:00
+        - Determine 24-hour occupancy flag
+
+        Must be called before run_simulation().
+        """
+        if self._initialized:
+            return
+
+        # Determine initial state at 00:00 (1 RNG call)
+        # VBA: clsOccupancy:204
+        self._initial_state = self._get_initial_state()
+        self.combined_states[0] = self._initial_state
+        self.active_occupancy[0] = self._extract_active_occupancy(self._initial_state)
+
+        # Determine if this is a 24-hour occupancy dwelling (1 RNG call)
+        # VBA: clsOccupancy:238
+        self._is_24hr_occupancy_dwelling = self._determine_24hr_occupancy()
+
+        self._initialized = True
+
     def run_simulation(self):
         """
-        Run the four-state occupancy simulation for a full day.
+        Run the four-state occupancy simulation for a full day (143 RNG calls).
 
         Generates occupancy patterns using a Markov chain model with transition
         probabilities based on time of day, current state, and number of residents.
+
+        VBA Reference: clsOccupancy:298 (143 state transitions)
+
+        Must call initialize() first.
         """
-        # Determine initial state at 00:00
-        current_state = self._get_initial_state()
-        self.combined_states[0] = current_state
-        self.active_occupancy[0] = self._extract_active_occupancy(current_state)
+        if not self._initialized:
+            raise RuntimeError("Must call initialize() before run_simulation()")
 
-        # Determine if this is a 24-hour occupancy dwelling
-        is_24hr_occupancy_dwelling = self._determine_24hr_occupancy()
+        current_state = self._initial_state
 
-        # Simulate each subsequent 10-minute timestep
+        # Simulate each subsequent 10-minute timestep (143 transitions)
+        # VBA: clsOccupancy:298
         for timestep in range(1, TIMESTEPS_PER_DAY_10MIN):
             # Get transition probabilities for current state and time
             transition_probs = self._get_transition_probabilities(
                 timestep,
                 current_state,
-                is_24hr_occupancy_dwelling
+                self._is_24hr_occupancy_dwelling
             )
 
             # Normalize and handle dead-end states

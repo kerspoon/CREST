@@ -101,18 +101,12 @@ class HeatingControls:
         else:
             self.cooling_system_type = 0  # No cooling (negative index)
 
-        # Thermostat setpoints (will be assigned stochastically)
-        self._assign_thermostat_setpoints()
-
         # Deadbands
         self.space_heating_deadband = THERMOSTAT_DEADBAND_SPACE
         self.space_cooling_deadband = THERMOSTAT_DEADBAND_SPACE
         self.hot_water_deadband = THERMOSTAT_DEADBAND_WATER
         self.emitter_deadband = THERMOSTAT_DEADBAND_EMITTER
         self.cooler_emitter_deadband = THERMOSTAT_DEADBAND_EMITTER
-
-        # Generate timer schedules
-        self._generate_timer_schedules()
 
         # Thermostat state arrays (1440 timesteps)
         self.space_heating_thermostat = np.zeros(TIMESTEPS_PER_DAY_1MIN, dtype=bool)
@@ -128,6 +122,30 @@ class HeatingControls:
         # References to other components (set externally)
         self.building = None
         self.hot_water = None
+
+        # Lazy initialization state
+        self._initialized = False
+
+    def initialize(self):
+        """
+        Initialize heating control setpoints and schedules (~50+ RNG calls).
+
+        VBA Reference: clsHeatingControls lines 207-330
+        - Assign thermostat setpoints (lines 207-239)
+        - Generate timer schedules (lines 209-330)
+
+        Must be called before calculate_control_states().
+        """
+        if self._initialized:
+            return
+
+        # Thermostat setpoints (will be assigned stochastically)
+        self._assign_thermostat_setpoints()
+
+        # Generate timer schedules
+        self._generate_timer_schedules()
+
+        self._initialized = True
 
     def _assign_thermostat_setpoints(self):
         """

@@ -86,9 +86,6 @@ class Appliances:
         self.is_weekend = is_weekend
         self.rng = rng if rng is not None else RandomGenerator()
 
-        # Load appliance specifications
-        self._load_appliance_specs()
-
         # Storage arrays
         # VBA: aSimulationArray(1 To 1442, 1 To 31) - rows 1-2 headers, 3-1442 data
         # Python: Just store the power data (1440 minutes x 31 appliances)
@@ -107,6 +104,26 @@ class Appliances:
         self.heating_system = None
         self.solar_thermal = None
         self.cooling_system = None
+
+        # Lazy initialization state
+        self._initialized = False
+
+    def initialize(self):
+        """
+        Initialize appliance ownership with RNG calls (~31 RNG calls).
+
+        VBA Reference: clsAppliances line 119
+        - Determine which appliances this dwelling owns
+
+        Must be called before run_simulation().
+        """
+        if self._initialized:
+            return
+
+        # Load appliance specifications (includes ownership selection with RNG)
+        self._load_appliance_specs()
+
+        self._initialized = True
 
     def _load_appliance_specs(self):
         """
@@ -207,6 +224,9 @@ class Appliances:
 
         Generates stochastic appliance usage events based on occupancy and activities.
         """
+        if not self._initialized:
+            raise RuntimeError("Must call initialize() before run_simulation()")
+
         if self.occupancy is None:
             raise RuntimeError("Occupancy model must be set before running simulation")
 

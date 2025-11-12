@@ -210,39 +210,59 @@ class Dwelling:
         """
         Run complete simulation for this dwelling.
 
-        Executes all models in the correct order.
+        Executes all models in the correct order to match VBA RNG sequence.
+
+        VBA Order (per dwelling):
+        1. Occupancy init (2 RNG) + simulation (143 RNG)
+        2. Lighting init (2 RNG) + simulation (many RNG)
+        3. Appliances init (31 RNG) + simulation (many RNG)
+        4. Building init (3 RNG)
+        5. Hot water init (4 RNG) + simulation (many RNG)
+        6. Heating controls init (50+ RNG)
+        7. PV, thermal loop, post-processing
         """
-        # 1. Run occupancy simulation (generates occupancy patterns)
-        self.occupancy.run_simulation()
+        # 1. Occupancy: Initialize + run simulation
+        # VBA: clsOccupancy:204-238 (init) + :298 (143 transitions)
+        self.occupancy.initialize()  # 2 RNG calls
+        self.occupancy.run_simulation()  # 143 RNG calls
 
-        # 2. Run hot water simulation (generates demand events)
-        self.hot_water.run_simulation()
+        # 2. Lighting: Initialize + run simulation
+        # VBA: clsLighting:79-87 (init) + simulation
+        self.lighting.initialize()  # 2 RNG calls
+        self.lighting.run_simulation()  # Many RNG calls
 
-        # 3. Run appliances simulation (generates electrical demand)
-        self.appliances.run_simulation()
+        # 3. Appliances: Initialize + run simulation
+        # VBA: clsAppliances:119 (ownership) + simulation
+        self.appliances.initialize()  # 31 RNG calls
+        self.appliances.run_simulation()  # Many RNG calls
 
-        # 4. Run lighting simulation (generates electrical demand)
-        self.lighting.run_simulation()
-
-        # 5. Run PV system - ONLY calculate PV output (pre-simulation)
-        # Net demand and self-consumption calculated AFTER thermal loop
-        # VBA Reference: mdlThermalElectricalModel.bas lines 436-437
-        if self.pv_system:
-            self.pv_system.calculate_pv_output()
-
-        # Note: Solar thermal runs in thermal loop (timestep-by-timestep), not here
-
-        # 6. Initialize building temperatures
+        # 4. Building: Initialize temperatures
+        # VBA: clsBuilding:297 (3 cylinder temp initializations)
         initial_outdoor_temp = self.local_climate.get_temperature(0)
-        self.building.initialize_temperatures(initial_outdoor_temp, random_gen=self.rng)
+        self.building.initialize_temperatures(initial_outdoor_temp, random_gen=self.rng)  # 3 RNG calls
 
-        # 7. Initialize heating controls
+        # 5. Hot water: Initialize + run simulation
+        # VBA: clsHotWater:170 (4 fixture ownership) + simulation
+        self.hot_water.initialize()  # 4 RNG calls
+        self.hot_water.run_simulation()  # Many RNG calls
+
+        # 6. Heating controls: Initialize + thermostat states
+        # VBA: clsHeatingControls:207-330 (setpoints + timers)
+        self.heating_controls.initialize()  # 50+ RNG calls
         self.heating_controls.initialize_thermostat_states(
             self.building.theta_i[0],
             self.building.theta_cyl[0],
             self.building.theta_em[0],
             self.building.theta_cool[0]
         )
+
+        # 7. Run PV system - ONLY calculate PV output (pre-simulation)
+        # Net demand and self-consumption calculated AFTER thermal loop
+        # VBA Reference: mdlThermalElectricalModel.bas lines 436-437
+        if self.pv_system:
+            self.pv_system.calculate_pv_output()
+
+        # Note: Solar thermal runs in thermal loop (timestep-by-timestep), not here
 
         # 8. Main simulation loop (minute by minute)
         for timestep in range(1, TIMESTEPS_PER_DAY_1MIN + 1):

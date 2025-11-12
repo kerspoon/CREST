@@ -111,9 +111,6 @@ class HotWater:
         # Load water usage distribution
         self.water_usage_dist = data_loader.load_water_usage().values
 
-        # Load fixture specifications from CSV
-        self._load_fixture_specs()
-
         # Storage arrays
         self.hot_water_demand = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # litres/min
         self.h_demand = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # W/K thermal transfer coefficient
@@ -123,6 +120,26 @@ class HotWater:
 
         # Reference to occupancy model (set externally)
         self.occupancy = None
+
+        # Lazy initialization state
+        self._initialized = False
+
+    def initialize(self):
+        """
+        Initialize hot water fixture specifications (4 RNG calls).
+
+        VBA Reference: clsHotWater line 170
+        - Determine which water fixtures this dwelling has
+
+        Must be called before run_simulation().
+        """
+        if self._initialized:
+            return
+
+        # Load fixture specifications (includes ownership selection with RNG)
+        self._load_fixture_specs()
+
+        self._initialized = True
 
     def _convert_profile_name(self, profile_raw: str, strict: bool = True) -> str:
         """
@@ -251,6 +268,9 @@ class HotWater:
 
         Generates stochastic fixture usage events based on occupancy and activities.
         """
+        if not self._initialized:
+            raise RuntimeError("Must call initialize() before run_simulation()")
+
         if self.occupancy is None:
             raise RuntimeError("Occupancy model must be set before running simulation")
 

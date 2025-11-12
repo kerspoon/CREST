@@ -67,9 +67,6 @@ class Lighting:
         self.dwelling_index = config.dwelling_index
         self.run_number = config.run_number
 
-        # Load lighting configuration
-        self._load_lighting_config()
-
         # VBA: aSimulationArray(1 To 1443, 1 To 60) (line 31)
         # Row 1: Bulb numbers, Row 2: Ratings, Row 3: Relative use, Rows 4-1443: Demand
         # Python: Store separately for clarity
@@ -88,6 +85,27 @@ class Lighting:
         # BUG FIX #1: Bulb relative use will be generated in run_simulation()
         # to match VBA's RNG sequence (generated per-bulb, interleaved with simulation)
         self.bulb_relative_use = None
+
+        # Lazy initialization state
+        self._initialized = False
+
+    def initialize(self):
+        """
+        Initialize lighting configuration with RNG calls (2 RNG calls).
+
+        VBA Reference: clsLighting lines 79-87
+        - Line 83: Determine irradiance threshold (normal distribution) - 1 RNG call
+        - Line 87: Select bulb configuration (1-100) - 1 RNG call
+
+        Must be called before run_simulation().
+        """
+        if self._initialized:
+            return
+
+        # Load lighting configuration (includes 2 RNG calls)
+        self._load_lighting_config()
+
+        self._initialized = True
 
     def _load_lighting_config(self):
         """
@@ -111,6 +129,8 @@ class Lighting:
             irradiance_mean,
             irradiance_sd
         )
+
+        print(f"  Irradiance threshold params: mean={irradiance_mean}, sd={irradiance_sd}, th={self.irradiance_threshold}")
 
         # VBA: Choose a random house from 100 provided (lines 86-87)
         # intBulbConfiguration = Int((100 * Rnd) + 1)  ' 1 to 100
@@ -210,6 +230,9 @@ class Lighting:
         Generates stochastic bulb switching based on irradiance and occupancy,
         with duration persistence.
         """
+        if not self._initialized:
+            raise RuntimeError("Must call initialize() before run_simulation()")
+
         if self.occupancy is None or self.local_climate is None:
             raise RuntimeError("Occupancy and climate must be set before running simulation")
 
