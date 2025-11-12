@@ -125,8 +125,9 @@ def _select_from_distribution(proportions: np.ndarray, rng: np.random.Generator)
     rand_value = rng.random()
 
     # VBA: If dblRand < dblCumulativeP Then ... Exit For
-    # np.searchsorted finds the first index where rand_value < cumulative[index]
-    index = int(np.searchsorted(cumulative, rand_value))
+    # This uses STRICT < comparison, so we need side='right' in searchsorted
+    # side='right' finds first index where cumulative[index] > rand_value
+    index = int(np.searchsorted(cumulative, rand_value, side='right'))
 
     # Clamp to valid range (in case of floating point errors where sum != 1.0)
     return min(index, len(proportions) - 1)
@@ -546,6 +547,11 @@ def main():
         help="Random seed for reproducibility (default: None)"
     )
     parser.add_argument(
+        "--portable-rng",
+        action="store_true",
+        help="Use portable LCG for cross-platform validation with Excel/VBA (default: False)"
+    )
+    parser.add_argument(
         "--data-dir",
         type=Path,
         default=None,
@@ -626,8 +632,16 @@ def main():
 
     # Set random seed if specified
     if args.seed is not None:
-        rng_module.set_seed(args.seed)
+        # Check for debug mode via environment variable
+        import os
+        debug_rng = os.environ.get('DEBUG_RNG', '').lower() in ('1', 'true', 'yes')
+
+        rng_module.set_seed(args.seed, use_portable_lcg=args.portable_rng, debug=debug_rng)
         print(f"Using random seed: {args.seed}")
+        if args.portable_rng:
+            print("Using portable LCG for cross-platform validation")
+        if debug_rng:
+            print("DEBUG MODE: Logging all random calls")
 
     print(f"Location: {city.value}, {country.value} ({urban_rural.value})")
 
