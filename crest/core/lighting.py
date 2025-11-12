@@ -170,6 +170,12 @@ class Lighting:
             row_idx = 37 + occ - 1  # Row 38-42 (0-indexed: 37-41)
             self.effective_occupancy[occ] = float(light_config_raw.iloc[row_idx, 4])
 
+        print(f"DWELLING {self.dwelling_index}:")
+        print(f"  Calibration scalar: {self.calibration_scalar}")
+        print(f"  Bulb config: {bulb_config_idx}, Num bulbs: {self.num_bulbs}")
+        print(f"  Bulb powers: {self.bulb_powers[:5]}")  # First 5
+        print(f"  Effective occ: {self.effective_occupancy}")
+
         # BUG FIX #5: Load duration ranges from CSV rows 55-63 (0-indexed: 54-62)
         self.duration_ranges = []
         for range_idx in range(9):  # 9 ranges
@@ -254,7 +260,10 @@ class Lighting:
 
                 # VBA: Determine if bulb switch-on condition is passed (lines 169-173)
                 # blnLowIrradiance = ((intIrradiance < intIrradianceThreshold) Or (Rnd() < 0.05))
-                low_irradiance = (irradiance < self.irradiance_threshold) or (self.rng.random() < 0.05)
+                # CRITICAL: VBA's Or operator does NOT short-circuit - it always evaluates both sides!
+                # Python's 'or' DOES short-circuit, so we must evaluate random() first to match VBA
+                rand_5pct = self.rng.random() < 0.05
+                low_irradiance = (irradiance < self.irradiance_threshold) or rand_5pct
 
                 # VBA: Get effective occupancy for sharing (line 176)
                 # dblEffectiveOccupancy = wsLightConfig.Range("E" + CStr(37 + intActiveOccupants)).Value
@@ -262,7 +271,10 @@ class Lighting:
 
                 # VBA: Check probability of switch on (line 179)
                 # If (blnLowIrradiance And (Rnd() < (dblEffectiveOccupancy * dblCalibratedRelativeUseWeighting))) Then
-                if low_irradiance and (self.rng.random() < (effective_occ * calibrated_relative_use)):
+                # CRITICAL: VBA's And operator does NOT short-circuit - it always evaluates both sides!
+                # Python's 'and' DOES short-circuit, so we must evaluate random() first to match VBA
+                rand_switch = self.rng.random() < (effective_occ * calibrated_relative_use)
+                if low_irradiance and rand_switch:
 
                     # VBA: This is a switch on event (line 181)
 
