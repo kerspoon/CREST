@@ -340,6 +340,243 @@ def generate_summary(validation_results: pd.DataFrame, validation_dir: Path) -> 
     print(f"  Saved: {report_file}")
 
 
+# Column names for daily totals analysis (15 variables, columns 3-17 from VBA)
+# VBA Reference: DailyTotals columns 3-17 (mdlThermalElectricalModel.bas lines 1105-1119)
+DAILY_VARIABLES = {
+    'Mean_Active_Occupancy': 'Mean active occupancy',
+    'Proportion_Day_Actively_Occupied': 'Proportion actively occupied',
+    'Lighting_Demand_kWh': 'Lighting demand',
+    'Appliance_Demand_kWh': 'Appliance demand',
+    'PV_Output_kWh': 'PV output',
+    'Total_Electricity_Demand_kWh': 'Total electricity demand',
+    'Self_Consumption_kWh': 'Self consumption',
+    'Net_Electricity_Demand_kWh': 'Net electricity demand',
+    'Hot_Water_Demand_L': 'Hot water demand',
+    'Average_Indoor_Temperature_C': 'Average indoor temperature',
+    'Thermal_Energy_Space_Heating_kWh': 'Thermal energy space heating',
+    'Thermal_Energy_Water_Heating_kWh': 'Thermal energy water heating',
+    'Gas_Demand_m3': 'Gas demand',
+    'Space_Thermostat_Setpoint_C': 'Space thermostat setpoint',
+    'Solar_Thermal_Heat_Gains_kWh': 'Solar thermal heat gains'
+}
+
+
+def compute_daily_totals_iqr(python_daily: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute IQR statistics for daily totals (per dwelling, per variable).
+
+    VBA Reference: Compare 15 variables from columns 3-17 of DailyTotals
+
+    Args:
+        python_daily: DataFrame with daily summary data from Python runs
+
+    Returns:
+        DataFrame with columns: dwelling, variable, q1, median, q3, iqr, count
+    """
+    print("\nComputing Python daily totals IQR...")
+
+    if python_daily is None or len(python_daily) == 0:
+        print("  ERROR: No Python daily data to analyze!")
+        return pd.DataFrame()
+
+    # Auto-detect dwelling column
+    dwelling_col = find_column(python_daily, ['Dwelling', 'dwelling', 'dwelling_index'])
+    if dwelling_col is None:
+        print("  ERROR: No dwelling column found in Python daily data!")
+        return pd.DataFrame()
+
+    # Normalize column name
+    if dwelling_col != 'Dwelling':
+        python_daily = python_daily.rename(columns={dwelling_col: 'Dwelling'})
+
+    stats_list = []
+    dwellings = sorted(python_daily['Dwelling'].unique())
+
+    for dwelling in dwellings:
+        print(f"  Computing for dwelling {dwelling}...")
+        d = python_daily[python_daily['Dwelling'] == dwelling]
+
+        for var_name, var_label in DAILY_VARIABLES.items():
+            if var_name not in d.columns:
+                print(f"    WARN: Column {var_name} not found, skipping")
+                continue
+
+            values = d[var_name].dropna()
+            if len(values) < 10:  # Need enough samples
+                print(f"    WARN: Only {len(values)} samples for {var_name}, skipping")
+                continue
+
+            stats_list.append({
+                'dwelling': dwelling,
+                'variable': var_name,
+                'label': var_label,
+                'q1': np.percentile(values, 25),
+                'median': np.median(values),
+                'q3': np.percentile(values, 75),
+                'iqr': np.percentile(values, 75) - np.percentile(values, 25),
+                'count': len(values)
+            })
+
+    df_stats = pd.DataFrame(stats_list)
+    print(f"  Computed {len(df_stats)} (dwelling, variable) combinations")
+
+    return df_stats
+
+
+def validate_excel_daily_against_iqr(
+    excel_runs: List[Dict[str, pd.DataFrame]],
+    python_iqr: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Check how many Excel daily total values fall within Python IQR.
+
+    Args:
+        excel_runs: List of Excel run data (each with 'daily' DataFrame)
+        python_iqr: Python IQR statistics for daily totals
+
+    Returns:
+        DataFrame with validation results per (run, dwelling, variable)
+    """
+    print("\nValidating Excel daily totals against Python IQR...")
+
+    results = []
+
+    for run_data in excel_runs:
+        run_name = run_data['run_name']
+
+        if 'daily' not in run_data or run_data['daily'] is None:
+            print(f"  WARN: No daily data for {run_name}, skipping")
+            continue
+
+        excel_daily = run_data['daily']
+
+        # Normalize dwelling column
+        dwelling_col = find_column(excel_daily, ['Dwelling', 'dwelling', 'Dwelling index', 'dwelling_index'])
+        if dwelling_col is None:
+            print(f"  WARN: No dwelling column in {run_name}, skipping")
+            continue
+
+        if dwelling_col != 'Dwelling':
+            excel_daily = excel_daily.rename(columns={dwelling_col: 'Dwelling'})
+
+        # Check each variable for each dwelling
+        for dwelling in sorted(python_iqr['dwelling'].unique()):
+            python_d = python_iqr[python_iqr['dwelling'] == dwelling]
+            excel_d = excel_daily[excel_daily['Dwelling'] == dwelling]
+
+            if len(excel_d) == 0:
+                continue
+
+            # For daily totals, we expect just 1 row per dwelling
+            if len(excel_d) > 1:
+                print(f"  WARN: Multiple rows for dwelling {dwelling} in {run_name}, using first")
+                excel_d = excel_d.iloc[0:1]
+
+            for _, python_row in python_d.iterrows():
+                var_name = python_row['variable']
+
+                if var_name not in excel_d.columns:
+                    continue
+
+                excel_value = excel_d[var_name].iloc[0]
+                q1 = python_row['q1']
+                q3 = python_row['q3']
+
+                # Check if Excel value falls in Python IQR
+                in_iqr = (excel_value >= q1) and (excel_value <= q3)
+
+                results.append({
+                    'run': run_name,
+                    'dwelling': dwelling,
+                    'variable': var_name,
+                    'label': python_row['label'],
+                    'excel_value': excel_value,
+                    'python_q1': q1,
+                    'python_median': python_row['median'],
+                    'python_q3': q3,
+                    'in_iqr': 1 if in_iqr else 0
+                })
+
+    df_results = pd.DataFrame(results)
+    print(f"  Validated {len(df_results)} (run, dwelling, variable) combinations")
+
+    return df_results
+
+
+def generate_daily_totals_summary(validation_results: pd.DataFrame, validation_dir: Path) -> None:
+    """Generate summary statistics for daily totals validation."""
+    print("\nGenerating daily totals summary...")
+
+    if len(validation_results) == 0:
+        print("  ERROR: No validation results to summarize!")
+        return
+
+    # Save detailed results
+    results_file = validation_dir / 'daily_totals_iqr.csv'
+    validation_results.to_csv(results_file, index=False)
+    print(f"  Saved: {results_file}")
+
+    # Aggregate by (dwelling, variable)
+    summary = validation_results.groupby(['dwelling', 'variable', 'label']).agg({
+        'in_iqr': ['sum', 'count', 'mean'],
+        'excel_value': ['mean', 'std'],
+        'python_median': 'first'
+    }).reset_index()
+
+    summary.columns = ['dwelling', 'variable', 'label', 'in_iqr_count', 'total_runs', 'in_iqr_pct',
+                       'excel_mean', 'excel_std', 'python_median']
+    summary['in_iqr_pct'] = summary['in_iqr_pct'] * 100  # Convert to percentage
+
+    # Save summary
+    summary_file = validation_dir / 'daily_totals_summary.csv'
+    summary.to_csv(summary_file, index=False)
+    print(f"  Saved: {summary_file}")
+
+    # Generate text report
+    report = []
+    report.append("=" * 80)
+    report.append("DAILY TOTALS IQR VALIDATION RESULTS")
+    report.append("=" * 80)
+    report.append("")
+    report.append("Objective: >50% of Excel samples should fall within Python IQR")
+    report.append("Variables tested: 15 (from VBA DailyTotals columns 3-17)")
+    report.append("")
+
+    # Overall statistics
+    overall_pct = summary['in_iqr_pct'].mean()
+    total_tests = summary['total_runs'].sum()
+
+    report.append(f"OVERALL: {overall_pct:.1f}% in IQR across all variables and dwellings")
+    report.append(f"Total tests: {total_tests} (dwellings × variables × Excel runs)")
+    report.append("")
+
+    # Per-variable summary
+    report.append("PER-VARIABLE SUMMARY:")
+    report.append("-" * 80)
+    var_summary = summary.groupby('variable').agg({
+        'in_iqr_pct': 'mean',
+        'total_runs': 'sum'
+    }).reset_index()
+
+    for _, row in var_summary.iterrows():
+        var = row['variable']
+        pct = row['in_iqr_pct']
+        total = int(row['total_runs'])
+        status = "✓ PASS" if pct >= 50 else "✗ FAIL"
+        report.append(f"  {var:45s} {pct:5.1f}% ({total:3d} tests) {status}")
+
+    report.append("")
+    report.append("=" * 80)
+
+    # Print and save
+    print("\n" + '\n'.join(report))
+
+    report_file = validation_dir / 'daily_totals_report.txt'
+    with open(report_file, 'w') as f:
+        f.write('\n'.join(report))
+    print(f"  Saved: {report_file}")
+
+
 def main():
     """Main validation workflow."""
     # Change to project root for consistent paths
@@ -407,8 +644,34 @@ def main():
         total_data_points=int(validation_results['total_minutes'].sum())
     )
 
-    # Generate summary
+    # Generate summary for minute-level validation
     generate_summary(validation_results, validation_dir)
+
+    # ========================================================================
+    # DAILY TOTALS VALIDATION
+    # ========================================================================
+    if python_daily is not None and len(python_daily) > 0:
+        print("\n" + "=" * 80)
+        print("DAILY TOTALS VALIDATION")
+        print("=" * 80)
+
+        # Compute Python IQR for daily totals
+        daily_iqr = compute_daily_totals_iqr(python_daily)
+        if len(daily_iqr) > 0:
+            # Validate Excel daily totals against Python IQR
+            daily_validation = validate_excel_daily_against_iqr(excel_runs, daily_iqr)
+
+            if len(daily_validation) > 0:
+                # Generate daily totals summary
+                generate_daily_totals_summary(daily_validation, validation_dir)
+            else:
+                print("  WARNING: No daily validation results generated")
+        else:
+            print("  WARNING: Failed to compute daily totals IQR")
+    else:
+        print("\n" + "=" * 80)
+        print("WARNING: No Python daily data found - skipping daily totals validation")
+        print("=" * 80)
 
     print("\n" + "=" * 80)
     print(f"VALIDATION COMPLETE - Results saved to: {validation_dir}")
