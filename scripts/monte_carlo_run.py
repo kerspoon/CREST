@@ -92,7 +92,9 @@ def extract_daily_totals(seed_dir: Path, seed: int) -> list:
         return results
 
     try:
-        df = pd.read_csv(daily_csv)
+        # Header format: Row 1=description, Row 2=column names, Row 3=symbols, Row 4=units, Row 5+=data
+        # Skip rows 0 (description), 2 (symbols), 3 (units); keep row 1 (column names) as header
+        df = pd.read_csv(daily_csv, skiprows=[0, 2, 3])
 
         for _, row in df.iterrows():
             # Use Excel-compatible column names (matching new format)
@@ -127,11 +129,13 @@ def extract_minute_data(seed_dir: Path, seed: int) -> pd.DataFrame:
         return None
 
     try:
-        df = pd.read_csv(minute_csv)
+        # Header format: Row 1=description, Row 2=column names, Row 3=symbols, Row 4=units, Row 5+=data
+        # Skip rows 0 (description), 2 (symbols), 3 (units); keep row 1 (column names) as header
+        df = pd.read_csv(minute_csv, skiprows=[0, 2, 3])
 
         # Auto-detect dwelling column
         dwelling_col = None
-        for col in ['dwelling_index', 'dwelling', 'Dwelling', 'dwelling_id']:
+        for col in ['Dwelling index', 'dwelling_index', 'dwelling', 'Dwelling', 'dwelling_id']:
             if col in df.columns:
                 dwelling_col = col
                 break
