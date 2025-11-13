@@ -70,6 +70,9 @@ if (-not (Test-Path $OutputDir)) {
 function Save-SheetAsCSV {
     param(
         [Parameter(Mandatory=$true)]
+        $Excel,
+
+        [Parameter(Mandatory=$true)]
         $Workbook,
 
         [Parameter(Mandatory=$true)]
@@ -79,6 +82,7 @@ function Save-SheetAsCSV {
         [string]$OutputPath
     )
 
+    $tempWorkbook = $null
     try {
         $sheet = $Workbook.Sheets.Item($SheetName)
 
@@ -89,8 +93,21 @@ function Save-SheetAsCSV {
             return $false
         }
 
-        # Save as CSV (xlCSV = 6)
-        $sheet.SaveAs($OutputPath, 6)
+        # Create a new temporary workbook
+        $tempWorkbook = $Excel.Workbooks.Add()
+        $tempSheet = $tempWorkbook.Sheets.Item(1)
+
+        # Copy the used range (data only, no charts/objects)
+        $usedRange.Copy() | Out-Null
+
+        # Paste values only into the temporary sheet
+        $tempSheet.Range("A1").PasteSpecial(-4163) | Out-Null  # xlPasteValues = -4163
+
+        # Clear clipboard
+        $Excel.CutCopyMode = $false
+
+        # Save the temporary workbook as CSV (xlCSV = 6)
+        $tempWorkbook.SaveAs($OutputPath, 6)
 
         $fileSize = (Get-Item $OutputPath).Length
         Write-Host "  Saved: $SheetName -> $(Split-Path $OutputPath -Leaf) ($fileSize bytes)"
@@ -98,7 +115,15 @@ function Save-SheetAsCSV {
     }
     catch {
         Write-Error "  Failed to save sheet '$SheetName': $_"
+        Write-Error "  Error details: $($_.Exception.Message)"
         return $false
+    }
+    finally {
+        # Clean up temporary workbook
+        if ($null -ne $tempWorkbook) {
+            $tempWorkbook.Close($false)
+            [System.Runtime.Interopservices.Marshal]::ReleaseComObject($tempWorkbook) | Out-Null
+        }
     }
 }
 
@@ -203,7 +228,7 @@ try {
             $csvFileName = $sheetEntry.Value
             $csvPath = Join-Path $runDir $csvFileName
 
-            $saveSuccess = Save-SheetAsCSV -Workbook $Workbook -SheetName $sheetName -OutputPath $csvPath
+            $saveSuccess = Save-SheetAsCSV -Excel $Excel -Workbook $Workbook -SheetName $sheetName -OutputPath $csvPath
 
             if (-not $saveSuccess) {
                 $allSheetsSuccess = $false
