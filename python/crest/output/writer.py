@@ -433,10 +433,10 @@ class ResultsWriter:
         pv_output_kwh = dwelling.pv_system.get_daily_sum_pv_output() / 60.0 / 1000.0 if dwelling.pv_system else 0.0
 
         # VBA line 1090: dblSelfConsumption = aPVSystem(intRunNumber).GetDailySumP_self / 60 / 1000
-        self_consumption_kwh = dwelling.pv_system.get_daily_sum_p_self() / 60.0 / 1000.0 if dwelling.pv_system else 0.0
+        self_consumption_kwh = dwelling.pv_system.get_daily_sum_self_consumption() / 60.0 / 1000.0 if dwelling.pv_system else 0.0
 
         # VBA line 1088: dblNetElectricityDemand = aPVSystem(intRunNumber).GetDailySumP_net / 60 / 1000
-        net_electricity_kwh = dwelling.pv_system.get_daily_sum_p_net() / 60.0 / 1000.0 if dwelling.pv_system else total_electricity_kwh
+        net_electricity_kwh = dwelling.pv_system.get_daily_sum_net_demand() / 60.0 / 1000.0 if dwelling.pv_system else total_electricity_kwh
 
         # VBA line 1092: dblHotWaterDemand = aHotWater(intRunNumber).GetDailySumHotWaterDemand
         hot_water_litres = dwelling.hot_water.get_daily_hot_water_volume()
@@ -445,10 +445,10 @@ class ResultsWriter:
         mean_temp = np.mean(dwelling.building.theta_i)
 
         # VBA line 1096: dblThermalEnergySpace = aPrimaryHeatingSystem(intRunNumber).GetDailySumThermalEnergySpace / 60 / 1000
-        thermal_energy_space_kwh = dwelling.heating_system.get_daily_sum_thermal_energy_space() / 60.0 / 1000.0
+        thermal_energy_space_kwh = dwelling.heating_system.get_daily_thermal_energy_space() / 60.0 / 1000.0
 
         # VBA line 1097: dblThermalEnergyWater = aPrimaryHeatingSystem(intRunNumber).GetDailySumThermalEnergyWater / 60 / 1000
-        thermal_energy_water_kwh = dwelling.heating_system.get_daily_sum_thermal_energy_water() / 60.0 / 1000.0
+        thermal_energy_water_kwh = dwelling.heating_system.get_daily_thermal_energy_water() / 60.0 / 1000.0
 
         # VBA line 1099: dblGasDemand = aPrimaryHeatingSystem(intRunNumber).GetDailySumFuelFlow / 60
         gas_m3 = dwelling.heating_system.get_daily_fuel_consumption() / 60.0
