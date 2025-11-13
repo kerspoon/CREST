@@ -854,13 +854,14 @@ def generate_daily_totals_wide_format(
         for dwelling in dwellings:
             row = {'name': quartile_name, 'Dwelling': dwelling}
 
-            # Get Python IQR data for this dwelling
+            # Get Python IQR data for this dwelling (wide format)
             python_d = python_daily_iqr[python_daily_iqr['dwelling'] == dwelling]
 
             for col_name in column_names:
-                python_var = python_d[python_d['variable'] == col_name]
-                if len(python_var) > 0:
-                    row[col_name] = python_var[quartile_col].iloc[0]
+                # Access column directly: {col_name}_{quartile_col}
+                stat_col = f'{col_name}_{quartile_col}'
+                if len(python_d) > 0 and stat_col in python_d.columns:
+                    row[col_name] = python_d[stat_col].iloc[0]
                 else:
                     row[col_name] = np.nan
 
@@ -873,15 +874,23 @@ def generate_daily_totals_wide_format(
         # For each variable, calculate what % of Excel runs fell within IQR
         python_d = python_daily_iqr[python_daily_iqr['dwelling'] == dwelling]
 
-        for col_name in column_names:
-            python_var = python_d[python_d['variable'] == col_name]
+        if len(python_d) == 0:
+            for col_name in column_names:
+                row[col_name] = np.nan
+            rows.append(row)
+            continue
 
-            if len(python_var) == 0:
+        for col_name in column_names:
+            # Access q1 and q3 from wide format
+            q1_col = f'{col_name}_q1'
+            q3_col = f'{col_name}_q3'
+
+            if q1_col not in python_d.columns or q3_col not in python_d.columns:
                 row[col_name] = np.nan
                 continue
 
-            q1 = python_var['q1'].iloc[0]
-            q3 = python_var['q3'].iloc[0]
+            q1 = python_d[q1_col].iloc[0]
+            q3 = python_d[q3_col].iloc[0]
 
             # Count how many Excel runs fall within [q1, q3] for this dwelling & variable
             in_iqr_count = 0
