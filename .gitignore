@@ -33,12 +33,8 @@ env/
 *.swo
 *~
 
-# Results
-results/
+# Results and output
 output/
-output*/
-*.csv
-!data/*.csv
 
 # Testing/Coverage
 .coverage
@@ -47,11 +43,6 @@ htmlcov/
 
 # Logs
 *.log
-
-# Excel files (keep for validation but don't commit)
-*.xlsx
-*.xlsm
-*.xls
 
 # Jupyter
 .ipynb_checkpoints/

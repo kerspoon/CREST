@@ -1,0 +1,27 @@
+Heating or Cooling system model parameters,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Primary heating system index,Proportion of dwellings with this heating system,Type of heating unit,Type of system,Type of fuel,Fuel flow rate (nominal),Calorific value of fuel,Calorific value of fuel flow rate,Thermal efficiency,Heat output of unit,Standby power,Pump power,DHW cylinder volume,DHW Tank Heat Loss,,,,Database of Cooling Systems to Choose From,,,,,,,,,,,,
+,,,"1 = regular, 2 = combi",,mfuel,,,ηh,φh,Pstandby,Ppump,Vcyl,Hloss,,,,UK,Urban India,,,,,,Rural India,,,,,
+,,,,,m3/h,MJ/m3,W,%,W,W,W,ltr,WK-1,,,,Any Year,2006,2011.0,2016.0,2021.0,2026.0,2031.0,2006,2011.0,2016.0,2021.0,2026.0,2031.0
+1,1,No Heating or Cooling,1,,,,,0,1,0,0,,,,No Cooling,,1,0,0.0,0.0,0.0,0.0,0.0,0.35778583494529925,0.040052748461762766,0.0,0.0,0.0,0.0
+2,0,Fans Only,2,,,,,0,20,0,20,,,,Fans,,0,0.7645461171865797,0.6756689973327877,0.5631537643687539,0.4430326828361628,0.3059932606572874,0.20174047235045228,0.6124707868999935,0.9042901491241374,0.8996356148328927,0.8374870527263456,0.7776877030047754,0.734755099365244
+3,0,Air Cooler,3,,,,,10,-1000,0,100,,,,Air Coolers,,0,0.21271117822348765,0.27848916483439073,0.34663900831992156,0.39925003479543664,0.4562760654092113,0.5020593318612183,0.027922355002378295,0.05235073989445037,0.09367342615596687,0.14990000211211707,0.20017331306209019,0.23051561740925605
+4,0,Air Conditioning,4,,,,,4,-5000,10,1250,,,,Air Conditioning,,0,0.02274270458993264,0.04584183783282152,0.09020722731132462,0.15771728236840052,0.2377306739335013,0.2962001957883294,0.001821023152329019,0.003306362519649497,0.006690959011140491,0.012612945161537359,0.022138983933134397,0.03472928322549997
+,,,,,,,,,,,,,,,,Check Total,1,1,0.9999999999999999,1.0,1.0,1.0,1.0,1,1.0,1.0,1.0,1.0,1.0
+,,,,,,Initial guesses used,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,for cooling technologies,,,,,,,,,Fans,Appliances,0,1.646839373541593,2.0594445646395068,2.5815484040667838,3.106579841850723,3.632691526247011,3.904659080979652,0.6422141650547007,0.9599472515382372,1.391204785162519,1.8642903175303103,2.224967885280007,2.449716815518704
+,,,,,,,,,,,,,,,Air Coolers,Per,0,0.23545388281342028,0.32433100266721226,0.4368462356312462,0.5569673171638372,0.6940067393427126,0.7982595276495477,0.029743378154707314,0.055657102414099865,0.10036438516710736,0.16251294727365442,0.2223122969952246,0.26524490063475603
+,,,,,,,,,,,,,,,Air Conditioning,Household,0,0.02274270458993264,0.04584183783282152,0.09020722731132462,0.15771728236840052,0.2377306739335013,0.2962001957883294,0.001821023152329019,0.003306362519649497,0.006690959011140491,0.012612945161537359,0.022138983933134397,0.03472928322549997
+References:,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+‘RESIDENTIAL CONSUMPTION OF ELECTRICITY IN INDIA DOCUMENTATION OF DATA AND METHODOLOGY’,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"Background Paper, ‘India: Strategies for Low Carbon Growth’, DRAFT July 2008, The World Bank",,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+www.moef.nic.in/downloads/public-information/Residentialpowerconsumption.pdf,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"Table 1: Population and Urbanization, 2006-2030",,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Table 11:Population of Heating / Cooling Appliances (millions) used later in heating and cooling models,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Assumptions:,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"In the UK, all heating is by gas boilers",,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"In India, every household with air conditioning also has an air cooler.",,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Every household with an air cooler also has at least one fan.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Households with no fans have no 'cooling' technology at all.,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"The cooling output of the evaporative coolers and air conditioning are very approximate, as are the coefficients of refrigertion.",,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"In reality, evaporative coolers perform much less well in humid conditions but to model this would be beyond the scope of this model.",,,,,,,,,,,,,,,,,,,,,,,,,,,,,

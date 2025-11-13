@@ -1,0 +1,5 @@
+Simulation results - daily sums,,,,,,,,,,,,,,,,
+Dwelling index,Date,Mean active occupancy,Proportion of day actively occupied,Lighting demand,Appliance demand,PV output,Total dwelling electricity demand,Total self-consumption,Net dwelling electricity demand,Hot water demand (litres),Average indoor air temperature,Thermal energy used for space heating,Thermal energy used for hot water heating,Gas demand,Space thermostat set point,Solar thermal collector heat gains
+,,,,Elight,Ea,Epv,Etotal,Eself,Enet,,θi,"Eh, space","Eh, water",mfuel,,
+,,,,kWh,kWh,kWh,kWh,kWh,kWh,litres/day,°C,kWh,kWh,m3/day,°C,kWh
+1,2015-01-01 00:00:00,0.6111111111111112,0.4097222222222222,2.558,7.3042,1.9287447056843134,9.8622,0.7549902933546679,7.933455294315688,79.00000000000001,18.58941143162709,35.71730297435977,2.7550999163134415,4.616688346880803,20,0

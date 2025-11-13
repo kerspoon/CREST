@@ -1,0 +1,380 @@
+#!/usr/bin/env python3
+"""Compare Excel and Python Monte Carlo runs using IQR validation.
+
+This script implements Objective #2: Statistical Distribution Validation
+- Compare 20 Excel runs against 1000 Python runs
+- For each minute, dwelling, and variable: check if Excel value falls in Python IQR
+- Expected: >50% of Excel samples should fall within Python IQR
+- Test across 72,000+ data points (5 houses × 20 runs × 5 variables × 1440 minutes)
+
+Usage:
+    python scripts/monte_carlo_compare.py \\
+        output/monte_carlo/python_1000runs_YYYYMMDD_NN \\
+        output/monte_carlo/excel_20runs_YYYYMMDD_NN
+"""
+
+import sys
+import pandas as pd
+import numpy as np
+from pathlib import Path
+from typing import Dict, List, Tuple
+import json
+
+# Import helper utilities
+from utils import create_validation_dir, save_metadata, get_project_root
+
+
+# Variables to compare (column names may vary)
+VARIABLES = {
+    'electricity': ['Total_Electricity_W', 'Electricity_W', 'total_electricity'],
+    'gas': ['Gas_Consumption_m3_per_min', 'Gas_m3_per_min', 'gas'],
+    'water': ['Hot_Water_Demand_L_per_min', 'Hot_Water_L_per_min', 'water'],
+    'temperature': ['Internal_Temp_C', 'Indoor_Temp_C', 'temperature'],
+    'lighting': ['Lighting_W', 'lighting']
+}
+
+
+def find_column(df: pd.DataFrame, possible_names: List[str]) -> str:
+    """Find first matching column name from a list of possibilities."""
+    for name in possible_names:
+        if name in df.columns:
+            return name
+    return None
+
+
+def load_python_baseline(python_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
+    """
+    Load Python Monte Carlo baseline (minute-level and daily).
+
+    Returns:
+        Tuple of (minute_df, daily_df)
+    """
+    print(f"\nLoading Python baseline from: {python_dir}")
+
+    # Try loading minute-level data (parquet or CSV)
+    minute_df = None
+    for filename in ['minute_level.parquet', 'monte_carlo_minute.parquet', 'results_minute_level.csv']:
+        filepath = python_dir / filename
+        if filepath.exists():
+            if filepath.suffix == '.parquet':
+                minute_df = pd.read_parquet(filepath)
+            else:
+                minute_df = pd.read_csv(filepath)
+            print(f"  Loaded minute data: {filename} ({len(minute_df):,} rows)")
+            break
+
+    if minute_df is None:
+        print("  ERROR: No minute-level data found!")
+        return None, None
+
+    # Load daily summary
+    daily_df = None
+    for filename in ['daily_summary.csv', 'monte_carlo_daily.csv', 'results_daily_summary.csv']:
+        filepath = python_dir / filename
+        if filepath.exists():
+            daily_df = pd.read_csv(filepath)
+            print(f"  Loaded daily data: {filename} ({len(daily_df)} rows)")
+            break
+
+    return minute_df, daily_df
+
+
+def load_excel_runs(excel_dir: Path) -> List[Dict[str, pd.DataFrame]]:
+    """
+    Load Excel runs (expecting run_01/ through run_NN/ subdirectories).
+
+    Returns:
+        List of dicts with 'minute' and 'daily' dataframes for each run
+    """
+    print(f"\nLoading Excel runs from: {excel_dir}")
+
+    runs = []
+    run_dirs = sorted([d for d in excel_dir.iterdir() if d.is_dir() and d.name.startswith('run_')])
+
+    if not run_dirs:
+        print("  ERROR: No run_* subdirectories found!")
+        return []
+
+    for run_dir in run_dirs:
+        run_data = {}
+
+        # Load minute-level
+        minute_file = run_dir / 'results_minute_level.csv'
+        if minute_file.exists():
+            run_data['minute'] = pd.read_csv(minute_file)
+        else:
+            print(f"  WARN: No minute data in {run_dir.name}")
+            continue
+
+        # Load daily summary
+        daily_file = run_dir / 'results_daily_summary.csv'
+        if daily_file.exists():
+            run_data['daily'] = pd.read_csv(daily_file)
+
+        run_data['run_name'] = run_dir.name
+        runs.append(run_data)
+
+    print(f"  Loaded {len(runs)} Excel runs")
+    return runs
+
+
+def compute_python_iqr(python_minute: pd.DataFrame) -> pd.DataFrame:
+    """
+    Compute IQR statistics for each (dwelling, minute, variable) combination.
+
+    Returns:
+        DataFrame with columns: dwelling, minute, variable, q1, median, q3, iqr
+    """
+    print("\nComputing Python IQR statistics...")
+
+    # Detect time column
+    time_col = find_column(python_minute, ['Minute', 'minute', 'time', 'timestep'])
+    if time_col is None:
+        print("  ERROR: No time column found!")
+        return pd.DataFrame()
+
+    # Detect dwelling column
+    dwelling_col = find_column(python_minute, ['dwelling', 'Dwelling', 'dwelling_index'])
+    if dwelling_col is None:
+        print("  ERROR: No dwelling column found!")
+        return pd.DataFrame()
+
+    # Normalize column names
+    python_minute = python_minute.rename(columns={time_col: 'minute', dwelling_col: 'dwelling'})
+
+    stats_list = []
+    dwellings = sorted(python_minute['dwelling'].unique())
+    minutes = range(1, 1441)  # 1440 minutes in a day
+
+    for dwelling in dwellings:
+        print(f"  Computing for dwelling {dwelling}...")
+        d = python_minute[python_minute['dwelling'] == dwelling]
+
+        for minute in minutes:
+            m = d[d['minute'] == minute]
+
+            if len(m) < 10:  # Need enough samples
+                continue
+
+            row = {'dwelling': dwelling, 'minute': minute}
+
+            # Compute IQR for each variable
+            for var_name, col_names in VARIABLES.items():
+                col = find_column(m, col_names)
+                if col is not None and col in m.columns:
+                    values = m[col].dropna()
+                    if len(values) > 0:
+                        row[f'{var_name}_q1'] = np.percentile(values, 25)
+                        row[f'{var_name}_median'] = np.median(values)
+                        row[f'{var_name}_q3'] = np.percentile(values, 75)
+                        row[f'{var_name}_iqr'] = row[f'{var_name}_q3'] - row[f'{var_name}_q1']
+
+            stats_list.append(row)
+
+    df_stats = pd.DataFrame(stats_list)
+    print(f"  Computed {len(df_stats)} (dwelling, minute) combinations")
+
+    return df_stats
+
+
+def validate_excel_against_iqr(
+    excel_runs: List[Dict[str, pd.DataFrame]],
+    python_iqr: pd.DataFrame
+) -> pd.DataFrame:
+    """
+    Check how many Excel values fall within Python IQR.
+
+    Returns:
+        DataFrame with validation results
+    """
+    print("\nValidating Excel runs against Python IQR...")
+
+    results = []
+
+    for run_data in excel_runs:
+        run_name = run_data['run_name']
+        excel_minute = run_data['minute']
+
+        # Detect and normalize columns
+        time_col = find_column(excel_minute, ['Minute', 'minute', 'time'])
+        dwelling_col = find_column(excel_minute, ['dwelling', 'Dwelling', 'dwelling_index'])
+
+        if time_col is None or dwelling_col is None:
+            print(f"  WARN: Skipping {run_name} - missing columns")
+            continue
+
+        excel_minute = excel_minute.rename(columns={time_col: 'minute', dwelling_col: 'dwelling'})
+
+        # Merge with Python IQR
+        for dwelling in sorted(python_iqr['dwelling'].unique()):
+            python_d = python_iqr[python_iqr['dwelling'] == dwelling]
+            excel_d = excel_minute[excel_minute['dwelling'] == dwelling]
+
+            merged = excel_d.merge(python_d, on='minute', how='inner')
+
+            if len(merged) == 0:
+                continue
+
+            # Check each variable
+            for var_name, col_names in VARIABLES.items():
+                col = find_column(excel_d, col_names)
+                if col is None:
+                    continue
+
+                q1_col = f'{var_name}_q1'
+                q3_col = f'{var_name}_q3'
+
+                if q1_col not in merged.columns or q3_col not in merged.columns:
+                    continue
+
+                # Count how many Excel values fall in Python IQR
+                in_iqr = (merged[col] >= merged[q1_col]) & (merged[col] <= merged[q3_col])
+                total = len(merged)
+                in_iqr_count = in_iqr.sum()
+                in_iqr_pct = 100 * in_iqr_count / total if total > 0 else 0
+
+                results.append({
+                    'run': run_name,
+                    'dwelling': dwelling,
+                    'variable': var_name,
+                    'total_minutes': total,
+                    'in_iqr_count': in_iqr_count,
+                    'in_iqr_pct': in_iqr_pct,
+                    'excel_mean': merged[col].mean(),
+                    'python_median': merged[f'{var_name}_median'].mean() if f'{var_name}_median' in merged.columns else np.nan
+                })
+
+    df_results = pd.DataFrame(results)
+    print(f"  Validated {len(df_results)} (run, dwelling, variable) combinations")
+
+    return df_results
+
+
+def generate_summary(validation_results: pd.DataFrame, validation_dir: Path) -> None:
+    """Generate summary statistics and save reports."""
+    print("\nGenerating summary report...")
+
+    # Overall statistics
+    overall = validation_results.groupby('variable').agg({
+        'in_iqr_pct': ['mean', 'std', 'min', 'max'],
+        'total_minutes': 'sum'
+    }).reset_index()
+
+    # Save detailed results
+    results_file = validation_dir / 'iqr_analysis.csv'
+    validation_results.to_csv(results_file, index=False)
+    print(f"  Saved: {results_file}")
+
+    # Save summary
+    summary_file = validation_dir / 'summary_statistics.csv'
+    overall.to_csv(summary_file, index=False)
+    print(f"  Saved: {summary_file}")
+
+    # Generate text report
+    report = []
+    report.append("=" * 80)
+    report.append("MONTE CARLO IQR VALIDATION RESULTS")
+    report.append("=" * 80)
+    report.append("")
+    report.append("Objective: >50% of Excel samples should fall within Python IQR")
+    report.append("")
+
+    for var in validation_results['variable'].unique():
+        var_data = validation_results[validation_results['variable'] == var]
+        mean_pct = var_data['in_iqr_pct'].mean()
+        std_pct = var_data['in_iqr_pct'].std()
+        total_tests = var_data['total_minutes'].sum()
+
+        status = "✓ PASS" if mean_pct >= 50 else "✗ FAIL"
+
+        report.append(f"{var.upper()}: {mean_pct:.1f}% ± {std_pct:.1f}% in IQR {status}")
+        report.append(f"  Total data points tested: {total_tests:,}")
+        report.append("")
+
+    total_data_points = validation_results['total_minutes'].sum()
+    report.append(f"TOTAL DATA POINTS: {total_data_points:,}")
+    report.append("")
+    report.append("=" * 80)
+
+    # Print to console
+    print("\n" + '\n'.join(report))
+
+    # Save to file
+    report_file = validation_dir / 'validation_report.txt'
+    with open(report_file, 'w') as f:
+        f.write('\n'.join(report))
+    print(f"  Saved: {report_file}")
+
+
+def main():
+    """Main validation workflow."""
+    if len(sys.argv) < 3:
+        print("Usage: python scripts/monte_carlo_compare.py <python_dir> <excel_dir>")
+        print("\nExample:")
+        print("  python scripts/monte_carlo_compare.py \\")
+        print("    output/monte_carlo/python_1000runs_20250113_01 \\")
+        print("    output/monte_carlo/excel_20runs_20250113_01")
+        sys.exit(1)
+
+    python_dir = Path(sys.argv[1])
+    excel_dir = Path(sys.argv[2])
+
+    # Validate directories exist
+    if not python_dir.exists():
+        print(f"ERROR: Python directory not found: {python_dir}")
+        sys.exit(1)
+
+    if not excel_dir.exists():
+        print(f"ERROR: Excel directory not found: {excel_dir}")
+        sys.exit(1)
+
+    print("=" * 80)
+    print("CREST MONTE CARLO IQR VALIDATION")
+    print("=" * 80)
+
+    # Load Python baseline
+    python_minute, python_daily = load_python_baseline(python_dir)
+    if python_minute is None:
+        sys.exit(1)
+
+    # Load Excel runs
+    excel_runs = load_excel_runs(excel_dir)
+    if not excel_runs:
+        sys.exit(1)
+
+    # Compute Python IQR
+    python_iqr = compute_python_iqr(python_minute)
+    if len(python_iqr) == 0:
+        print("ERROR: Failed to compute Python IQR")
+        sys.exit(1)
+
+    # Validate Excel against Python IQR
+    validation_results = validate_excel_against_iqr(excel_runs, python_iqr)
+    if len(validation_results) == 0:
+        print("ERROR: Validation failed")
+        sys.exit(1)
+
+    # Create validation directory
+    validation_dir = create_validation_dir(str(python_dir), str(excel_dir), "monte_carlo")
+    print(f"\nValidation directory: {validation_dir}")
+
+    # Save metadata
+    save_metadata(
+        validation_dir,
+        str(python_dir),
+        str(excel_dir),
+        python_runs=len(python_minute['seed'].unique()) if 'seed' in python_minute.columns else "unknown",
+        excel_runs=len(excel_runs),
+        total_data_points=validation_results['total_minutes'].sum()
+    )
+
+    # Generate summary
+    generate_summary(validation_results, validation_dir)
+
+    print("\n" + "=" * 80)
+    print(f"VALIDATION COMPLETE - Results saved to: {validation_dir}")
+    print("=" * 80)
+
+
+if __name__ == '__main__':
+    main()

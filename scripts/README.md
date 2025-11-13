@@ -1,58 +1,45 @@
-# Validation Scripts
+# Scripts Directory
 
-Utility scripts for validating Python implementation against Excel VBA baseline.
+Validation and utility scripts for the CREST Demand Model Python port.
 
-## Scripts
+## Validation Workflow Scripts
 
-### `parse_excel_configs.py`
-Extracts dwelling configurations from Excel file to JSON.
-- Reads `CREST_Demand_Model_v2.3.3__100_houses.xlsm`
-- Outputs `configs/excel_100houses.json`
-- Allows running Python with identical dwelling setups as Excel
+### Objective #1: RNG Call Sequence Matching
 
-### `read_excel_100houses.py`
-Reads baseline results from Excel simulation.
-- Extracts minute-level and daily results
-- Formats for comparison with Python output
+**`rng_validation_run.py`** - Run single iteration with LCG logging
+- Uses portable LCG for exact Excel matching
+- Logs every RNG call to `rng_calls.log`
+- Creates: `output/rng_validation/python_5houses_YYYYMMDD_NN/`
 
-### `compare_results.py`
-Compares Python simulation results against Excel baseline.
-- Checks electricity, gas, hot water consumption
-- Reports differences and statistical summaries
-- Validates model accuracy
+**`rng_log_compare.py`** - Compare Excel vs Python RNG logs
+- Compares call-by-call sequence
+- Reports first divergence location
+- Creates: `output/rng_validation/validation_pYYYYMMDD_NN_eYYYYMMDD_NN/`
 
-### `clean_excel_data.py`
-Data cleaning utility for Excel outputs.
+### Objective #2: Statistical Distribution Validation
 
-### `compare_rng_logs.py`
-Compares Excel VBA and Python random number generator call sequences.
-- Validates that both implementations call RNG in identical order
-- Compares random values with configurable tolerance
-- Reports exact location where sequences diverge
-- Usage: `python compare_rng_logs.py excel_rnd_calls.txt debug_random_calls.log`
-- Options:
-  - `--tolerance/-t`: Set numerical tolerance (default: 1e-10)
-  - `--verbose/-v`: Show all comparisons, not just mismatches
-  - `--max-diff/-m`: Maximum differences to display (default: 50)
+**`monte_carlo_run.py`** - Run N Monte Carlo iterations
+- Default: 1000 iterations
+- Auto-incrementing run numbers
+- Creates: `output/monte_carlo/python_NNNNruns_YYYYMMDD_NN/`
 
-**Log Formats:**
-- **Excel**: Alternating lines with location and value
-  ```
-  1: clsGlobalClimate:123 - transition steps
-  2: r 0.252345174783841
-  ```
-- **Python**: Single line per call (after header)
-  ```
-  Call #   1: 0.25234517478384078  @ climate.py:simulate_clearness_index:112
-  ```
+**`monte_carlo_compare.py`** - IQR validation
+- Tests 72,000+ data points
+- Compares Excel samples against Python IQR
+- Creates: `output/monte_carlo/validation_pYYYYMMDD_NN_eYYYYMMDD_NN/`
 
-## Workflow
+## Utility Scripts
 
-1. Run Excel simulation → generates baseline results
-2. Extract configs: `python parse_excel_configs.py`
-3. Run Python simulation: `python crest_simulate.py --num-dwellings 100 --seed 42 --output-dir output`
-4. Compare results: `python compare_results.py`
+**`check_types.sh`** - Run mypy type checker
+**`vba_export.py`** - Export VBA code from .xlsm
+**`csv_export.py`** - Export Excel sheets as CSV
+**`utils.py`** - Shared helper functions
 
-## Future
+## Other Scripts
 
-Once all audits are complete, these scripts will validate that Python produces statistically equivalent results to Excel VBA.
+**`compare.py`** - Statistical comparison tools
+**`validate_algorithm.py`** - Algorithm validation
+**`create_test_config.py`** - Create test configurations
+**`diagnose_*.py`** - Debugging utilities
+
+See [detailed documentation](../README.md#validation-workflow) for full usage instructions.
