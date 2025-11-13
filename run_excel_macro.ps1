@@ -93,6 +93,17 @@ function Save-SheetAsCSV {
             return $false
         }
 
+        # Ensure output path is absolute
+        if (-not [System.IO.Path]::IsPathRooted($OutputPath)) {
+            $OutputPath = Join-Path (Get-Location) $OutputPath
+        }
+        $OutputPath = [System.IO.Path]::GetFullPath($OutputPath)
+
+        # Delete existing file if it exists (Excel can't overwrite CSV files)
+        if (Test-Path $OutputPath) {
+            Remove-Item $OutputPath -Force
+        }
+
         # Create a new temporary workbook
         $tempWorkbook = $Excel.Workbooks.Add()
         $tempSheet = $tempWorkbook.Sheets.Item(1)
