@@ -266,19 +266,58 @@ class ResultsWriter:
             self._calculate_at_home(dwelling.occupancy.combined_states)
         )
 
-        # Get heating controls if available
-        heating_controls = dwelling.heating_controls if hasattr(dwelling, 'heating_controls') else None
-        heating_timer = heating_controls.space_heating_timer if heating_controls and hasattr(heating_controls, 'space_heating_timer') else np.zeros(1440)
-        hw_timer = heating_controls.hot_water_timer if heating_controls and hasattr(heating_controls, 'hot_water_timer') else np.zeros(1440)
+        # Get heating controls - MUST exist for all dwellings
+        if not hasattr(dwelling, 'heating_controls'):
+            raise AttributeError(
+                f"CRITICAL: Dwelling {dwelling_idx + 1} has no heating_controls attribute. "
+                "All dwellings must have heating controls initialized."
+            )
+        heating_controls = dwelling.heating_controls
+
+        if not hasattr(heating_controls, 'space_heating_timer'):
+            raise AttributeError(
+                f"CRITICAL: Dwelling {dwelling_idx + 1} heating_controls has no space_heating_timer. "
+                "HeatingControls must be properly initialized with timer schedules."
+            )
+        heating_timer = heating_controls.space_heating_timer
+
+        if not hasattr(heating_controls, 'hot_water_timer'):
+            raise AttributeError(
+                f"CRITICAL: Dwelling {dwelling_idx + 1} heating_controls has no hot_water_timer. "
+                "HeatingControls must be properly initialized with timer schedules."
+            )
+        hw_timer = heating_controls.hot_water_timer
+
+        if not hasattr(heating_controls, 'space_heating_setpoint'):
+            raise AttributeError(
+                f"CRITICAL: Dwelling {dwelling_idx + 1} heating_controls has no space_heating_setpoint. "
+                "HeatingControls must be properly initialized with thermostat setpoints."
+            )
+
+        if not hasattr(heating_controls, 'space_cooling_setpoint'):
+            raise AttributeError(
+                f"CRITICAL: Dwelling {dwelling_idx + 1} heating_controls has no space_cooling_setpoint. "
+                "HeatingControls must be properly initialized with thermostat setpoints."
+            )
 
         # Calculate PV irradiance if PV system exists
         pv_irradiance = np.zeros(1440)
-        if dwelling.pv_system and hasattr(dwelling.pv_system, 'irradiance'):
+        if dwelling.pv_system:
+            if not hasattr(dwelling.pv_system, 'irradiance'):
+                raise AttributeError(
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has pv_system but it's missing 'irradiance' attribute. "
+                    "PV system must be fully initialized."
+                )
             pv_irradiance = dwelling.pv_system.irradiance
 
         # Calculate self-consumption if PV system exists
         self_consumption = np.zeros(1440)
-        if dwelling.pv_system and hasattr(dwelling.pv_system, 'p_self'):
+        if dwelling.pv_system:
+            if not hasattr(dwelling.pv_system, 'p_self'):
+                raise AttributeError(
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has pv_system but it's missing 'p_self' attribute. "
+                    "PV system must be fully initialized with self-consumption data."
+                )
             self_consumption = dwelling.pv_system.p_self / 60.0 / 1000.0  # Convert W-min to kWh
 
         # Solar thermal data if available
@@ -287,18 +326,39 @@ class ResultsWriter:
         solar_collector_temp = np.zeros(1440)
         solar_collector_gains = np.zeros(1440)
         if dwelling.solar_thermal:
-            if hasattr(dwelling.solar_thermal, 'power_incident'):
-                solar_collector_power = dwelling.solar_thermal.power_incident
-            if hasattr(dwelling.solar_thermal, 'control_state'):
-                solar_collector_state = dwelling.solar_thermal.control_state
-            if hasattr(dwelling.solar_thermal, 'temperature'):
-                solar_collector_temp = dwelling.solar_thermal.temperature
-            if hasattr(dwelling.solar_thermal, 'phi_s'):
-                solar_collector_gains = dwelling.solar_thermal.phi_s
+            if not hasattr(dwelling.solar_thermal, 'power_incident'):
+                raise AttributeError(
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has solar_thermal but missing 'power_incident'. "
+                    "Solar thermal system must be fully initialized."
+                )
+            if not hasattr(dwelling.solar_thermal, 'control_state'):
+                raise AttributeError(
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has solar_thermal but missing 'control_state'. "
+                    "Solar thermal system must be fully initialized."
+                )
+            if not hasattr(dwelling.solar_thermal, 'temperature'):
+                raise AttributeError(
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has solar_thermal but missing 'temperature'. "
+                    "Solar thermal system must be fully initialized."
+                )
+            if not hasattr(dwelling.solar_thermal, 'phi_s'):
+                raise AttributeError(
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has solar_thermal but missing 'phi_s'. "
+                    "Solar thermal system must be fully initialized."
+                )
+            solar_collector_power = dwelling.solar_thermal.power_incident
+            solar_collector_state = dwelling.solar_thermal.control_state
+            solar_collector_temp = dwelling.solar_thermal.temperature
+            solar_collector_gains = dwelling.solar_thermal.phi_s
 
         # Cooling system data if available
         cooling_output = np.zeros(1440)
-        if dwelling.cooling_system and hasattr(dwelling.cooling_system, 'phi_cool'):
+        if dwelling.cooling_system:
+            if not hasattr(dwelling.cooling_system, 'phi_cool'):
+                raise AttributeError(
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has cooling_system but missing 'phi_cool'. "
+                    "Cooling system must be fully initialized."
+                )
             cooling_output = dwelling.cooling_system.phi_cool
 
         # Write data for each minute
@@ -319,6 +379,7 @@ class ResultsWriter:
             net_elec_w = lighting_w + appliance_w + heating_elec_w + cooling_elec_w - pv_output_w
 
             # Collect all 40 variables (matching Excel column order exactly)
+            # Arrays MUST be length 1440 - will crash with IndexError if not
             row = [
                 dwelling_idx + 1,                                    # 1. Dwelling index
                 date_str,                                            # 2. Date
@@ -336,28 +397,28 @@ class ResultsWriter:
                 dwelling.building.theta_i[idx],                      # 14. Internal building temp (°C)
                 dwelling.hot_water.hot_water_demand[idx],            # 15. Hot water demand (L/min)
                 dwelling.building.theta_cyl[idx],                    # 16. Cylinder temp (°C)
-                int(heating_timer[idx]) if len(heating_timer) > idx else 0,  # 17. Space heating timer
-                int(hw_timer[idx]) if len(hw_timer) > idx else 0,            # 18. HW heating timer
+                int(heating_timer[idx]),                             # 17. Space heating timer
+                int(hw_timer[idx]),                                  # 18. HW heating timer
                 0,                                                   # 19. Heating system switched on
                 0,                                                   # 20. HW heating required
                 dwelling.building.theta_em[idx],                     # 21. Emitter temp (°C)
-                pv_irradiance[idx] if len(pv_irradiance) > idx else 0,  # 22. PV irradiance (W/m²)
+                pv_irradiance[idx],                                  # 22. PV irradiance (W/m²)
                 pv_output_w,                                         # 23. PV output (W)
                 net_elec_w,                                          # 24. Net electricity demand (W)
                 dwelling.heating_system.phi_h_space[idx],            # 25. Space heating (W)
                 dwelling.heating_system.phi_h_water[idx],            # 26. Water heating (W)
                 dwelling.heating_system.m_fuel[idx] * 60.0,          # 27. Gas flow (m³/h, convert from m³/min)
-                solar_collector_power[idx] if len(solar_collector_power) > idx else 0,  # 28. Solar collector power (W)
-                int(solar_collector_state[idx]) if len(solar_collector_state) > idx else 0,  # 29. Solar collector state
-                solar_collector_temp[idx] if len(solar_collector_temp) > idx else 0,  # 30. Solar collector temp (°C)
-                solar_collector_gains[idx] if len(solar_collector_gains) > idx else 0,  # 31. Solar collector gains (W)
-                self_consumption[idx] if len(self_consumption) > idx else 0,  # 32. Self-consumption (kWh)
+                solar_collector_power[idx],                          # 28. Solar collector power (W)
+                int(solar_collector_state[idx]),                     # 29. Solar collector state
+                solar_collector_temp[idx],                           # 30. Solar collector temp (°C)
+                solar_collector_gains[idx],                          # 31. Solar collector gains (W)
+                self_consumption[idx],                               # 32. Self-consumption (kWh)
                 0,                                                   # 33. Space cooling timer
                 0,                                                   # 34. Cooling system switched on
-                cooling_output[idx] if len(cooling_output) > idx else 0,  # 35. Cooling output (W)
+                cooling_output[idx],                                 # 35. Cooling output (W)
                 dwelling.building.theta_cool[idx],                   # 36. Cooler emitter temp (°C)
-                heating_controls.space_heating_setpoint if heating_controls and hasattr(heating_controls, 'space_heating_setpoint') else 23,  # 37. Heating setpoint (°C)
-                heating_controls.space_cooling_setpoint if heating_controls and hasattr(heating_controls, 'space_cooling_setpoint') else 28,  # 38. Cooling setpoint (°C)
+                heating_controls.space_heating_setpoint,             # 37. Heating setpoint (°C)
+                heating_controls.space_cooling_setpoint,             # 38. Cooling setpoint (°C)
                 cooling_elec_w,                                      # 39. Cooling electricity (W)
                 heating_elec_w                                       # 40. Heating electricity (W)
             ]
@@ -454,7 +515,12 @@ class ResultsWriter:
         gas_m3 = dwelling.heating_system.get_daily_fuel_consumption() / 60.0
 
         # VBA line 1118: aHeatingControls(intRunNumber).GetSpaceThermostatSetpoint
-        thermostat_setpoint = dwelling.heating_controls.get_space_thermostat_setpoint() if hasattr(dwelling, 'heating_controls') else 20.0
+        if not hasattr(dwelling, 'heating_controls'):
+            raise AttributeError(
+                f"CRITICAL: Dwelling {dwelling_idx + 1} has no heating_controls for daily summary. "
+                "All dwellings must have heating controls initialized."
+            )
+        thermostat_setpoint = dwelling.heating_controls.get_space_thermostat_setpoint()
 
         # VBA line 1119: aSolarThermal(intRunNumber).GetDailySumPhi_s / 60 / 1000
         solar_thermal_kwh = dwelling.solar_thermal.get_daily_sum_phi_s() / 60.0 / 1000.0 if dwelling.solar_thermal else 0.0
