@@ -9,7 +9,7 @@
 ,,4. Specify the location for temperature:,,,England,"(Specify 'England' or a city e.g. 'N Delhi'. List, plus latitude & longitude in ClimateData)",,,,,,,82.5 for India),,,,,,,,,,,,,,,,,,,,,
 ,,5. Specify country and year for appliance ownership,,,UK,(India or UK),2019.0,(2006 to 2031),,Urban,(Urban or Rural),,,,,,,,,,,,,,,,,,,,,,,
 ,,6. Country uses daylight saving time (summer time)?,,,UK,"(Yes in UK, not in India)",,,,,,,,,,,,,,,,,,,,,,,,,,,,
-,,7. Specify the number of dwellings to simulate in this run:,,,1,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,7. Specify the number of dwellings to simulate in this run:,,,5,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,8. Stochastically assign dwelling parameters?,,,,"If not, then specify the dwelling parameters manually in the ""Dwellings"" worksheet",,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,9. Include high-resolution dynamic output?,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
 ,,10. Include daily demand totals for each dwelling?,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,,

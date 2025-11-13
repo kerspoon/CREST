@@ -95,13 +95,14 @@ def extract_daily_totals(seed_dir: Path, seed: int) -> list:
         df = pd.read_csv(daily_csv)
 
         for _, row in df.iterrows():
+            # Use Excel-compatible column names (matching new format)
             results.append({
                 'seed': seed,
-                'dwelling': row['Dwelling'],
-                'electricity_kwh': row.get('Total_Electricity_kWh', 0),
-                'gas_m3': row.get('Total_Gas_m3', 0),
-                'water_L': row.get('Total_Hot_Water_L', 0),
-                'temp_C': row.get('Mean_Internal_Temp_C', 0)
+                'dwelling': row.get('Dwelling index', row.get('Dwelling', 0)),
+                'electricity_kwh': row.get('Total dwelling electricity demand', row.get('Total_Electricity_kWh', 0)),
+                'gas_m3': row.get('Gas demand', row.get('Total_Gas_m3', 0)),
+                'water_L': row.get('Hot water demand (litres)', row.get('Total_Hot_Water_L', 0)),
+                'temp_C': row.get('Average indoor air temperature', row.get('Mean_Internal_Temp_C', 0))
             })
     except Exception as e:
         print(f"  [WARN] Failed to extract daily totals for seed {seed}: {e}")
