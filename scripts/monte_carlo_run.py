@@ -8,11 +8,14 @@ Examples:
     # Run 1000 iterations with default settings
     python scripts/monte_carlo_run.py
 
+    # Run 10 iterations (faster for testing)
+    python scripts/monte_carlo_run.py 10
+
     # Run 500 iterations with custom dwellings
-    python scripts/monte_carlo_run.py 500 excel/excel_files/test_5_dwellings.csv
+    python scripts/monte_carlo_run.py 500 excel/monte_carlo_base/Dwellings.csv
 
     # Run with additional flags
-    python scripts/monte_carlo_run.py 1000 excel/excel_files/test_5_dwellings.csv --day 15
+    python scripts/monte_carlo_run.py 10 excel/monte_carlo_base/Dwellings.csv --day 15
 """
 
 import subprocess
@@ -26,7 +29,7 @@ from utils import create_output_dir, get_project_root, get_python_main
 
 # Default values
 DEFAULT_ITERATIONS = 1000
-DEFAULT_CONFIG = 'excel/excel_files/test_5_dwellings.csv'
+DEFAULT_CONFIG = 'excel/monte_carlo_base/Dwellings.csv'
 
 
 def run_simulation(seed: int, output_dir: Path, config_file: str, extra_args: list) -> bool:

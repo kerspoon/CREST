@@ -6,6 +6,26 @@ A high-resolution (1-minute) stochastic integrated thermal-electrical domestic e
 
 ---
 
+## TODO & status
+
+We have just doing a major reorganisation of the folder structure. This has likely broken the three major tests:
+
+1. `excel_run_and_compare` (take an excel file, and run the equivalent in python) this has been checked, it runs under the new structure but the analysis/comparison is very basic. We have scripts that do a better comparison but these are not being used. 
+	1a. improve the analysis to look at the variance in every bit of _summary_ data (min level is not going to be a fair comparison). but the total power should be similar (within X%)
+
+2. `monte_carlo` (run 1000 iterations of `monte_carlo_base` then compare statistically to multiple runs of the same in excel) this is being worked on. 
+	2a. we have both `scripts/analyse_montecarlo.py` and `scripts/monte_carlo_compare.py` (the former being older, probably more comprehensive but also not working). Combine the best of these. We want to test each excel output against the interquartile range of the python runs. By each output I mean 1) from the sheet "Results - daily totals" compare every row (dwelling) from column C "Mean active occupancy" to Q "Solar thermal collector heat gains" = 15 columns x 5 houses × 20 Excel runs) from sheet "Results - disaggregated" take columns D "Occupancy" to AN "Electricity used by heating system" (37 columns x 5 houses x 1440 mins_per_day × 20 Excel runs = about 5M data points). Currently we only look at a small subset of this. Output two tables of the summary results (one for daily total and one for disaggregated). in the `disaggregated` show how many timestamps were in the IQR, columns as the 5 houses, and rows as the 37 variables with each cell being a % of timestamps in the IQR (out of the 1440 x 20 samples). Also give a final summary for the given data (which might not be 1000 python and 20 excel runs) what sort of variance would we expect to see - how many should be falling withing the IQR with this many samples? how unlikely is it to have +/-10%, +/-1% or +/-0.1%?
+ 
+3. `rnd` (aim to get full parity by checking the random number generator is called by the same function in the same order in both codebases, the main output of this is to show where the calls first diverged and to save the overall running order of the calls), it was running before the restructure.
+
+
+
+We have a mess of files in ./scripts some are used some are not. I only want to keep those used by the above 3 tests (e.g. extracting files from a xlsm is part of running the above tests) but it would be good to check the purpose of each to see if any others are useful.
+
+Once we have 1) got the tests running and 2) tidied the scripts we need to 3) try to get the tests passing (i.e. exactly the same output in the case of rnd, and statistically similar for monte_carlo). Before the reorganisation there were significant differences between the outputs of the two code bases. The reorganisation was to make it easier to check we are comparing like with like. 
+
+---
+
 ## Quick Start
 
 ### Installation
@@ -34,23 +54,11 @@ This automatically:
 - Creates `output/run_YYYYMMDD_01/` with results
 - Compares with Excel output (if available)
 
-**Option 2: Use template script**
-
-```bash
-# Use the template script (edit settings at top of file)
-bash scripts/run_python.sh
-
-# Or create a custom configuration
-cp scripts/run_python.sh my_simulation.sh
-# Edit settings in my_simulation.sh
-bash my_simulation.sh
-```
-
-**Option 3: Run Python directly**
+**Option 2: Run Python directly**
 
 ```bash
 # Run with default settings (auto-creates output/run_YYYYMMDD_NN/)
-python python/main.py --config-file excel/original/Dwellings.csv --save-detailed
+python python/main.py 
 
 # Or specify output directory
 python python/main.py \\
@@ -87,6 +95,8 @@ crest/
 │   │   └── *.csv                        # Data sheets (ActivityStats, etc.)
 │   ├── original_100houses.xlsm          # Reference 100-house run
 │   ├── original_100houses/              # Exports from 100-house model
+│   ├── monte_carlo_base.xlsm            # 5 varies test houses to use for monte carlo
+│   ├── monte_carlo_base/                # export from the monte carlo base
 │   ├── lcg_fixed.xlsm                   # LCG version with bug fixes
 │   └── lcg_fixed/                       # Exports from LCG model
 │
@@ -184,8 +194,6 @@ The project has **two primary objectives** for validating that the Python port m
 
 **Goal:** Verify that Python output distributions match Excel using the Interquartile Range (IQR) test.
 
-**Test Scope:** 72,000+ data points
-- 5 houses × 20 Excel runs × 5 variables × 1440 minutes = 72,000 tests
 
 **Process:**
 
@@ -199,8 +207,7 @@ The project has **two primary objectives** for validating that the Python port m
    - `minute_level.parquet` - Combined minute data (compressed)
 
 2. **Manually run Excel 20 times:**
-   - Use `excel/original.xlsm` or `excel/lcg_fixed.xlsm`
-   - Load same dwelling config (e.g., from `excel/original/Dwellings.csv`)
+   - Use `excel/monte_carlo_base.xlsm`
    - Save each run to: `output/monte_carlo/excel_20runs_YYYYMMDD_NN/run_01/` through `run_20/`
    - Each run should contain:
      - `results_minute_level.csv`
@@ -223,13 +230,6 @@ For each (dwelling, minute, variable) combination:
 - Python: Compute Q1, median, Q3 from 1000 runs
 - Excel: Check if each of 20 values falls in [Q1, Q3]
 - Expected: ~50% in IQR (by definition of quartiles)
-
-**Variables tested:**
-- Electricity (W)
-- Gas consumption (m³/min)
-- Hot water demand (L/min)
-- Indoor temperature (°C)
-- Lighting (W)
 
 ---
 
@@ -255,8 +255,6 @@ The easiest way to run Python simulations is to use settings directly from an Ex
 python scripts/excel_run_and_compare.py excel/original.xlsm
 python scripts/excel_run_and_compare.py excel/lcg_fixed.xlsm
 
-# Run 100-house validation
-python scripts/run_100_houses.py
 ```
 
 **What it does:**
@@ -266,38 +264,6 @@ python scripts/run_100_houses.py
 4. Creates `output/run_YYYYMMDD_NN/` with results
 5. Generates `rerun_simulation.sh` for reproducibility
 6. Compares with Excel output (if Excel results exist)
-
-**Skip comparison:**
-```bash
-python scripts/excel_run_and_compare.py excel/original.xlsm --no-compare
-```
-
-### Add New Excel File
-
-To add a new Excel file to the workflow:
-
-```bash
-# 1. Copy your .xlsm file to excel/
-cp my_model.xlsm excel/
-
-# 2. Run it (exports happen automatically)
-python scripts/excel_run_and_compare.py excel/my_model.xlsm
-```
-
-This creates `excel/my_model/` with all VBA code and CSV data.
-
-### Re-run a Simulation
-
-Every run creates a `rerun_simulation.sh` script:
-
-```bash
-# Re-run the exact same simulation
-cd output/run_20250113_01/
-bash rerun_simulation.sh
-```
-
-The script contains the exact command-line arguments used.
-
 ---
 
 ## Advanced Usage
@@ -348,26 +314,12 @@ See [`CLAUDE.md`](./CLAUDE.md) for detailed development guidelines, including:
 - Auditing process
 - Line-by-line VBA comparison methodology
 
-### API Documentation
-
-See [`API_REFERENCE.md`](./API_REFERENCE.md) for:
-- Detailed module documentation
-- Function signatures
-- VBA cross-references
 
 ### Exporting from Excel
 
 ```bash
 # Export VBA code and CSV sheets from any Excel file
 python scripts/export_excel.py excel/original.xlsm
-
-# By default exports to excel/{basename}/
-# You can specify output directory:
-python scripts/export_excel.py excel/original.xlsm --output excel/my_export/
-
-# Export only VBA or only CSV
-python scripts/export_excel.py excel/original.xlsm --vba-only
-python scripts/export_excel.py excel/original.xlsm --csv-only
 ```
 
 **Note:** The `excel_run_and_compare.py` workflow automatically handles exports,
@@ -403,4 +355,3 @@ This Python port maintains compatibility with the original Excel VBA model's lic
   - Climate data (temperature profiles by city/month/hour)
   - Activity statistics (72 activity profiles)
 
-All data files have been validated against the original Excel sheets.

@@ -20,17 +20,31 @@ from pathlib import Path
 from typing import Dict, List, Tuple
 import json
 
+# Add scripts directory to path for imports
+sys.path.insert(0, str(Path(__file__).parent))
+
 # Import helper utilities
 from utils import create_validation_dir, save_metadata, get_project_root
 
 
-# Variables to compare (column names may vary)
+# Column name mappings: Excel VBA → Python
+EXCEL_TO_PYTHON = {
+    'Dwelling index': 'dwelling',
+    'Lighting demand': 'Lighting_W',
+    'Appliance demand': 'Appliances_W',
+    'Net dwelling electricity demand': 'Total_Electricity_W',
+    'Internal building node temperature': 'Internal_Temp_C',
+    'Hot water demand (litres)': 'Hot_Water_Demand_L_per_min',
+    'Fuel flow rate (gas)': 'Gas_Consumption_m3_per_min'
+}
+
+# Variables to compare (Python column names)
 VARIABLES = {
-    'electricity': ['Total_Electricity_W', 'Electricity_W', 'total_electricity'],
-    'gas': ['Gas_Consumption_m3_per_min', 'Gas_m3_per_min', 'gas'],
-    'water': ['Hot_Water_Demand_L_per_min', 'Hot_Water_L_per_min', 'water'],
-    'temperature': ['Internal_Temp_C', 'Indoor_Temp_C', 'temperature'],
-    'lighting': ['Lighting_W', 'lighting']
+    'electricity': 'Total_Electricity_W',
+    'gas': 'Gas_Consumption_m3_per_min',
+    'water': 'Hot_Water_Demand_L_per_min',
+    'temperature': 'Internal_Temp_C',
+    'lighting': 'Lighting_W'
 }
 
 
@@ -81,7 +95,7 @@ def load_python_baseline(python_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
 
 def load_excel_runs(excel_dir: Path) -> List[Dict[str, pd.DataFrame]]:
     """
-    Load Excel runs (expecting run_01/ through run_NN/ subdirectories).
+    Load Excel runs (expecting either run_NN/ subdirs or vba_run_N.csv files).
 
     Returns:
         List of dicts with 'minute' and 'daily' dataframes for each run
@@ -89,30 +103,52 @@ def load_excel_runs(excel_dir: Path) -> List[Dict[str, pd.DataFrame]]:
     print(f"\nLoading Excel runs from: {excel_dir}")
 
     runs = []
+
+    # Try subdirectories first (run_01/, run_02/, etc.)
     run_dirs = sorted([d for d in excel_dir.iterdir() if d.is_dir() and d.name.startswith('run_')])
 
-    if not run_dirs:
-        print("  ERROR: No run_* subdirectories found!")
-        return []
+    if run_dirs:
+        for run_dir in run_dirs:
+            run_data = {}
 
-    for run_dir in run_dirs:
-        run_data = {}
+            # Load minute-level
+            minute_file = run_dir / 'results_minute_level.csv'
+            if minute_file.exists():
+                run_data['minute'] = pd.read_csv(minute_file)
+            else:
+                print(f"  WARN: No minute data in {run_dir.name}")
+                continue
 
-        # Load minute-level
-        minute_file = run_dir / 'results_minute_level.csv'
-        if minute_file.exists():
-            run_data['minute'] = pd.read_csv(minute_file)
-        else:
-            print(f"  WARN: No minute data in {run_dir.name}")
-            continue
+            # Load daily summary
+            daily_file = run_dir / 'results_daily_summary.csv'
+            if daily_file.exists():
+                run_data['daily'] = pd.read_csv(daily_file)
 
-        # Load daily summary
-        daily_file = run_dir / 'results_daily_summary.csv'
-        if daily_file.exists():
-            run_data['daily'] = pd.read_csv(daily_file)
+            run_data['run_name'] = run_dir.name
+            runs.append(run_data)
+    else:
+        # Try VBA run files (vba_run_1.csv, vba_run_2.csv, etc.)
+        vba_files = sorted(excel_dir.glob('vba_run_*.csv'))
 
-        run_data['run_name'] = run_dir.name
-        runs.append(run_data)
+        if not vba_files:
+            print("  ERROR: No run_* subdirectories or vba_run_*.csv files found!")
+            return []
+
+        for vba_file in vba_files:
+            run_data = {}
+            # Excel disaggregated results have header rows - skip them
+            df = pd.read_csv(vba_file, skiprows=[0, 1, 2, 4, 5])
+
+            # Rename Excel columns to match Python column names
+            df = df.rename(columns=EXCEL_TO_PYTHON)
+
+            # Add minute column (row number, 1-indexed)
+            if 'Minute' not in df.columns:
+                df['Minute'] = range(1, len(df) + 1)
+
+            run_data['minute'] = df
+            run_data['run_name'] = vba_file.stem  # e.g., 'vba_run_1'
+            runs.append(run_data)
 
     print(f"  Loaded {len(runs)} Excel runs")
     return runs
@@ -159,10 +195,9 @@ def compute_python_iqr(python_minute: pd.DataFrame) -> pd.DataFrame:
             row = {'dwelling': dwelling, 'minute': minute}
 
             # Compute IQR for each variable
-            for var_name, col_names in VARIABLES.items():
-                col = find_column(m, col_names)
-                if col is not None and col in m.columns:
-                    values = m[col].dropna()
+            for var_name, col_name in VARIABLES.items():
+                if col_name in m.columns:
+                    values = m[col_name].dropna()
                     if len(values) > 0:
                         row[f'{var_name}_q1'] = np.percentile(values, 25)
                         row[f'{var_name}_median'] = np.median(values)
@@ -216,9 +251,8 @@ def validate_excel_against_iqr(
                 continue
 
             # Check each variable
-            for var_name, col_names in VARIABLES.items():
-                col = find_column(excel_d, col_names)
-                if col is None:
+            for var_name, col_name in VARIABLES.items():
+                if col_name not in merged.columns:
                     continue
 
                 q1_col = f'{var_name}_q1'
@@ -228,7 +262,7 @@ def validate_excel_against_iqr(
                     continue
 
                 # Count how many Excel values fall in Python IQR
-                in_iqr = (merged[col] >= merged[q1_col]) & (merged[col] <= merged[q3_col])
+                in_iqr = (merged[col_name] >= merged[q1_col]) & (merged[col_name] <= merged[q3_col])
                 total = len(merged)
                 in_iqr_count = in_iqr.sum()
                 in_iqr_pct = 100 * in_iqr_count / total if total > 0 else 0
@@ -240,7 +274,7 @@ def validate_excel_against_iqr(
                     'total_minutes': total,
                     'in_iqr_count': in_iqr_count,
                     'in_iqr_pct': in_iqr_pct,
-                    'excel_mean': merged[col].mean(),
+                    'excel_mean': merged[col_name].mean(),
                     'python_median': merged[f'{var_name}_median'].mean() if f'{var_name}_median' in merged.columns else np.nan
                 })
 
@@ -308,6 +342,11 @@ def generate_summary(validation_results: pd.DataFrame, validation_dir: Path) -> 
 
 def main():
     """Main validation workflow."""
+    # Change to project root for consistent paths
+    import os
+    project_root = get_project_root()
+    os.chdir(project_root)
+
     if len(sys.argv) < 3:
         print("Usage: python scripts/monte_carlo_compare.py <python_dir> <excel_dir>")
         print("\nExample:")
@@ -363,9 +402,9 @@ def main():
         validation_dir,
         str(python_dir),
         str(excel_dir),
-        python_runs=len(python_minute['seed'].unique()) if 'seed' in python_minute.columns else "unknown",
-        excel_runs=len(excel_runs),
-        total_data_points=validation_results['total_minutes'].sum()
+        python_runs=int(len(python_minute['seed'].unique())) if 'seed' in python_minute.columns else "unknown",
+        excel_runs=int(len(excel_runs)),
+        total_data_points=int(validation_results['total_minutes'].sum())
     )
 
     # Generate summary
