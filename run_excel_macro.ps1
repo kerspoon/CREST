@@ -103,9 +103,6 @@ function Save-SheetAsCSV {
         # Paste values only into the temporary sheet
         $tempSheet.Range("A1").PasteSpecial(-4163) | Out-Null  # xlPasteValues = -4163
 
-        # Clear clipboard (0 = clear copy mode)
-        $Excel.CutCopyMode = 0
-
         # Save the temporary workbook as CSV (xlCSV = 6)
         $tempWorkbook.SaveAs($OutputPath, 6)
 
