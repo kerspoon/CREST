@@ -268,8 +268,8 @@ class ResultsWriter:
 
         # Get heating controls if available
         heating_controls = dwelling.heating_controls if hasattr(dwelling, 'heating_controls') else None
-        heating_timer = heating_controls.heating_on if heating_controls else np.zeros(1440)
-        hw_timer = heating_controls.hw_heating_on if heating_controls else np.zeros(1440)
+        heating_timer = heating_controls.space_heating_timer if heating_controls and hasattr(heating_controls, 'space_heating_timer') else np.zeros(1440)
+        hw_timer = heating_controls.hot_water_timer if heating_controls and hasattr(heating_controls, 'hot_water_timer') else np.zeros(1440)
 
         # Calculate PV irradiance if PV system exists
         pv_irradiance = np.zeros(1440)
@@ -356,8 +356,8 @@ class ResultsWriter:
                 0,                                                   # 34. Cooling system switched on
                 cooling_output[idx] if len(cooling_output) > idx else 0,  # 35. Cooling output (W)
                 dwelling.building.theta_cool[idx],                   # 36. Cooler emitter temp (°C)
-                heating_controls.heating_setpoint if heating_controls else 23,  # 37. Heating setpoint (°C)
-                heating_controls.cooling_setpoint if heating_controls and hasattr(heating_controls, 'cooling_setpoint') else 28,  # 38. Cooling setpoint (°C)
+                heating_controls.space_heating_setpoint if heating_controls and hasattr(heating_controls, 'space_heating_setpoint') else 23,  # 37. Heating setpoint (°C)
+                heating_controls.space_cooling_setpoint if heating_controls and hasattr(heating_controls, 'space_cooling_setpoint') else 28,  # 38. Cooling setpoint (°C)
                 cooling_elec_w,                                      # 39. Cooling electricity (W)
                 heating_elec_w                                       # 40. Heating electricity (W)
             ]
