@@ -503,78 +503,167 @@ def validate_excel_daily_against_iqr(
     return df_results
 
 
-def generate_daily_totals_summary(validation_results: pd.DataFrame, validation_dir: Path) -> None:
-    """Generate summary statistics for daily totals validation."""
-    print("\nGenerating daily totals summary...")
+def generate_daily_totals_wide_format(
+    excel_runs: List[Dict[str, pd.DataFrame]],
+    python_daily_iqr: pd.DataFrame,
+    validation_dir: Path
+) -> None:
+    """
+    Generate wide-format comparison table for daily totals.
 
-    if len(validation_results) == 0:
-        print("  ERROR: No validation results to summarize!")
-        return
+    Format:
+    - Columns: name, Dwelling, + 15 variables
+    - Rows: excel 1...N, py25%, py50%, py75%, % within IQR (all per dwelling)
 
-    # Save detailed results
-    results_file = validation_dir / 'daily_totals_iqr.csv'
-    validation_results.to_csv(results_file, index=False)
-    print(f"  Saved: {results_file}")
+    Args:
+        excel_runs: List of Excel run data
+        python_daily_iqr: Python IQR statistics (dwelling, variable, q1, median, q3)
+        validation_dir: Output directory
+    """
+    print("\nGenerating daily totals wide-format comparison...")
 
-    # Aggregate by (dwelling, variable)
-    summary = validation_results.groupby(['dwelling', 'variable', 'label']).agg({
-        'in_iqr': ['sum', 'count', 'mean'],
-        'excel_value': ['mean', 'std'],
-        'python_median': 'first'
-    }).reset_index()
+    # Get list of dwellings
+    dwellings = sorted(python_daily_iqr['dwelling'].unique())
 
-    summary.columns = ['dwelling', 'variable', 'label', 'in_iqr_count', 'total_runs', 'in_iqr_pct',
-                       'excel_mean', 'excel_std', 'python_median']
-    summary['in_iqr_pct'] = summary['in_iqr_pct'] * 100  # Convert to percentage
+    # Column headers: use human-readable labels from VBA
+    # Map from our column names to VBA-style labels
+    column_labels = {
+        'Mean_Active_Occupancy': 'Mean active occupancy',
+        'Proportion_Day_Actively_Occupied': 'Proportion of day actively occupied',
+        'Lighting_Demand_kWh': 'Lighting demand',
+        'Appliance_Demand_kWh': 'Appliance demand',
+        'PV_Output_kWh': 'PV output',
+        'Total_Electricity_Demand_kWh': 'Total dwelling electricity demand',
+        'Self_Consumption_kWh': 'Total self-consumption',
+        'Net_Electricity_Demand_kWh': 'Net dwelling electricity demand',
+        'Hot_Water_Demand_L': 'Hot water demand (litres)',
+        'Average_Indoor_Temperature_C': 'Average indoor air temperature',
+        'Thermal_Energy_Space_Heating_kWh': 'Thermal energy used for space heating',
+        'Thermal_Energy_Water_Heating_kWh': 'Thermal energy used for hot water heating',
+        'Gas_Demand_m3': 'Gas demand',
+        'Space_Thermostat_Setpoint_C': 'Space thermostat set point',
+        'Solar_Thermal_Heat_Gains_kWh': 'Solar thermal collector heat gains'
+    }
 
-    # Save summary
-    summary_file = validation_dir / 'daily_totals_summary.csv'
-    summary.to_csv(summary_file, index=False)
-    print(f"  Saved: {summary_file}")
+    # Build rows list
+    rows = []
 
-    # Generate text report
-    report = []
-    report.append("=" * 80)
-    report.append("DAILY TOTALS IQR VALIDATION RESULTS")
-    report.append("=" * 80)
-    report.append("")
-    report.append("Objective: >50% of Excel samples should fall within Python IQR")
-    report.append("Variables tested: 15 (from VBA DailyTotals columns 3-17)")
-    report.append("")
+    # 1. Add Excel run rows (excel 1, excel 2, ..., excel N for each dwelling)
+    for run_data in excel_runs:
+        run_name = run_data['run_name']
 
-    # Overall statistics
-    overall_pct = summary['in_iqr_pct'].mean()
-    total_tests = summary['total_runs'].sum()
+        if 'daily' not in run_data or run_data['daily'] is None:
+            continue
 
-    report.append(f"OVERALL: {overall_pct:.1f}% in IQR across all variables and dwellings")
-    report.append(f"Total tests: {total_tests} (dwellings × variables × Excel runs)")
-    report.append("")
+        excel_daily = run_data['daily']
 
-    # Per-variable summary
-    report.append("PER-VARIABLE SUMMARY:")
-    report.append("-" * 80)
-    var_summary = summary.groupby('variable').agg({
-        'in_iqr_pct': 'mean',
-        'total_runs': 'sum'
-    }).reset_index()
+        # Normalize dwelling column
+        dwelling_col = find_column(excel_daily, ['Dwelling', 'dwelling', 'Dwelling index', 'dwelling_index'])
+        if dwelling_col and dwelling_col != 'Dwelling':
+            excel_daily = excel_daily.rename(columns={dwelling_col: 'Dwelling'})
 
-    for _, row in var_summary.iterrows():
-        var = row['variable']
-        pct = row['in_iqr_pct']
-        total = int(row['total_runs'])
-        status = "✓ PASS" if pct >= 50 else "✗ FAIL"
-        report.append(f"  {var:45s} {pct:5.1f}% ({total:3d} tests) {status}")
+        # Extract run number from run_name (e.g., "run_01" -> 1, "vba_run_3" -> 3)
+        import re
+        match = re.search(r'(\d+)', run_name)
+        run_num = int(match.group(1)) if match else run_name
 
-    report.append("")
-    report.append("=" * 80)
+        for dwelling in dwellings:
+            excel_d = excel_daily[excel_daily['Dwelling'] == dwelling]
 
-    # Print and save
-    print("\n" + '\n'.join(report))
+            if len(excel_d) == 0:
+                continue
 
-    report_file = validation_dir / 'daily_totals_report.txt'
-    with open(report_file, 'w') as f:
-        f.write('\n'.join(report))
-    print(f"  Saved: {report_file}")
+            if len(excel_d) > 1:
+                excel_d = excel_d.iloc[0:1]
+
+            row = {'name': f'excel {run_num}', 'Dwelling': dwelling}
+
+            # Add values for each variable
+            for col_name, label in column_labels.items():
+                if col_name in excel_d.columns:
+                    row[label] = excel_d[col_name].iloc[0]
+                else:
+                    row[label] = np.nan
+
+            rows.append(row)
+
+    # 2. Add Python quartile rows (py25%, py50%, py75% for each dwelling)
+    for quartile_name, quartile_col in [('py25%', 'q1'), ('py50%', 'median'), ('py75%', 'q3')]:
+        for dwelling in dwellings:
+            row = {'name': quartile_name, 'Dwelling': dwelling}
+
+            # Get Python IQR data for this dwelling
+            python_d = python_daily_iqr[python_daily_iqr['dwelling'] == dwelling]
+
+            for col_name, label in column_labels.items():
+                python_var = python_d[python_d['variable'] == col_name]
+                if len(python_var) > 0:
+                    row[label] = python_var[quartile_col].iloc[0]
+                else:
+                    row[label] = np.nan
+
+            rows.append(row)
+
+    # 3. Add "% within IQR" rows (for each dwelling)
+    for dwelling in dwellings:
+        row = {'name': '% within IQR', 'Dwelling': dwelling}
+
+        # For each variable, calculate what % of Excel runs fell within IQR
+        python_d = python_daily_iqr[python_daily_iqr['dwelling'] == dwelling]
+
+        for col_name, label in column_labels.items():
+            python_var = python_d[python_d['variable'] == col_name]
+
+            if len(python_var) == 0:
+                row[label] = np.nan
+                continue
+
+            q1 = python_var['q1'].iloc[0]
+            q3 = python_var['q3'].iloc[0]
+
+            # Count how many Excel runs fall within [q1, q3] for this dwelling & variable
+            in_iqr_count = 0
+            total_count = 0
+
+            for run_data in excel_runs:
+                if 'daily' not in run_data or run_data['daily'] is None:
+                    continue
+
+                excel_daily = run_data['daily']
+                dwelling_col = find_column(excel_daily, ['Dwelling', 'dwelling', 'Dwelling index', 'dwelling_index'])
+                if dwelling_col and dwelling_col != 'Dwelling':
+                    excel_daily = excel_daily.rename(columns={dwelling_col: 'Dwelling'})
+
+                excel_d = excel_daily[excel_daily['Dwelling'] == dwelling]
+
+                if len(excel_d) > 0 and col_name in excel_d.columns:
+                    excel_value = excel_d[col_name].iloc[0]
+                    total_count += 1
+                    if q1 <= excel_value <= q3:
+                        in_iqr_count += 1
+
+            # Calculate percentage
+            if total_count > 0:
+                row[label] = 100.0 * in_iqr_count / total_count
+            else:
+                row[label] = np.nan
+
+        rows.append(row)
+
+    # Convert to DataFrame
+    df_comparison = pd.DataFrame(rows)
+
+    # Ensure columns are in the right order
+    column_order = ['name', 'Dwelling'] + [column_labels[col] for col in column_labels.keys()]
+    df_comparison = df_comparison[column_order]
+
+    # Save to CSV
+    output_file = validation_dir / 'daily_totals_comparison.csv'
+    df_comparison.to_csv(output_file, index=False)
+    print(f"  Saved: {output_file}")
+    print(f"  Rows: {len(df_comparison)} ({len(excel_runs)} Excel runs × {len(dwellings)} dwellings + quartiles + summary)")
+
+    return df_comparison
 
 
 def main():
@@ -658,14 +747,8 @@ def main():
         # Compute Python IQR for daily totals
         daily_iqr = compute_daily_totals_iqr(python_daily)
         if len(daily_iqr) > 0:
-            # Validate Excel daily totals against Python IQR
-            daily_validation = validate_excel_daily_against_iqr(excel_runs, daily_iqr)
-
-            if len(daily_validation) > 0:
-                # Generate daily totals summary
-                generate_daily_totals_summary(daily_validation, validation_dir)
-            else:
-                print("  WARNING: No daily validation results generated")
+            # Generate wide-format comparison table
+            generate_daily_totals_wide_format(excel_runs, daily_iqr, validation_dir)
         else:
             print("  WARNING: Failed to compute daily totals IQR")
     else:
