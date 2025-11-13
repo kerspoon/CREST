@@ -1,11 +1,16 @@
 #!/usr/bin/env python3
-"""Compare Excel and Python Monte Carlo runs using IQR validation.
+"""Comprehensive Monte Carlo IQR validation comparing Excel and Python runs.
 
-This script implements Objective #2: Statistical Distribution Validation
-- Compare 20 Excel runs against 1000 Python runs
-- For each minute, dwelling, and variable: check if Excel value falls in Python IQR
-- Expected: >50% of Excel samples should fall within Python IQR
-- Test across 72,000+ data points (5 houses × 20 runs × 5 variables × 1440 minutes)
+This script implements Objective #2a: Statistical Distribution Validation
+
+DAILY TOTALS: 15 columns (C-Q) × 5 houses × 20 Excel runs
+DISAGGREGATED: 37 columns (D-AN) × 5 houses × 1440 minutes × 20 Excel runs
+
+Outputs:
+- Daily totals summary table with IQR statistics
+- Disaggregated matrix: 37 variables (rows) × 5 houses (columns), showing % of
+  timestamps (1440 × 20 = 28,800 per house) that fall within Python IQR
+- Statistical analysis of expected variance
 
 Usage:
     python scripts/monte_carlo_compare.py \\
@@ -17,8 +22,9 @@ import sys
 import pandas as pd
 import numpy as np
 from pathlib import Path
-from typing import Dict, List, Tuple
+from typing import Dict, List, Tuple, Optional
 import json
+from scipy import stats as scipy_stats
 
 # Add scripts directory to path for imports
 sys.path.insert(0, str(Path(__file__).parent))
@@ -27,28 +33,79 @@ sys.path.insert(0, str(Path(__file__).parent))
 from utils import create_validation_dir, save_metadata, get_project_root
 
 
-# Column name mappings: Excel VBA → Python
-EXCEL_TO_PYTHON = {
-    'Dwelling index': 'dwelling',
-    'Lighting demand': 'Lighting_W',
-    'Appliance demand': 'Appliances_W',
-    'Net dwelling electricity demand': 'Total_Electricity_W',
-    'Internal building node temperature': 'Internal_Temp_C',
-    'Hot water demand (litres)': 'Hot_Water_Demand_L_per_min',
-    'Fuel flow rate (gas)': 'Gas_Consumption_m3_per_min'
+# ============================================================================
+# COLUMN MAPPINGS: Excel → Python
+# ============================================================================
+
+# Daily totals: columns C-Q from "Results - daily totals" sheet
+# NOTE: Python output now matches Excel exactly - same column names!
+DAILY_COLUMNS = {
+    # Excel column name: (Python column name - now identical!, units, description)
+    'Mean active occupancy': ('Mean active occupancy', '', 'Mean active occupancy'),
+    'Proportion of day actively occupied': ('Proportion of day actively occupied', '', 'Proportion actively occupied'),
+    'Lighting demand': ('Lighting demand', 'kWh', 'Lighting demand'),
+    'Appliance demand': ('Appliance demand', 'kWh', 'Appliance demand'),
+    'PV output': ('PV output', 'kWh', 'PV output'),
+    'Total dwelling electricity demand': ('Total dwelling electricity demand', 'kWh', 'Total electricity'),
+    'Total self-consumption': ('Total self-consumption', 'kWh', 'Self-consumption'),
+    'Net dwelling electricity demand': ('Net dwelling electricity demand', 'kWh', 'Net electricity'),
+    'Hot water demand (litres)': ('Hot water demand (litres)', 'L', 'Hot water demand'),
+    'Average indoor air temperature': ('Average indoor air temperature', '°C', 'Average indoor temp'),
+    'Thermal energy used for space heating': ('Thermal energy used for space heating', 'kWh', 'Space heating energy'),
+    'Thermal energy used for hot water heating': ('Thermal energy used for hot water heating', 'kWh', 'Water heating energy'),
+    'Gas demand': ('Gas demand', 'm³', 'Gas demand'),
+    'Space thermostat set point': ('Space thermostat set point', '°C', 'Thermostat setpoint'),
+    'Solar thermal collector heat gains': ('Solar thermal collector heat gains', 'kWh', 'Solar thermal gains'),
 }
 
-# Variables to compare (Python column names)
-VARIABLES = {
-    'electricity': 'Total_Electricity_W',
-    'gas': 'Gas_Consumption_m3_per_min',
-    'water': 'Hot_Water_Demand_L_per_min',
-    'temperature': 'Internal_Temp_C',
-    'lighting': 'Lighting_W'
+# Disaggregated: columns D-AN from "Results - disaggregated" sheet
+DISAGGREGATED_COLUMNS = {
+    # Excel column name: (Python column name, units, description)
+    'Occupancy': ('At_Home', '', 'Occupancy state'),
+    'Activity': ('Active', '', 'Activity state'),
+    'Lighting demand': ('Lighting_W', 'W', 'Lighting power'),
+    'Appliance demand': ('Appliances_W', 'W', 'Appliance power'),
+    'Casual thermal gains from occupants, lighting and appliances': ('Casual_Gains_W', 'W', 'Casual gains'),
+    'Outdoor temperature': ('Outdoor_Temp_C', '°C', 'Outdoor temp'),
+    'Outdoor global radiation (horizontal)': ('Irradiance_Wm2', 'W/m²', 'Irradiance'),
+    'Passive solar gains': ('Passive_Solar_Gains_W', 'W', 'Passive solar'),
+    'Primary heating system thermal output': ('Total_Heat_Output_W', 'W', 'Total heating'),
+    'External building node temperature': ('External_Building_Temp_C', '°C', 'External temp'),
+    'Internal building node temperature': ('Internal_Temp_C', '°C', 'Internal temp'),
+    'Hot water demand (litres)': ('Hot_Water_Demand_L_per_min', 'L/min', 'Hot water'),
+    'Hot water temperature in hot water tank': ('Cylinder_Temp_C', '°C', 'Cylinder temp'),
+    'Space heating timer settings': (None, '', 'Heating timer'),  # Not in Python output
+    'Hot water heating timer settings': (None, '', 'HW timer'),  # Not in Python output
+    'Heating system switched on': (None, '', 'Heating on'),  # Not in Python output
+    'Hot water heating required': (None, '', 'HW heating req'),  # Not in Python output
+    'Emitter temperature': ('Emitter_Temp_C', '°C', 'Emitter temp'),
+    'Radiation incident on PV array': (None, 'W/m²', 'PV irradiance'),  # Not in Python output
+    'PV output': ('PV_Output_W', 'W', 'PV power'),
+    'Net dwelling electricity demand': ('Total_Electricity_W', 'W', 'Net electricity'),
+    'Heat output from primary heating system to space': ('Space_Heating_W', 'W', 'Space heating'),
+    'Heat output from primary heating system to hot water': ('Water_Heating_W', 'W', 'Water heating'),
+    'Fuel flow rate (gas)': ('Gas_Consumption_m3_per_min', 'm³/min', 'Gas flow'),
+    'Solar power incident on collector': (None, 'W', 'Solar collector'),  # Not in Python output
+    'Solar thermal collector control state': (None, '', 'Collector state'),  # Not in Python output
+    'Solar thermal collector temperature': (None, '°C', 'Collector temp'),  # Not in Python output
+    'Heat gains to cylinder from solar thermal collector': (None, 'W', 'Solar thermal heat'),  # Not in Python output
+    'Dwelling self-consumption': (None, 'kWh', 'Self-consumption'),  # Not in Python output
+    'Space cooling timer settings': (None, '', 'Cooling timer'),  # Not in Python output
+    'Cooling system switched on': (None, '', 'Cooling on'),  # Not in Python output
+    'Cooling output from cooling system to space': (None, 'W', 'Cooling output'),  # Not in Python output
+    'Cooler Emitter temperature': ('Cooling_Emitter_Temp_C', '°C', 'Cooling emitter'),
+    'Heating Thermostat Set Point': (None, '°C', 'Heating setpoint'),  # Not in Python output
+    'Cooling Thermostat Set Point': (None, '°C', 'Cooling setpoint'),  # Not in Python output
+    'Electricity used by cooling system': ('Cooling_Electricity_W', 'W', 'Cooling electricity'),
+    'Electricity used by heating system': ('Heating_Electricity_W', 'W', 'Heating electricity'),
 }
 
 
-def find_column(df: pd.DataFrame, possible_names: List[str]) -> str:
+# ============================================================================
+# UTILITY FUNCTIONS
+# ============================================================================
+
+def find_column(df: pd.DataFrame, possible_names: List[str]) -> Optional[str]:
     """Find first matching column name from a list of possibilities."""
     for name in possible_names:
         if name in df.columns:
@@ -56,13 +113,8 @@ def find_column(df: pd.DataFrame, possible_names: List[str]) -> str:
     return None
 
 
-def load_python_baseline(python_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
-    """
-    Load Python Monte Carlo baseline (minute-level and daily).
-
-    Returns:
-        Tuple of (minute_df, daily_df)
-    """
+def load_python_baseline(python_dir: Path) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
+    """Load Python Monte Carlo baseline (minute-level and daily)."""
     print(f"\nLoading Python baseline from: {python_dir}")
 
     # Try loading minute-level data (parquet or CSV)
@@ -74,12 +126,12 @@ def load_python_baseline(python_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
                 minute_df = pd.read_parquet(filepath)
             else:
                 minute_df = pd.read_csv(filepath)
-            print(f"  Loaded minute data: {filename} ({len(minute_df):,} rows)")
+            print(f"  ✓ Loaded minute data: {filename} ({len(minute_df):,} rows)")
             break
 
     if minute_df is None:
-        print("  ERROR: No minute-level data found!")
-        return None, None
+        print("  ✗ ERROR: No minute-level data found!")
+        sys.exit(1)
 
     # Load daily summary
     daily_df = None
@@ -87,463 +139,673 @@ def load_python_baseline(python_dir: Path) -> Tuple[pd.DataFrame, pd.DataFrame]:
         filepath = python_dir / filename
         if filepath.exists():
             daily_df = pd.read_csv(filepath)
-            print(f"  Loaded daily data: {filename} ({len(daily_df)} rows)")
+            print(f"  ✓ Loaded daily data: {filename} ({len(daily_df)} rows)")
             break
+
+    if daily_df is None:
+        print("  ⚠ WARNING: No daily data found")
 
     return minute_df, daily_df
 
 
 def load_excel_runs(excel_dir: Path) -> List[Dict[str, pd.DataFrame]]:
-    """
-    Load Excel runs (expecting either run_NN/ subdirs or vba_run_N.csv files).
-
-    Returns:
-        List of dicts with 'minute' and 'daily' dataframes for each run
-    """
+    """Load Excel runs (expecting run_NN/ subdirectories)."""
     print(f"\nLoading Excel runs from: {excel_dir}")
 
     runs = []
 
-    # Try subdirectories first (run_01/, run_02/, etc.)
+    # Look for run subdirectories (run_01/, run_02/, etc.)
     run_dirs = sorted([d for d in excel_dir.iterdir() if d.is_dir() and d.name.startswith('run_')])
 
-    if run_dirs:
-        for run_dir in run_dirs:
-            run_data = {}
+    if not run_dirs:
+        print("  ✗ ERROR: No run_* subdirectories found!")
+        print("  Expected format: excel_dir/run_01/, excel_dir/run_02/, etc.")
+        sys.exit(1)
 
-            # Load minute-level
-            minute_file = run_dir / 'results_minute_level.csv'
-            if minute_file.exists():
-                run_data['minute'] = pd.read_csv(minute_file)
-            else:
-                print(f"  WARN: No minute data in {run_dir.name}")
-                continue
+    for run_dir in run_dirs:
+        run_data = {'run_name': run_dir.name}
 
-            # Load daily summary
-            daily_file = run_dir / 'results_daily_summary.csv'
-            if daily_file.exists():
-                run_data['daily'] = pd.read_csv(daily_file)
+        # Load minute-level (disaggregated)
+        minute_file = run_dir / 'results_minute_level.csv'
+        if minute_file.exists():
+            try:
+                # Excel exports have:
+                # Row 0: Description (with BOM)
+                # Row 1: Column names
+                # Row 2: Units symbols (Greek letters)
+                # Row 3: Units text
+                # Row 4+: Data
+                df_minute = pd.read_csv(minute_file, skiprows=[0, 2, 3], encoding='utf-8-sig')
 
-            run_data['run_name'] = run_dir.name
+                # Verify we have the expected columns
+                if 'Dwelling index' in df_minute.columns and 'Time' in df_minute.columns:
+                    run_data['minute'] = df_minute
+                    print(f"  ✓ {run_dir.name}: minute data ({len(df_minute)} rows)")
+                else:
+                    print(f"  ⚠ {run_dir.name}: Missing columns in minute data")
+                    print(f"    Found: {list(df_minute.columns[:5])}...")
+            except Exception as e:
+                print(f"  ⚠ {run_dir.name}: Could not load minute data: {e}")
+
+        # Load daily summary
+        daily_file = run_dir / 'results_daily_summary.csv'
+        if daily_file.exists():
+            try:
+                # Excel exports have:
+                # Row 0: Description
+                # Row 1: Column names
+                # Row 2: Units symbols
+                # Row 3: Units text
+                # Row 4+: Data
+                df_daily = pd.read_csv(daily_file, skiprows=[0, 2, 3], encoding='utf-8-sig')
+
+                # Verify we have the expected columns
+                if 'Dwelling index' in df_daily.columns:
+                    run_data['daily'] = df_daily
+                    print(f"  ✓ {run_dir.name}: daily data ({len(df_daily)} rows)")
+                else:
+                    print(f"  ⚠ {run_dir.name}: Missing columns in daily data")
+                    print(f"    Found: {list(df_daily.columns[:5])}...")
+            except Exception as e:
+                print(f"  ⚠ {run_dir.name}: Could not load daily data: {e}")
+
+        if 'minute' in run_data or 'daily' in run_data:
             runs.append(run_data)
-    else:
-        # Try VBA run files (vba_run_1.csv, vba_run_2.csv, etc.)
-        vba_files = sorted(excel_dir.glob('vba_run_*.csv'))
 
-        if not vba_files:
-            print("  ERROR: No run_* subdirectories or vba_run_*.csv files found!")
-            return []
+    print(f"\n  ✓ Loaded {len(runs)} Excel runs")
+    if len(runs) == 0:
+        print("  ✗ ERROR: No valid Excel runs found!")
+        sys.exit(1)
 
-        for vba_file in vba_files:
-            run_data = {}
-            # Excel disaggregated results have header rows - skip them
-            df = pd.read_csv(vba_file, skiprows=[0, 1, 2, 4, 5])
-
-            # Rename Excel columns to match Python column names
-            df = df.rename(columns=EXCEL_TO_PYTHON)
-
-            # Add minute column (row number, 1-indexed)
-            if 'Minute' not in df.columns:
-                df['Minute'] = range(1, len(df) + 1)
-
-            run_data['minute'] = df
-            run_data['run_name'] = vba_file.stem  # e.g., 'vba_run_1'
-            runs.append(run_data)
-
-    print(f"  Loaded {len(runs)} Excel runs")
     return runs
 
 
-def compute_python_iqr(python_minute: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compute IQR statistics for each (dwelling, minute, variable) combination.
+# ============================================================================
+# DISAGGREGATED ANALYSIS (37 columns × 5 houses × 1440 minutes × 20 runs)
+# ============================================================================
 
-    Returns:
-        DataFrame with columns: dwelling, minute, variable, q1, median, q3, iqr
-    """
-    print("\nComputing Python IQR statistics...")
-
-    # Detect time column
-    time_col = find_column(python_minute, ['Minute', 'minute', 'time', 'timestep'])
-    if time_col is None:
-        print("  ERROR: No time column found!")
-        return pd.DataFrame()
-
-    # Detect dwelling column
-    dwelling_col = find_column(python_minute, ['dwelling', 'Dwelling', 'dwelling_index'])
-    if dwelling_col is None:
-        print("  ERROR: No dwelling column found!")
-        return pd.DataFrame()
+def compute_python_iqr_disaggregated(python_minute: pd.DataFrame) -> pd.DataFrame:
+    """Compute IQR statistics for each (dwelling, minute, variable) combination."""
+    print("\n" + "=" * 80)
+    print("COMPUTING PYTHON IQR - DISAGGREGATED DATA")
+    print("=" * 80)
 
     # Normalize column names
+    time_col = find_column(python_minute, ['Minute', 'minute', 'time', 'timestep'])
+    dwelling_col = find_column(python_minute, ['dwelling', 'Dwelling', 'Dwelling_index'])
+
+    if not time_col or not dwelling_col:
+        print(f"  ✗ ERROR: Missing required columns (time: {time_col}, dwelling: {dwelling_col})")
+        sys.exit(1)
+
     python_minute = python_minute.rename(columns={time_col: 'minute', dwelling_col: 'dwelling'})
+
+    # Get available variables
+    available_vars = [(excel_name, py_col, desc)
+                      for excel_name, (py_col, units, desc) in DISAGGREGATED_COLUMNS.items()
+                      if py_col and py_col in python_minute.columns]
+
+    print(f"  Testing {len(available_vars)} variables (out of {len(DISAGGREGATED_COLUMNS)} total)")
 
     stats_list = []
     dwellings = sorted(python_minute['dwelling'].unique())
-    minutes = range(1, 1441)  # 1440 minutes in a day
+    print(f"  Processing {len(dwellings)} dwellings...")
 
     for dwelling in dwellings:
-        print(f"  Computing for dwelling {dwelling}...")
+        print(f"    Dwelling {dwelling}...", end=" ", flush=True)
         d = python_minute[python_minute['dwelling'] == dwelling]
 
-        for minute in minutes:
+        for minute in range(1, 1441):
             m = d[d['minute'] == minute]
 
-            if len(m) < 10:  # Need enough samples
+            if len(m) < 10:  # Need enough samples for IQR
                 continue
 
-            row = {'dwelling': dwelling, 'minute': minute}
+            row = {'dwelling': int(dwelling), 'minute': int(minute)}
 
-            # Compute IQR for each variable
-            for var_name, col_name in VARIABLES.items():
-                if col_name in m.columns:
-                    values = m[col_name].dropna()
-                    if len(values) > 0:
-                        row[f'{var_name}_q1'] = np.percentile(values, 25)
-                        row[f'{var_name}_median'] = np.median(values)
-                        row[f'{var_name}_q3'] = np.percentile(values, 75)
-                        row[f'{var_name}_iqr'] = row[f'{var_name}_q3'] - row[f'{var_name}_q1']
+            for excel_name, py_col, desc in available_vars:
+                values = m[py_col].dropna()
+                if len(values) > 0:
+                    row[f'{excel_name}_q1'] = np.percentile(values, 25)
+                    row[f'{excel_name}_median'] = np.median(values)
+                    row[f'{excel_name}_q3'] = np.percentile(values, 75)
 
             stats_list.append(row)
 
+        print(f"✓ ({len([r for r in stats_list if r['dwelling'] == dwelling])} minutes)")
+
     df_stats = pd.DataFrame(stats_list)
-    print(f"  Computed {len(df_stats)} (dwelling, minute) combinations")
+    print(f"\n  ✓ Computed IQR for {len(df_stats):,} (dwelling, minute) combinations")
 
     return df_stats
 
 
-def validate_excel_against_iqr(
+def validate_excel_disaggregated(
     excel_runs: List[Dict[str, pd.DataFrame]],
     python_iqr: pd.DataFrame
 ) -> pd.DataFrame:
-    """
-    Check how many Excel values fall within Python IQR.
-
-    Returns:
-        DataFrame with validation results
-    """
-    print("\nValidating Excel runs against Python IQR...")
+    """Validate Excel disaggregated data against Python IQR."""
+    print("\n" + "=" * 80)
+    print("VALIDATING EXCEL DISAGGREGATED DATA")
+    print("=" * 80)
 
     results = []
 
     for run_data in excel_runs:
         run_name = run_data['run_name']
-        excel_minute = run_data['minute']
-
-        # Detect and normalize columns
-        time_col = find_column(excel_minute, ['Minute', 'minute', 'time'])
-        dwelling_col = find_column(excel_minute, ['dwelling', 'Dwelling', 'dwelling_index'])
-
-        if time_col is None or dwelling_col is None:
-            print(f"  WARN: Skipping {run_name} - missing columns")
+        if 'minute' not in run_data:
+            print(f"  ⚠ Skipping {run_name} - no minute data")
             continue
 
-        excel_minute = excel_minute.rename(columns={time_col: 'minute', dwelling_col: 'dwelling'})
+        excel_minute = run_data['minute']
 
-        # Merge with Python IQR
-        for dwelling in sorted(python_iqr['dwelling'].unique()):
+        # Normalize columns
+        time_col = find_column(excel_minute, ['Time', 'Minute', 'minute'])
+        dwelling_col = find_column(excel_minute, ['Dwelling index', 'Dwelling', 'dwelling'])
+
+        if not time_col or not dwelling_col:
+            print(f"  ⚠ Skipping {run_name} - missing time/dwelling columns")
+            continue
+
+        # Parse time column (may be "HH:MM:SS" format)
+        excel_minute = excel_minute.copy()
+        if excel_minute[time_col].dtype == 'object':
+            # Convert "HH:MM:SS" to minute number (1-1440)
+            def parse_time(t):
+                if pd.isna(t):
+                    return None
+                if ':' in str(t):
+                    parts = str(t).split(':')
+                    return int(parts[0]) * 60 + int(parts[1]) + 1
+                return int(t)
+            excel_minute['minute'] = excel_minute[time_col].apply(parse_time)
+        else:
+            excel_minute['minute'] = excel_minute[time_col].astype(int)
+
+        excel_minute['dwelling'] = excel_minute[dwelling_col].astype(int)
+
+        print(f"  {run_name}:", end=" ", flush=True)
+
+        # Test each variable for each dwelling
+        dwellings = sorted(python_iqr['dwelling'].unique())
+
+        for dwelling in dwellings:
             python_d = python_iqr[python_iqr['dwelling'] == dwelling]
             excel_d = excel_minute[excel_minute['dwelling'] == dwelling]
 
-            merged = excel_d.merge(python_d, on='minute', how='inner')
+            merged = excel_d.merge(python_d, on='minute', how='inner', suffixes=('_excel', '_py'))
 
             if len(merged) == 0:
                 continue
 
             # Check each variable
-            for var_name, col_name in VARIABLES.items():
-                if col_name not in merged.columns:
+            for excel_name, (py_col, units, desc) in DISAGGREGATED_COLUMNS.items():
+                if not py_col:  # Skip unmapped columns
                     continue
 
-                q1_col = f'{var_name}_q1'
-                q3_col = f'{var_name}_q3'
+                # Try to find Excel column
+                excel_col = find_column(merged, [excel_name, py_col, f'{py_col}_excel'])
+                if not excel_col:
+                    continue
+
+                q1_col = f'{excel_name}_q1'
+                q3_col = f'{excel_name}_q3'
 
                 if q1_col not in merged.columns or q3_col not in merged.columns:
                     continue
 
-                # Count how many Excel values fall in Python IQR
-                in_iqr = (merged[col_name] >= merged[q1_col]) & (merged[col_name] <= merged[q3_col])
+                # Count how many values fall in IQR
+                values = merged[excel_col].dropna()
+                q1 = merged[q1_col].dropna()
+                q3 = merged[q3_col].dropna()
+
+                if len(values) == 0 or len(q1) == 0 or len(q3) == 0:
+                    continue
+
+                in_iqr = (merged[excel_col] >= merged[q1_col]) & (merged[excel_col] <= merged[q3_col])
                 total = len(merged)
                 in_iqr_count = in_iqr.sum()
                 in_iqr_pct = 100 * in_iqr_count / total if total > 0 else 0
 
                 results.append({
                     'run': run_name,
-                    'dwelling': dwelling,
-                    'variable': var_name,
-                    'total_minutes': total,
-                    'in_iqr_count': in_iqr_count,
-                    'in_iqr_pct': in_iqr_pct,
-                    'excel_mean': merged[col_name].mean(),
-                    'python_median': merged[f'{var_name}_median'].mean() if f'{var_name}_median' in merged.columns else np.nan
+                    'dwelling': int(dwelling),
+                    'variable': excel_name,
+                    'python_column': py_col,
+                    'units': units,
+                    'total_minutes': int(total),
+                    'in_iqr_count': int(in_iqr_count),
+                    'in_iqr_pct': float(in_iqr_pct),
                 })
 
+        print("✓")
+
     df_results = pd.DataFrame(results)
-    print(f"  Validated {len(df_results)} (run, dwelling, variable) combinations")
+    print(f"\n  ✓ Validated {len(df_results):,} (run, dwelling, variable) combinations")
 
     return df_results
 
 
-def generate_summary(validation_results: pd.DataFrame, validation_dir: Path) -> None:
-    """Generate summary statistics and save reports."""
-    print("\nGenerating summary report...")
+# ============================================================================
+# DAILY TOTALS ANALYSIS (15 columns × 5 houses × 20 runs)
+# ============================================================================
 
-    # Overall statistics
-    overall = validation_results.groupby('variable').agg({
-        'in_iqr_pct': ['mean', 'std', 'min', 'max'],
-        'total_minutes': 'sum'
-    }).reset_index()
+def compute_python_iqr_daily(python_daily: pd.DataFrame) -> pd.DataFrame:
+    """Compute IQR statistics for daily totals by dwelling."""
+    print("\n" + "=" * 80)
+    print("COMPUTING PYTHON IQR - DAILY TOTALS")
+    print("=" * 80)
 
-    # Save detailed results
-    results_file = validation_dir / 'iqr_analysis.csv'
-    validation_results.to_csv(results_file, index=False)
-    print(f"  Saved: {results_file}")
+    # Normalize column names
+    dwelling_col = find_column(python_daily, ['dwelling', 'Dwelling', 'Dwelling_index'])
+    if not dwelling_col:
+        print("  ✗ ERROR: No dwelling column found in daily data")
+        sys.exit(1)
 
-    # Save summary
-    summary_file = validation_dir / 'summary_statistics.csv'
-    overall.to_csv(summary_file, index=False)
-    print(f"  Saved: {summary_file}")
+    python_daily = python_daily.rename(columns={dwelling_col: 'dwelling'})
 
-    # Generate text report
-    report = []
-    report.append("=" * 80)
-    report.append("MONTE CARLO IQR VALIDATION RESULTS")
-    report.append("=" * 80)
-    report.append("")
-    report.append("Objective: >50% of Excel samples should fall within Python IQR")
-    report.append("")
+    # Get available variables
+    available_vars = []
+    for excel_name, (py_col, units, desc) in DAILY_COLUMNS.items():
+        if py_col and py_col in python_daily.columns:
+            available_vars.append((excel_name, py_col, desc))
 
-    for var in validation_results['variable'].unique():
-        var_data = validation_results[validation_results['variable'] == var]
-        mean_pct = var_data['in_iqr_pct'].mean()
-        std_pct = var_data['in_iqr_pct'].std()
-        total_tests = var_data['total_minutes'].sum()
-
-        status = "✓ PASS" if mean_pct >= 50 else "✗ FAIL"
-
-        report.append(f"{var.upper()}: {mean_pct:.1f}% ± {std_pct:.1f}% in IQR {status}")
-        report.append(f"  Total data points tested: {total_tests:,}")
-        report.append("")
-
-    total_data_points = validation_results['total_minutes'].sum()
-    report.append(f"TOTAL DATA POINTS: {total_data_points:,}")
-    report.append("")
-    report.append("=" * 80)
-
-    # Print to console
-    print("\n" + '\n'.join(report))
-
-    # Save to file
-    report_file = validation_dir / 'validation_report.txt'
-    with open(report_file, 'w') as f:
-        f.write('\n'.join(report))
-    print(f"  Saved: {report_file}")
-
-
-# Column names for daily totals analysis (15 variables, columns 3-17 from VBA)
-# VBA Reference: DailyTotals columns 3-17 (mdlThermalElectricalModel.bas lines 1105-1119)
-DAILY_VARIABLES = {
-    'Mean_Active_Occupancy': 'Mean active occupancy',
-    'Proportion_Day_Actively_Occupied': 'Proportion actively occupied',
-    'Lighting_Demand_kWh': 'Lighting demand',
-    'Appliance_Demand_kWh': 'Appliance demand',
-    'PV_Output_kWh': 'PV output',
-    'Total_Electricity_Demand_kWh': 'Total electricity demand',
-    'Self_Consumption_kWh': 'Self consumption',
-    'Net_Electricity_Demand_kWh': 'Net electricity demand',
-    'Hot_Water_Demand_L': 'Hot water demand',
-    'Average_Indoor_Temperature_C': 'Average indoor temperature',
-    'Thermal_Energy_Space_Heating_kWh': 'Thermal energy space heating',
-    'Thermal_Energy_Water_Heating_kWh': 'Thermal energy water heating',
-    'Gas_Demand_m3': 'Gas demand',
-    'Space_Thermostat_Setpoint_C': 'Space thermostat setpoint',
-    'Solar_Thermal_Heat_Gains_kWh': 'Solar thermal heat gains'
-}
-
-
-def compute_daily_totals_iqr(python_daily: pd.DataFrame) -> pd.DataFrame:
-    """
-    Compute IQR statistics for daily totals (per dwelling, per variable).
-
-    VBA Reference: Compare 15 variables from columns 3-17 of DailyTotals
-
-    Args:
-        python_daily: DataFrame with daily summary data from Python runs
-
-    Returns:
-        DataFrame with columns: dwelling, variable, q1, median, q3, iqr, count
-    """
-    print("\nComputing Python daily totals IQR...")
-
-    if python_daily is None or len(python_daily) == 0:
-        print("  ERROR: No Python daily data to analyze!")
-        return pd.DataFrame()
-
-    # Auto-detect dwelling column
-    dwelling_col = find_column(python_daily, ['Dwelling', 'dwelling', 'dwelling_index'])
-    if dwelling_col is None:
-        print("  ERROR: No dwelling column found in Python daily data!")
-        return pd.DataFrame()
-
-    # Normalize column name
-    if dwelling_col != 'Dwelling':
-        python_daily = python_daily.rename(columns={dwelling_col: 'Dwelling'})
+    print(f"  Testing {len(available_vars)} variables (out of {len(DAILY_COLUMNS)} total)")
 
     stats_list = []
-    dwellings = sorted(python_daily['Dwelling'].unique())
+    dwellings = sorted(python_daily['dwelling'].unique())
 
     for dwelling in dwellings:
-        print(f"  Computing for dwelling {dwelling}...")
-        d = python_daily[python_daily['Dwelling'] == dwelling]
+        d = python_daily[python_daily['dwelling'] == dwelling]
 
-        for var_name, var_label in DAILY_VARIABLES.items():
-            if var_name not in d.columns:
-                print(f"    WARN: Column {var_name} not found, skipping")
-                continue
+        row = {'dwelling': int(dwelling)}
 
-            values = d[var_name].dropna()
-            if len(values) < 10:  # Need enough samples
-                print(f"    WARN: Only {len(values)} samples for {var_name}, skipping")
-                continue
+        for excel_name, py_col, desc in available_vars:
+            values = d[py_col].dropna()
+            if len(values) >= 10:  # Need enough samples
+                row[f'{excel_name}_q1'] = np.percentile(values, 25)
+                row[f'{excel_name}_median'] = np.median(values)
+                row[f'{excel_name}_q3'] = np.percentile(values, 75)
+                row[f'{excel_name}_mean'] = np.mean(values)
+                row[f'{excel_name}_std'] = np.std(values)
 
-            stats_list.append({
-                'dwelling': dwelling,
-                'variable': var_name,
-                'label': var_label,
-                'q1': np.percentile(values, 25),
-                'median': np.median(values),
-                'q3': np.percentile(values, 75),
-                'iqr': np.percentile(values, 75) - np.percentile(values, 25),
-                'count': len(values)
-            })
+        stats_list.append(row)
 
     df_stats = pd.DataFrame(stats_list)
-    print(f"  Computed {len(df_stats)} (dwelling, variable) combinations")
+    print(f"  ✓ Computed IQR for {len(dwellings)} dwellings")
 
     return df_stats
 
 
-def validate_excel_daily_against_iqr(
+def validate_excel_daily(
     excel_runs: List[Dict[str, pd.DataFrame]],
     python_iqr: pd.DataFrame
 ) -> pd.DataFrame:
-    """
-    Check how many Excel daily total values fall within Python IQR.
-
-    Args:
-        excel_runs: List of Excel run data (each with 'daily' DataFrame)
-        python_iqr: Python IQR statistics for daily totals
-
-    Returns:
-        DataFrame with validation results per (run, dwelling, variable)
-    """
-    print("\nValidating Excel daily totals against Python IQR...")
+    """Validate Excel daily totals against Python IQR."""
+    print("\n" + "=" * 80)
+    print("VALIDATING EXCEL DAILY TOTALS")
+    print("=" * 80)
 
     results = []
 
     for run_data in excel_runs:
         run_name = run_data['run_name']
-
-        if 'daily' not in run_data or run_data['daily'] is None:
-            print(f"  WARN: No daily data for {run_name}, skipping")
+        if 'daily' not in run_data:
+            print(f"  ⚠ Skipping {run_name} - no daily data")
             continue
 
         excel_daily = run_data['daily']
 
         # Normalize dwelling column
-        dwelling_col = find_column(excel_daily, ['Dwelling', 'dwelling', 'Dwelling index', 'dwelling_index'])
-        if dwelling_col is None:
-            print(f"  WARN: No dwelling column in {run_name}, skipping")
+        dwelling_col = find_column(excel_daily, ['Dwelling index', 'Dwelling', 'dwelling'])
+        if not dwelling_col:
+            print(f"  ⚠ Skipping {run_name} - no dwelling column")
             continue
 
-        if dwelling_col != 'Dwelling':
-            excel_daily = excel_daily.rename(columns={dwelling_col: 'Dwelling'})
+        excel_daily = excel_daily.copy()
+        excel_daily['dwelling'] = excel_daily[dwelling_col].astype(int)
+
+        print(f"  {run_name}:", end=" ", flush=True)
+
+        # Merge with Python IQR
+        merged = excel_daily.merge(python_iqr, on='dwelling', how='inner', suffixes=('_excel', '_py'))
+
+        if len(merged) == 0:
+            print("no matches")
+            continue
 
         # Check each variable for each dwelling
-        for dwelling in sorted(python_iqr['dwelling'].unique()):
-            python_d = python_iqr[python_iqr['dwelling'] == dwelling]
-            excel_d = excel_daily[excel_daily['Dwelling'] == dwelling]
+        for dwelling in sorted(merged['dwelling'].unique()):
+            d = merged[merged['dwelling'] == dwelling]
 
-            if len(excel_d) == 0:
-                continue
-
-            # For daily totals, we expect just 1 row per dwelling
-            if len(excel_d) > 1:
-                print(f"  WARN: Multiple rows for dwelling {dwelling} in {run_name}, using first")
-                excel_d = excel_d.iloc[0:1]
-
-            for _, python_row in python_d.iterrows():
-                var_name = python_row['variable']
-
-                if var_name not in excel_d.columns:
+            for excel_name, (py_col, units, desc) in DAILY_COLUMNS.items():
+                if not py_col:  # Skip unmapped columns
                     continue
 
-                excel_value = excel_d[var_name].iloc[0]
-                q1 = python_row['q1']
-                q3 = python_row['q3']
+                # Try to find Excel column (should match exactly now)
+                excel_col = find_column(d, [excel_name, py_col, f'{py_col}_excel'])
+                if not excel_col:
+                    continue
 
-                # Check if Excel value falls in Python IQR
-                in_iqr = (excel_value >= q1) and (excel_value <= q3)
+                q1_col = f'{excel_name}_q1'
+                q3_col = f'{excel_name}_q3'
+
+                if q1_col not in d.columns or q3_col not in d.columns:
+                    continue
+
+                # Get value and check if in IQR
+                value = d[excel_col].iloc[0]
+                q1 = d[q1_col].iloc[0]
+                q3 = d[q3_col].iloc[0]
+
+                if pd.isna(value) or pd.isna(q1) or pd.isna(q3):
+                    continue
+
+                in_iqr = (value >= q1) and (value <= q3)
 
                 results.append({
                     'run': run_name,
-                    'dwelling': dwelling,
-                    'variable': var_name,
-                    'label': python_row['label'],
-                    'excel_value': excel_value,
-                    'python_q1': q1,
-                    'python_median': python_row['median'],
-                    'python_q3': q3,
-                    'in_iqr': 1 if in_iqr else 0
+                    'dwelling': int(dwelling),
+                    'variable': excel_name,
+                    'python_column': py_col,
+                    'units': units,
+                    'excel_value': float(value),
+                    'python_q1': float(q1),
+                    'python_median': float(d[f'{excel_name}_median'].iloc[0]) if f'{excel_name}_median' in d.columns else np.nan,
+                    'python_q3': float(q3),
+                    'in_iqr': bool(in_iqr),
                 })
 
+        print("✓")
+
     df_results = pd.DataFrame(results)
-    print(f"  Validated {len(df_results)} (run, dwelling, variable) combinations")
+    print(f"\n  ✓ Validated {len(df_results)} (run, dwelling, variable) combinations")
 
     return df_results
+
+
+# ============================================================================
+# STATISTICAL VARIANCE ANALYSIS
+# ============================================================================
+
+def compute_expected_iqr_statistics(n_python: int, n_excel: int) -> Dict:
+    """Compute expected IQR statistics for given sample sizes.
+
+    By definition, 50% of samples should fall within the IQR. But with finite
+    sample sizes, there's natural variance. This computes the expected distribution.
+    """
+    print("\n" + "=" * 80)
+    print("EXPECTED IQR STATISTICS")
+    print("=" * 80)
+    print(f"  Python samples: {n_python}")
+    print(f"  Excel samples: {n_excel}")
+    print()
+
+    # For n_excel samples, how many should fall in IQR?
+    # This follows a binomial distribution: B(n, p=0.5)
+    expected_mean = n_excel * 0.5
+    expected_std = np.sqrt(n_excel * 0.5 * 0.5)
+
+    # Confidence intervals
+    ci_68 = (expected_mean - expected_std, expected_mean + expected_std)  # ~68% CI
+    ci_95 = (expected_mean - 2*expected_std, expected_mean + 2*expected_std)  # ~95% CI
+    ci_99 = (expected_mean - 3*expected_std, expected_mean + 3*expected_std)  # ~99.7% CI
+
+    # Convert to percentages
+    expected_pct = 100 * expected_mean / n_excel
+    ci_68_pct = (100 * ci_68[0] / n_excel, 100 * ci_68[1] / n_excel)
+    ci_95_pct = (100 * ci_95[0] / n_excel, 100 * ci_95[1] / n_excel)
+    ci_99_pct = (100 * ci_99[0] / n_excel, 100 * ci_99[1] / n_excel)
+
+    print(f"  Expected: {expected_mean:.1f} / {n_excel} = {expected_pct:.1f}%")
+    print(f"  68% CI: {ci_68_pct[0]:.1f}% - {ci_68_pct[1]:.1f}%")
+    print(f"  95% CI: {ci_95_pct[0]:.1f}% - {ci_95_pct[1]:.1f}%")
+    print(f"  99.7% CI: {ci_99_pct[0]:.1f}% - {ci_99_pct[1]:.1f}%")
+    print()
+
+    # How unlikely is it to be off by various amounts?
+    for delta_pct in [0.1, 1.0, 10.0]:
+        delta_count = delta_pct / 100 * n_excel
+        z_score = abs(delta_count) / expected_std if expected_std > 0 else 0
+        p_value = 2 * (1 - scipy_stats.norm.cdf(z_score))  # Two-tailed
+        print(f"  Probability of being off by ±{delta_pct}%: {p_value:.2%}")
+
+    return {
+        'n_python': n_python,
+        'n_excel': n_excel,
+        'expected_mean': expected_mean,
+        'expected_std': expected_std,
+        'expected_pct': expected_pct,
+        'ci_68_pct': ci_68_pct,
+        'ci_95_pct': ci_95_pct,
+        'ci_99_pct': ci_99_pct,
+    }
+
+
+# ============================================================================
+# SUMMARY TABLES
+# ============================================================================
+
+def generate_disaggregated_summary_table(validation_results: pd.DataFrame) -> pd.DataFrame:
+    """Generate summary table: 37 variables (rows) × 5 houses (columns).
+
+    Each cell shows % of timestamps (1440 × 20 = 28,800) in IQR.
+    """
+    print("\n" + "=" * 80)
+    print("GENERATING DISAGGREGATED SUMMARY TABLE")
+    print("=" * 80)
+
+    # For each (dwelling, variable), compute aggregate IQR percentage
+    summary = validation_results.groupby(['variable', 'dwelling']).agg({
+        'in_iqr_count': 'sum',
+        'total_minutes': 'sum',
+    }).reset_index()
+
+    summary['in_iqr_pct'] = 100 * summary['in_iqr_count'] / summary['total_minutes']
+
+    # Pivot to create matrix: variables × dwellings
+    table = summary.pivot(index='variable', columns='dwelling', values='in_iqr_pct')
+
+    # Add row averages
+    table['Mean'] = table.mean(axis=1)
+
+    # Round to 1 decimal
+    table = table.round(1)
+
+    # Sort by variable name (to match Excel order)
+    variable_order = [name for name in DISAGGREGATED_COLUMNS.keys()
+                      if name in table.index]
+    table = table.loc[variable_order]
+
+    print(f"  ✓ Created table: {len(table)} variables × {len(table.columns)} columns")
+
+    return table
+
+
+def generate_daily_summary_table(validation_results: pd.DataFrame) -> pd.DataFrame:
+    """Generate daily totals summary table."""
+    print("\n" + "=" * 80)
+    print("GENERATING DAILY TOTALS SUMMARY TABLE")
+    print("=" * 80)
+
+    # For each (dwelling, variable), count how many runs fall in IQR
+    summary = validation_results.groupby(['variable', 'dwelling']).agg({
+        'in_iqr': 'sum',
+        'excel_value': 'count',
+    }).reset_index()
+
+    summary.rename(columns={'in_iqr': 'in_iqr_count', 'excel_value': 'total_runs'}, inplace=True)
+    summary['in_iqr_pct'] = 100 * summary['in_iqr_count'] / summary['total_runs']
+
+    # Pivot to create matrix: variables × dwellings
+    table = summary.pivot(index='variable', columns='dwelling', values='in_iqr_pct')
+
+    # Add row averages
+    table['Mean'] = table.mean(axis=1)
+
+    # Round to 1 decimal
+    table = table.round(1)
+
+    # Sort by variable order (to match Excel C-Q)
+    variable_order = [name for name in DAILY_COLUMNS.keys()
+                      if name in table.index]
+    table = table.loc[variable_order]
+
+    print(f"  ✓ Created table: {len(table)} variables × {len(table.columns)} columns")
+
+    return table
+
+
+# ============================================================================
+# REPORT GENERATION
+# ============================================================================
+
+def generate_comprehensive_report(
+    daily_results: pd.DataFrame,
+    disagg_results: pd.DataFrame,
+    daily_table: pd.DataFrame,
+    disagg_table: pd.DataFrame,
+    stats_info: Dict,
+    validation_dir: Path
+) -> None:
+    """Generate comprehensive validation report."""
+    print("\n" + "=" * 80)
+    print("GENERATING COMPREHENSIVE REPORT")
+    print("=" * 80)
+
+    # Save detailed results
+    daily_results.to_csv(validation_dir / 'daily_totals_detailed.csv', index=False)
+    disagg_results.to_csv(validation_dir / 'disaggregated_detailed.csv', index=False)
+
+    # Save summary tables
+    daily_table.to_csv(validation_dir / 'daily_totals_summary.csv')
+    disagg_table.to_csv(validation_dir / 'disaggregated_summary.csv')
+
+    print(f"  ✓ Saved: daily_totals_detailed.csv")
+    print(f"  ✓ Saved: disaggregated_detailed.csv")
+    print(f"  ✓ Saved: daily_totals_summary.csv")
+    print(f"  ✓ Saved: disaggregated_summary.csv")
+
+    # Generate text report
+    report = []
+    report.append("=" * 80)
+    report.append("CREST MONTE CARLO IQR VALIDATION - COMPREHENSIVE REPORT")
+    report.append("=" * 80)
+    report.append("")
+
+    # Statistical expectations
+    report.append("STATISTICAL EXPECTATIONS")
+    report.append("-" * 80)
+    report.append(f"Python samples: {stats_info['n_python']}")
+    report.append(f"Excel samples: {stats_info['n_excel']}")
+    report.append(f"Expected IQR percentage: {stats_info['expected_pct']:.1f}%")
+    report.append(f"95% confidence interval: {stats_info['ci_95_pct'][0]:.1f}% - {stats_info['ci_95_pct'][1]:.1f}%")
+    report.append("")
+
+    # Daily totals summary
+    report.append("DAILY TOTALS (15 variables × 5 houses × 20 runs)")
+    report.append("-" * 80)
+    if len(daily_results) > 0:
+        overall_daily = daily_results.groupby('variable')['in_iqr'].agg(['sum', 'count']).reset_index()
+        overall_daily['pct'] = 100 * overall_daily['sum'] / overall_daily['count']
+
+        for _, row in overall_daily.iterrows():
+            pct = row['pct']
+            status = "✓" if pct >= 40 else "✗"  # Allow some variance from 50%
+            report.append(f"  {row['variable']:<50} {pct:5.1f}% {status}")
+
+        overall_pct = 100 * overall_daily['sum'].sum() / overall_daily['count'].sum()
+        report.append(f"\n  Overall: {overall_pct:.1f}% in IQR")
+    else:
+        report.append("  No daily totals data available")
+    report.append("")
+
+    # Disaggregated summary
+    report.append("DISAGGREGATED (37 variables × 5 houses × 1440 minutes × 20 runs)")
+    report.append("-" * 80)
+    if len(disagg_results) > 0:
+        overall_disagg = disagg_results.groupby('variable').agg({
+            'in_iqr_count': 'sum',
+            'total_minutes': 'sum',
+        }).reset_index()
+        overall_disagg['pct'] = 100 * overall_disagg['in_iqr_count'] / overall_disagg['total_minutes']
+
+        # Show top 10 best and worst
+        overall_disagg_sorted = overall_disagg.sort_values('pct', ascending=False)
+
+        report.append("Top 10 (highest IQR match):")
+        for _, row in overall_disagg_sorted.head(10).iterrows():
+            pct = row['pct']
+            status = "✓" if pct >= 40 else "✗"
+            report.append(f"  {row['variable']:<50} {pct:5.1f}% {status}")
+
+        report.append("\nBottom 10 (lowest IQR match):")
+        for _, row in overall_disagg_sorted.tail(10).iterrows():
+            pct = row['pct']
+            status = "✓" if pct >= 40 else "✗"
+            report.append(f"  {row['variable']:<50} {pct:5.1f}% {status}")
+
+        overall_pct = 100 * overall_disagg['in_iqr_count'].sum() / overall_disagg['total_minutes'].sum()
+        report.append(f"\n  Overall: {overall_pct:.1f}% in IQR")
+    else:
+        report.append("  No disaggregated data available")
+    report.append("")
+
+    # Per-dwelling breakdown
+    report.append("PER-DWELLING BREAKDOWN")
+    report.append("-" * 80)
+    if len(disagg_results) > 0 and 'dwelling' in disagg_results.columns:
+        for dwelling in sorted(disagg_results['dwelling'].unique()):
+            d = disagg_results[disagg_results['dwelling'] == dwelling]
+            pct = 100 * d['in_iqr_count'].sum() / d['total_minutes'].sum()
+            status = "✓" if pct >= 40 else "✗"
+            report.append(f"  Dwelling {dwelling}: {pct:.1f}% in IQR {status}")
+    else:
+        report.append("  No disaggregated data available for per-dwelling analysis")
+    report.append("")
+
+    report.append("=" * 80)
+    report.append("END OF REPORT")
+    report.append("=" * 80)
+
+    # Save and print report
+    report_file = validation_dir / 'validation_report.txt'
+    with open(report_file, 'w') as f:
+        f.write('\n'.join(report))
+
+    print(f"  ✓ Saved: validation_report.txt")
+
+    # Print to console
+    print("\n" + '\n'.join(report))
 
 
 def generate_daily_totals_wide_format(
     excel_runs: List[Dict[str, pd.DataFrame]],
     python_daily_iqr: pd.DataFrame,
     validation_dir: Path
-) -> None:
+) -> pd.DataFrame:
     """
     Generate wide-format comparison table for daily totals.
 
     Format:
-    - Columns: name, Dwelling, + 15 variables
+    - Columns: name, Dwelling, + 15 variables (with exact Excel column names)
     - Rows: excel 1...N, py25%, py50%, py75%, % within IQR (all per dwelling)
 
     Args:
         excel_runs: List of Excel run data
         python_daily_iqr: Python IQR statistics (dwelling, variable, q1, median, q3)
         validation_dir: Output directory
+
+    Returns:
+        DataFrame with wide-format comparison
     """
-    print("\nGenerating daily totals wide-format comparison...")
+    print("\n  Generating daily totals wide-format comparison table...")
 
     # Get list of dwellings
     dwellings = sorted(python_daily_iqr['dwelling'].unique())
 
-    # Column headers: use human-readable labels from VBA
-    # Map from our column names to VBA-style labels
-    column_labels = {
-        'Mean_Active_Occupancy': 'Mean active occupancy',
-        'Proportion_Day_Actively_Occupied': 'Proportion of day actively occupied',
-        'Lighting_Demand_kWh': 'Lighting demand',
-        'Appliance_Demand_kWh': 'Appliance demand',
-        'PV_Output_kWh': 'PV output',
-        'Total_Electricity_Demand_kWh': 'Total dwelling electricity demand',
-        'Self_Consumption_kWh': 'Total self-consumption',
-        'Net_Electricity_Demand_kWh': 'Net dwelling electricity demand',
-        'Hot_Water_Demand_L': 'Hot water demand (litres)',
-        'Average_Indoor_Temperature_C': 'Average indoor air temperature',
-        'Thermal_Energy_Space_Heating_kWh': 'Thermal energy used for space heating',
-        'Thermal_Energy_Water_Heating_kWh': 'Thermal energy used for hot water heating',
-        'Gas_Demand_m3': 'Gas demand',
-        'Space_Thermostat_Setpoint_C': 'Space thermostat set point',
-        'Solar_Thermal_Heat_Gains_kWh': 'Solar thermal collector heat gains'
-    }
+    # Use exact Excel column names from DAILY_COLUMNS
+    column_names = list(DAILY_COLUMNS.keys())
 
     # Build rows list
     rows = []
@@ -558,9 +820,9 @@ def generate_daily_totals_wide_format(
         excel_daily = run_data['daily']
 
         # Normalize dwelling column
-        dwelling_col = find_column(excel_daily, ['Dwelling', 'dwelling', 'Dwelling index', 'dwelling_index'])
-        if dwelling_col and dwelling_col != 'Dwelling':
-            excel_daily = excel_daily.rename(columns={dwelling_col: 'Dwelling'})
+        dwelling_col = find_column(excel_daily, ['Dwelling index', 'Dwelling', 'dwelling', 'dwelling_index'])
+        if dwelling_col and dwelling_col != 'Dwelling index':
+            excel_daily = excel_daily.rename(columns={dwelling_col: 'Dwelling index'})
 
         # Extract run number from run_name (e.g., "run_01" -> 1, "vba_run_3" -> 3)
         import re
@@ -568,7 +830,7 @@ def generate_daily_totals_wide_format(
         run_num = int(match.group(1)) if match else run_name
 
         for dwelling in dwellings:
-            excel_d = excel_daily[excel_daily['Dwelling'] == dwelling]
+            excel_d = excel_daily[excel_daily['Dwelling index'] == dwelling]
 
             if len(excel_d) == 0:
                 continue
@@ -578,12 +840,12 @@ def generate_daily_totals_wide_format(
 
             row = {'name': f'excel {run_num}', 'Dwelling': dwelling}
 
-            # Add values for each variable
-            for col_name, label in column_labels.items():
+            # Add values for each variable using exact Excel column names
+            for col_name in column_names:
                 if col_name in excel_d.columns:
-                    row[label] = excel_d[col_name].iloc[0]
+                    row[col_name] = excel_d[col_name].iloc[0]
                 else:
-                    row[label] = np.nan
+                    row[col_name] = np.nan
 
             rows.append(row)
 
@@ -595,12 +857,12 @@ def generate_daily_totals_wide_format(
             # Get Python IQR data for this dwelling
             python_d = python_daily_iqr[python_daily_iqr['dwelling'] == dwelling]
 
-            for col_name, label in column_labels.items():
+            for col_name in column_names:
                 python_var = python_d[python_d['variable'] == col_name]
                 if len(python_var) > 0:
-                    row[label] = python_var[quartile_col].iloc[0]
+                    row[col_name] = python_var[quartile_col].iloc[0]
                 else:
-                    row[label] = np.nan
+                    row[col_name] = np.nan
 
             rows.append(row)
 
@@ -611,11 +873,11 @@ def generate_daily_totals_wide_format(
         # For each variable, calculate what % of Excel runs fell within IQR
         python_d = python_daily_iqr[python_daily_iqr['dwelling'] == dwelling]
 
-        for col_name, label in column_labels.items():
+        for col_name in column_names:
             python_var = python_d[python_d['variable'] == col_name]
 
             if len(python_var) == 0:
-                row[label] = np.nan
+                row[col_name] = np.nan
                 continue
 
             q1 = python_var['q1'].iloc[0]
@@ -630,11 +892,11 @@ def generate_daily_totals_wide_format(
                     continue
 
                 excel_daily = run_data['daily']
-                dwelling_col = find_column(excel_daily, ['Dwelling', 'dwelling', 'Dwelling index', 'dwelling_index'])
-                if dwelling_col and dwelling_col != 'Dwelling':
-                    excel_daily = excel_daily.rename(columns={dwelling_col: 'Dwelling'})
+                dwelling_col = find_column(excel_daily, ['Dwelling index', 'Dwelling', 'dwelling', 'dwelling_index'])
+                if dwelling_col and dwelling_col != 'Dwelling index':
+                    excel_daily = excel_daily.rename(columns={dwelling_col: 'Dwelling index'})
 
-                excel_d = excel_daily[excel_daily['Dwelling'] == dwelling]
+                excel_d = excel_daily[excel_daily['Dwelling index'] == dwelling]
 
                 if len(excel_d) > 0 and col_name in excel_d.columns:
                     excel_value = excel_d[col_name].iloc[0]
@@ -644,9 +906,9 @@ def generate_daily_totals_wide_format(
 
             # Calculate percentage
             if total_count > 0:
-                row[label] = 100.0 * in_iqr_count / total_count
+                row[col_name] = 100.0 * in_iqr_count / total_count
             else:
-                row[label] = np.nan
+                row[col_name] = np.nan
 
         rows.append(row)
 
@@ -654,21 +916,24 @@ def generate_daily_totals_wide_format(
     df_comparison = pd.DataFrame(rows)
 
     # Ensure columns are in the right order
-    column_order = ['name', 'Dwelling'] + [column_labels[col] for col in column_labels.keys()]
+    column_order = ['name', 'Dwelling'] + column_names
     df_comparison = df_comparison[column_order]
 
     # Save to CSV
     output_file = validation_dir / 'daily_totals_comparison.csv'
     df_comparison.to_csv(output_file, index=False)
-    print(f"  Saved: {output_file}")
-    print(f"  Rows: {len(df_comparison)} ({len(excel_runs)} Excel runs × {len(dwellings)} dwellings + quartiles + summary)")
+    print(f"    ✓ Saved: daily_totals_comparison.csv")
+    print(f"      ({len(excel_runs)} Excel runs × {len(dwellings)} dwellings + quartiles + IQR summary)")
 
     return df_comparison
 
 
+# ============================================================================
+# MAIN
+# ============================================================================
+
 def main():
     """Main validation workflow."""
-    # Change to project root for consistent paths
     import os
     project_root = get_project_root()
     os.chdir(project_root)
@@ -677,8 +942,8 @@ def main():
         print("Usage: python scripts/monte_carlo_compare.py <python_dir> <excel_dir>")
         print("\nExample:")
         print("  python scripts/monte_carlo_compare.py \\")
-        print("    output/monte_carlo/python_1000runs_20250113_01 \\")
-        print("    output/monte_carlo/excel_20runs_20250113_01")
+        print("    output/monte_carlo/python_1000runs_20251113_01 \\")
+        print("    output/monte_carlo/excel_20runs_20251113_01")
         sys.exit(1)
 
     python_dir = Path(sys.argv[1])
@@ -686,78 +951,74 @@ def main():
 
     # Validate directories exist
     if not python_dir.exists():
-        print(f"ERROR: Python directory not found: {python_dir}")
+        print(f"✗ ERROR: Python directory not found: {python_dir}")
         sys.exit(1)
 
     if not excel_dir.exists():
-        print(f"ERROR: Excel directory not found: {excel_dir}")
+        print(f"✗ ERROR: Excel directory not found: {excel_dir}")
         sys.exit(1)
 
     print("=" * 80)
-    print("CREST MONTE CARLO IQR VALIDATION")
+    print("CREST MONTE CARLO IQR VALIDATION - COMPREHENSIVE")
     print("=" * 80)
 
-    # Load Python baseline
+    # Load data
     python_minute, python_daily = load_python_baseline(python_dir)
-    if python_minute is None:
-        sys.exit(1)
-
-    # Load Excel runs
     excel_runs = load_excel_runs(excel_dir)
-    if not excel_runs:
-        sys.exit(1)
 
-    # Compute Python IQR
-    python_iqr = compute_python_iqr(python_minute)
-    if len(python_iqr) == 0:
-        print("ERROR: Failed to compute Python IQR")
-        sys.exit(1)
+    # Detect sample sizes for statistical analysis
+    n_python = len(python_minute['seed'].unique()) if 'seed' in python_minute.columns else len(python_minute) // 1440
+    n_excel = len(excel_runs)
 
-    # Validate Excel against Python IQR
-    validation_results = validate_excel_against_iqr(excel_runs, python_iqr)
-    if len(validation_results) == 0:
-        print("ERROR: Validation failed")
-        sys.exit(1)
+    # Compute statistical expectations
+    stats_info_disagg = compute_expected_iqr_statistics(n_python, n_excel * 1440)  # Each run has 1440 minutes
+    stats_info_daily = compute_expected_iqr_statistics(n_python, n_excel)
+
+    # DISAGGREGATED ANALYSIS
+    python_iqr_disagg = compute_python_iqr_disaggregated(python_minute)
+    disagg_results = validate_excel_disaggregated(excel_runs, python_iqr_disagg)
+    disagg_table = generate_disaggregated_summary_table(disagg_results) if len(disagg_results) > 0 else pd.DataFrame()
+
+    # DAILY ANALYSIS
+    daily_results = pd.DataFrame()
+    daily_table = pd.DataFrame()
+    python_iqr_daily = None
+    if python_daily is not None:
+        python_iqr_daily = compute_python_iqr_daily(python_daily)
+        daily_results = validate_excel_daily(excel_runs, python_iqr_daily)
+        daily_table = generate_daily_summary_table(daily_results) if len(daily_results) > 0 else pd.DataFrame()
 
     # Create validation directory
     validation_dir = create_validation_dir(str(python_dir), str(excel_dir), "monte_carlo")
-    print(f"\nValidation directory: {validation_dir}")
+    print(f"\n✓ Validation directory: {validation_dir}")
 
     # Save metadata
     save_metadata(
         validation_dir,
         str(python_dir),
         str(excel_dir),
-        python_runs=int(len(python_minute['seed'].unique())) if 'seed' in python_minute.columns else "unknown",
-        excel_runs=int(len(excel_runs)),
-        total_data_points=int(validation_results['total_minutes'].sum())
+        python_runs=n_python,
+        excel_runs=n_excel,
+        total_daily_comparisons=len(daily_results),
+        total_disaggregated_comparisons=len(disagg_results)
     )
 
-    # Generate summary for minute-level validation
-    generate_summary(validation_results, validation_dir)
+    # Generate comprehensive report
+    generate_comprehensive_report(
+        daily_results,
+        disagg_results,
+        daily_table,
+        disagg_table,
+        stats_info_disagg,
+        validation_dir
+    )
 
-    # ========================================================================
-    # DAILY TOTALS VALIDATION
-    # ========================================================================
-    if python_daily is not None and len(python_daily) > 0:
-        print("\n" + "=" * 80)
-        print("DAILY TOTALS VALIDATION")
-        print("=" * 80)
-
-        # Compute Python IQR for daily totals
-        daily_iqr = compute_daily_totals_iqr(python_daily)
-        if len(daily_iqr) > 0:
-            # Generate wide-format comparison table
-            generate_daily_totals_wide_format(excel_runs, daily_iqr, validation_dir)
-        else:
-            print("  WARNING: Failed to compute daily totals IQR")
-    else:
-        print("\n" + "=" * 80)
-        print("WARNING: No Python daily data found - skipping daily totals validation")
-        print("=" * 80)
+    # Generate wide-format daily comparison table (user-requested format)
+    if python_iqr_daily is not None and len(python_iqr_daily) > 0:
+        generate_daily_totals_wide_format(excel_runs, python_iqr_daily, validation_dir)
 
     print("\n" + "=" * 80)
-    print(f"VALIDATION COMPLETE - Results saved to: {validation_dir}")
+    print(f"✓ VALIDATION COMPLETE - Results saved to: {validation_dir}")
     print("=" * 80)
 
 

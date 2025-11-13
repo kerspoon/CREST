@@ -76,17 +76,14 @@ def run_simulation(seed: int, output_dir: Path, config_file: str, extra_args: li
 
 def extract_daily_totals(seed_dir: Path, seed: int) -> list:
     """
-    Extract all 17 daily totals columns for each dwelling from a seed directory.
-
-    VBA Reference: DailyTotals (mdlThermalElectricalModel.bas lines 1057-1121)
-    Extracts all 17 columns matching VBA daily totals output.
+    Extract daily totals for each dwelling from a seed directory.
 
     Args:
         seed_dir: Path to seed output directory
         seed: Seed number
 
     Returns:
-        List of dictionaries with all 17 daily total values per dwelling
+        List of dictionaries with daily totals
     """
     results = []
     daily_csv = seed_dir / "results_daily_summary.csv"
@@ -98,25 +95,14 @@ def extract_daily_totals(seed_dir: Path, seed: int) -> list:
         df = pd.read_csv(daily_csv)
 
         for _, row in df.iterrows():
-            # Extract all 17 columns matching VBA DailyTotals (lines 1103-1119)
+            # Use Excel-compatible column names (matching new format)
             results.append({
                 'seed': seed,
-                'dwelling': row['Dwelling'],
-                'mean_active_occupancy': row.get('Mean_Active_Occupancy', 0),
-                'proportion_day_actively_occupied': row.get('Proportion_Day_Actively_Occupied', 0),
-                'lighting_kwh': row.get('Lighting_Demand_kWh', 0),
-                'appliance_kwh': row.get('Appliance_Demand_kWh', 0),
-                'pv_output_kwh': row.get('PV_Output_kWh', 0),
-                'total_electricity_kwh': row.get('Total_Electricity_Demand_kWh', 0),
-                'self_consumption_kwh': row.get('Self_Consumption_kWh', 0),
-                'net_electricity_kwh': row.get('Net_Electricity_Demand_kWh', 0),
-                'hot_water_L': row.get('Hot_Water_Demand_L', 0),
-                'avg_indoor_temp_C': row.get('Average_Indoor_Temperature_C', 0),
-                'thermal_energy_space_kwh': row.get('Thermal_Energy_Space_Heating_kWh', 0),
-                'thermal_energy_water_kwh': row.get('Thermal_Energy_Water_Heating_kWh', 0),
-                'gas_m3': row.get('Gas_Demand_m3', 0),
-                'thermostat_setpoint_C': row.get('Space_Thermostat_Setpoint_C', 20.0),
-                'solar_thermal_kwh': row.get('Solar_Thermal_Heat_Gains_kWh', 0)
+                'dwelling': row.get('Dwelling index', row.get('Dwelling', 0)),
+                'electricity_kwh': row.get('Total dwelling electricity demand', row.get('Total_Electricity_kWh', 0)),
+                'gas_m3': row.get('Gas demand', row.get('Total_Gas_m3', 0)),
+                'water_L': row.get('Hot water demand (litres)', row.get('Total_Hot_Water_L', 0)),
+                'temp_C': row.get('Average indoor air temperature', row.get('Mean_Internal_Temp_C', 0))
             })
     except Exception as e:
         print(f"  [WARN] Failed to extract daily totals for seed {seed}: {e}")
@@ -297,11 +283,9 @@ def main():
         for dwelling in sorted(df_daily['dwelling'].unique()):
             d = df_daily[df_daily['dwelling'] == dwelling]
             print(f"\nDwelling {dwelling} (n={len(d)}):")
-            print(f"  Electricity: {d['total_electricity_kwh'].mean():8.2f} ± {d['total_electricity_kwh'].std():.2f} kWh")
+            print(f"  Electricity: {d['electricity_kwh'].mean():8.2f} ± {d['electricity_kwh'].std():.2f} kWh")
             print(f"  Gas:         {d['gas_m3'].mean():8.2f} ± {d['gas_m3'].std():.2f} m³")
-            print(f"  Water:       {d['hot_water_L'].mean():8.2f} ± {d['hot_water_L'].std():.2f} L")
-            print(f"  Mean Occupancy: {d['mean_active_occupancy'].mean():6.2f} ± {d['mean_active_occupancy'].std():.2f}")
-            print(f"  Avg Temp:    {d['avg_indoor_temp_C'].mean():8.2f} ± {d['avg_indoor_temp_C'].std():.2f} °C")
+            print(f"  Water:       {d['water_L'].mean():8.2f} ± {d['water_L'].std():.2f} L")
 
     print()
     print("=" * 60)

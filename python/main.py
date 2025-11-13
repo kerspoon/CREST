@@ -967,11 +967,13 @@ def main():
     # Write results to files if requested
     if results_writer:
         print("\nWriting results to files...")
+        # Format date for daily summary (YYYY-MM-DD format to match Excel)
+        date_str = f"2015-{args.month:02d}-{args.day:02d}"
         for dwelling_idx, dwelling in enumerate(dwellings):
             print(f"  Writing dwelling {dwelling_idx + 1}/{len(dwellings)}...")
             if args.save_detailed:
                 results_writer.write_minute_data(dwelling_idx, dwelling)
-            results_writer.write_daily_summary(dwelling_idx, dwelling)
+            results_writer.write_daily_summary(dwelling_idx, dwelling, date_str)
         results_writer.close()
         print(f"Results saved to: {args.output_dir}")
 
