@@ -59,71 +59,174 @@ class ResultsWriter:
             self._init_climate_file()
 
     def _init_minute_file(self):
-        """Initialize minute-level data file with headers."""
+        """Initialize minute-level data file with headers.
+
+        Format matches Excel VBA export exactly:
+        - Row 1: Description (with UTF-8 BOM)
+        - Row 2: Column names
+        - Row 3: Symbol names (Greek letters, abbreviations)
+        - Row 4: Units
+        - Row 5+: Data
+        """
         filename = self.output_dir / "results_minute_level.csv"
-        self._minute_file = open(filename, 'w', newline='')
+        self._minute_file = open(filename, 'w', newline='', encoding='utf-8-sig')
         self._minute_writer = csv.writer(self._minute_file)
 
-        # Write header matching Excel model columns
-        header = [
-            'Dwelling',
-            'Minute',
-            'At_Home',
-            'Active',
-            'Lighting_W',
-            'Appliances_W',
-            'Total_Electricity_W',
-            'Outdoor_Temp_C',
-            'Irradiance_Wm2',
-            'Internal_Temp_C',
-            'External_Building_Temp_C',
-            'Hot_Water_Demand_L_per_min',
-            'Cylinder_Temp_C',
-            'Emitter_Temp_C',
-            'Cooling_Emitter_Temp_C',
-            'Total_Heat_Output_W',
-            'Space_Heating_W',
-            'Water_Heating_W',
-            'Gas_Consumption_m3_per_min',
-            'Passive_Solar_Gains_W',
-            'Casual_Gains_W',
-            'Heating_Electricity_W',
-            'PV_Output_W',
-            'Cooling_Electricity_W'
+        # Row 1: Description (BOM handled by encoding='utf-8-sig')
+        description_row = ['Simulation results - disaggregated. Individual dwelling simulations are listed below in sequential order (dwelling 1 first, then dwelling 2 etc.)'] + [''] * 39
+        self._minute_writer.writerow(description_row)
+
+        # Row 2: Column names (40 columns matching Excel exactly)
+        column_names = [
+            'Dwelling index',
+            'Date',
+            'Time',
+            'Occupancy',
+            'Activity',
+            'Lighting demand',
+            'Appliance demand',
+            'Casual thermal gains from occupants, lighting and appliances',
+            'Outdoor temperature',
+            'Outdoor global radiation (horizontal)',
+            'Passive solar gains',
+            'Primary heating system thermal output',
+            'External building node temperature',
+            'Internal building node temperature',
+            'Hot water demand (litres)',
+            'Hot water temperature in hot water tank',
+            'Space heating timer settings',
+            'Hot water heating timer settings',
+            'Heating system switched on',
+            'Hot water heating required',
+            'Emitter temperature',
+            'Radiation incident on PV array',
+            'PV output',
+            'Net dwelling electricity demand',
+            'Heat output from primary heating system to space',
+            'Heat output from primary heating system to hot water',
+            'Fuel flow rate (gas)',
+            'Solar power incident on collector',
+            'Solar thermal collector control state',
+            'Solar thermal collector temperature',
+            'Heat gains to cylinder from solar thermal collector',
+            'Dwelling self-consumption',
+            'Space cooling timer settings',
+            'Cooling system switched on',
+            'Cooling output from cooling system to space',
+            'Cooler Emitter temperature',
+            'Heating Thermostat Set Point',
+            'Cooling Thermostat Set Point',
+            'Electricity used by cooling system',
+            'Electricity used by heating system'
         ]
-        self._minute_writer.writerow(header)
+        self._minute_writer.writerow(column_names)
+
+        # Row 3: Symbols (Greek letters and abbreviations)
+        symbols = [
+            '', '', '',  # Dwelling index, Date, Time
+            '', '',  # Occupancy, Activity
+            'Plight', 'Pa', 'φc',
+            'θo', 'Go', 'φs', 'φh', 'θb', 'θi',
+            '', 'θcyl',  # Hot water demand, Cylinder temp
+            '', '', '', '',  # Timer settings, heating on, HW required
+            'θem', 'Gi', 'Ppv', 'Pnet',
+            'φh, space', 'φh, water', 'mfuel',
+            '', '', 'θcollector', 'φcollector',
+            'Pself',
+            '', '',  # Cooling timer, cooling on
+            'φh, space', 'θem', 'θem', 'θem',
+            '', ''  # Cooling/heating electricity
+        ]
+        self._minute_writer.writerow(symbols)
+
+        # Row 4: Units
+        units = [
+            '', '', '',  # Dwelling index, Date, Time
+            '', '',  # Occupancy, Activity
+            'W', 'W', 'W',
+            '°C', 'Wm-2', 'W', 'W', '°C', '°C',
+            'ltr.min-1', '°C',
+            '', '', '', '',  # Timer settings, heating on, HW required
+            '°C', 'Wm-2', 'W', 'W',
+            'W', 'W', 'm3/h',
+            'W', '', '°C', 'W',
+            'kWh',
+            '', '',  # Cooling timer, cooling on
+            'W', '°C', '°C', '°C',
+            'W', 'W'
+        ]
+        self._minute_writer.writerow(units)
 
     def _init_summary_file(self):
         """Initialize daily summary file with headers.
 
         VBA Reference: DailyTotals (mdlThermalElectricalModel.bas lines 1057-1121)
         Outputs all 17 columns matching VBA daily totals sheet.
+
+        Format matches Excel VBA export exactly:
+        - Row 1: Description (with UTF-8 BOM)
+        - Row 2: Column names
+        - Row 3: Symbol names
+        - Row 4: Units
+        - Row 5+: Data
         """
         filename = self.output_dir / "results_daily_summary.csv"
-        self._summary_file = open(filename, 'w', newline='')
+        self._summary_file = open(filename, 'w', newline='', encoding='utf-8-sig')
         self._summary_writer = csv.writer(self._summary_file)
 
-        # Write header - 17 columns matching VBA DailyTotals output (lines 1103-1119)
-        header = [
-            'Dwelling',                           # Column 1: VBA line 1103
-            'Date',                               # Column 2: VBA line 1104
-            'Mean_Active_Occupancy',              # Column 3: VBA line 1105 - GetMeanActiveOccupancy
-            'Proportion_Day_Actively_Occupied',   # Column 4: VBA line 1106 - GetPrActivelyOccupied
-            'Lighting_Demand_kWh',                # Column 5: VBA line 1107 - GetDailySumLighting / 60 / 1000
-            'Appliance_Demand_kWh',               # Column 6: VBA line 1108 - GetDailySumApplianceDemand / 60 / 1000
-            'PV_Output_kWh',                      # Column 7: VBA line 1109 - GetDailySumPvOutput / 60 / 1000
-            'Total_Electricity_Demand_kWh',       # Column 8: VBA line 1110 - lighting + appliances
-            'Self_Consumption_kWh',               # Column 9: VBA line 1111 - GetDailySumP_self / 60 / 1000
-            'Net_Electricity_Demand_kWh',         # Column 10: VBA line 1112 - GetDailySumP_net / 60 / 1000
-            'Hot_Water_Demand_L',                 # Column 11: VBA line 1113 - GetDailySumHotWaterDemand
-            'Average_Indoor_Temperature_C',       # Column 12: VBA line 1114 - GetMeanTheta_i
-            'Thermal_Energy_Space_Heating_kWh',   # Column 13: VBA line 1115 - GetDailySumThermalEnergySpace / 60 / 1000
-            'Thermal_Energy_Water_Heating_kWh',   # Column 14: VBA line 1116 - GetDailySumThermalEnergyWater / 60 / 1000
-            'Gas_Demand_m3',                      # Column 15: VBA line 1117 - GetDailySumFuelFlow / 60
-            'Space_Thermostat_Setpoint_C',        # Column 16: VBA line 1118 - GetSpaceThermostatSetpoint
-            'Solar_Thermal_Heat_Gains_kWh'        # Column 17: VBA line 1119 - GetDailySumPhi_s / 60 / 1000
+        # Row 1: Description (BOM handled by encoding='utf-8-sig')
+        description_row = ['Simulation results - daily sums'] + [''] * 16
+        self._summary_writer.writerow(description_row)
+
+        # Row 2: Column names (17 columns matching VBA DailyTotals output lines 1103-1119)
+        column_names = [
+            'Dwelling index',
+            'Date',
+            'Mean active occupancy',
+            'Proportion of day actively occupied',
+            'Lighting demand',
+            'Appliance demand',
+            'PV output',
+            'Total dwelling electricity demand',
+            'Total self-consumption',
+            'Net dwelling electricity demand',
+            'Hot water demand (litres)',
+            'Average indoor air temperature',
+            'Thermal energy used for space heating',
+            'Thermal energy used for hot water heating',
+            'Gas demand',
+            'Space thermostat set point',
+            'Solar thermal collector heat gains'
         ]
-        self._summary_writer.writerow(header)
+        self._summary_writer.writerow(column_names)
+
+        # Row 3: Symbols
+        symbols = [
+            '', '',  # Dwelling index, Date
+            '', '',  # Mean active occupancy, Proportion day active
+            'Elight', 'Ea', 'Epv', 'Etotal', 'Eself', 'Enet',
+            '',  # Hot water demand
+            'θi',
+            'Eh, space', 'Eh, water',
+            'mfuel',
+            '',  # Thermostat setpoint
+            ''   # Solar thermal gains
+        ]
+        self._summary_writer.writerow(symbols)
+
+        # Row 4: Units
+        units = [
+            '', '',  # Dwelling index, Date
+            '', '',  # Mean active occupancy, Proportion day active
+            'kWh', 'kWh', 'kWh', 'kWh', 'kWh', 'kWh',
+            'litres/day',
+            '°C',
+            'kWh', 'kWh',
+            'm3/day',
+            '°C',
+            'kWh'
+        ]
+        self._summary_writer.writerow(units)
 
     def _init_climate_file(self):
         """Initialize global climate file with headers."""
@@ -141,9 +244,9 @@ class ResultsWriter:
         ]
         self._climate_writer.writerow(header)
 
-    def write_minute_data(self, dwelling_idx: int, dwelling):
+    def write_minute_data(self, dwelling_idx: int, dwelling, date_str: str = "01/01/2015"):
         """
-        Write minute-level data for one dwelling.
+        Write minute-level data for one dwelling - all 40 columns matching Excel format.
 
         Parameters
         ----------
@@ -151,6 +254,8 @@ class ResultsWriter:
             Dwelling index (0-based)
         dwelling : Dwelling
             Dwelling object with simulation results
+        date_str : str
+            Date string in DD/MM/YYYY format (default: "01/01/2015")
         """
         if not self.config.save_minute_data or self._minute_writer is None:
             return
@@ -161,37 +266,100 @@ class ResultsWriter:
             self._calculate_at_home(dwelling.occupancy.combined_states)
         )
 
+        # Get heating controls if available
+        heating_controls = dwelling.heating_controls if hasattr(dwelling, 'heating_controls') else None
+        heating_timer = heating_controls.heating_on if heating_controls else np.zeros(1440)
+        hw_timer = heating_controls.hw_heating_on if heating_controls else np.zeros(1440)
+
+        # Calculate PV irradiance if PV system exists
+        pv_irradiance = np.zeros(1440)
+        if dwelling.pv_system and hasattr(dwelling.pv_system, 'irradiance'):
+            pv_irradiance = dwelling.pv_system.irradiance
+
+        # Calculate self-consumption if PV system exists
+        self_consumption = np.zeros(1440)
+        if dwelling.pv_system and hasattr(dwelling.pv_system, 'p_self'):
+            self_consumption = dwelling.pv_system.p_self / 60.0 / 1000.0  # Convert W-min to kWh
+
+        # Solar thermal data if available
+        solar_collector_power = np.zeros(1440)
+        solar_collector_state = np.zeros(1440)
+        solar_collector_temp = np.zeros(1440)
+        solar_collector_gains = np.zeros(1440)
+        if dwelling.solar_thermal:
+            if hasattr(dwelling.solar_thermal, 'power_incident'):
+                solar_collector_power = dwelling.solar_thermal.power_incident
+            if hasattr(dwelling.solar_thermal, 'control_state'):
+                solar_collector_state = dwelling.solar_thermal.control_state
+            if hasattr(dwelling.solar_thermal, 'temperature'):
+                solar_collector_temp = dwelling.solar_thermal.temperature
+            if hasattr(dwelling.solar_thermal, 'phi_s'):
+                solar_collector_gains = dwelling.solar_thermal.phi_s
+
+        # Cooling system data if available
+        cooling_output = np.zeros(1440)
+        if dwelling.cooling_system and hasattr(dwelling.cooling_system, 'phi_cool'):
+            cooling_output = dwelling.cooling_system.phi_cool
+
         # Write data for each minute
         for minute in range(1, 1441):
             idx = minute - 1  # 0-based index for arrays
 
-            # Collect all variables
-            # Note: Some methods use 1-based timestep, others use 0-based indexing
+            # Format time as HH:MM:SS AM/PM
+            time_str = self._format_time_12hr(minute)
+
+            # Get lighting and appliance demand
+            lighting_w = dwelling.lighting.get_total_demand(minute)
+            appliance_w = dwelling.appliances.get_total_demand(minute)
+
+            # Calculate net electricity demand
+            pv_output_w = dwelling.pv_system.get_pv_output(minute) if dwelling.pv_system else 0.0
+            heating_elec_w = dwelling.heating_system.get_heating_system_power_demand(minute)
+            cooling_elec_w = dwelling.cooling_system.get_cooling_system_power_demand(minute) if dwelling.cooling_system else 0.0
+            net_elec_w = lighting_w + appliance_w + heating_elec_w + cooling_elec_w - pv_output_w
+
+            # Collect all 40 variables (matching Excel column order exactly)
             row = [
-                dwelling_idx + 1,  # 1-based dwelling index
-                minute,  # 1-based minute of day
-                at_home_1min[idx],
-                occupancy_1min[idx],
-                dwelling.lighting.get_total_demand(minute),  # Uses 1-based
-                dwelling.appliances.get_total_demand(minute),  # Uses 1-based
-                dwelling.get_total_electricity_demand(minute),  # Uses 1-based
-                dwelling.local_climate.get_temperature(idx),  # Uses 0-based
-                dwelling.local_climate.get_irradiance(idx),  # Uses 0-based
-                dwelling.building.theta_i[idx],  # Direct array access, 0-based
-                dwelling.building.theta_b[idx],
-                dwelling.hot_water.hot_water_demand[idx],
-                dwelling.building.theta_cyl[idx],
-                dwelling.building.theta_em[idx],
-                dwelling.building.theta_cool[idx],
-                dwelling.heating_system.phi_h_output[idx],
-                dwelling.heating_system.phi_h_space[idx],
-                dwelling.heating_system.phi_h_water[idx],
-                dwelling.heating_system.m_fuel[idx],
-                dwelling.building.phi_s[idx],
-                dwelling.building.phi_c[idx],
-                dwelling.heating_system.get_heating_system_power_demand(minute),  # Uses 1-based
-                dwelling.pv_system.get_pv_output(minute) if dwelling.pv_system else 0.0,  # Uses 1-based
-                dwelling.cooling_system.get_cooling_system_power_demand(minute) if dwelling.cooling_system else 0.0  # Uses 1-based
+                dwelling_idx + 1,                                    # 1. Dwelling index
+                date_str,                                            # 2. Date
+                time_str,                                            # 3. Time
+                int(at_home_1min[idx]),                             # 4. Occupancy
+                int(occupancy_1min[idx]),                           # 5. Activity
+                lighting_w,                                          # 6. Lighting demand (W)
+                appliance_w,                                         # 7. Appliance demand (W)
+                dwelling.building.phi_c[idx],                        # 8. Casual gains (W)
+                dwelling.local_climate.get_temperature(idx),         # 9. Outdoor temp (°C)
+                dwelling.local_climate.get_irradiance(idx),          # 10. Global radiation (W/m²)
+                dwelling.building.phi_s[idx],                        # 11. Passive solar gains (W)
+                dwelling.heating_system.phi_h_output[idx],           # 12. Primary heating output (W)
+                dwelling.building.theta_b[idx],                      # 13. External building temp (°C)
+                dwelling.building.theta_i[idx],                      # 14. Internal building temp (°C)
+                dwelling.hot_water.hot_water_demand[idx],            # 15. Hot water demand (L/min)
+                dwelling.building.theta_cyl[idx],                    # 16. Cylinder temp (°C)
+                int(heating_timer[idx]) if len(heating_timer) > idx else 0,  # 17. Space heating timer
+                int(hw_timer[idx]) if len(hw_timer) > idx else 0,            # 18. HW heating timer
+                0,                                                   # 19. Heating system switched on
+                0,                                                   # 20. HW heating required
+                dwelling.building.theta_em[idx],                     # 21. Emitter temp (°C)
+                pv_irradiance[idx] if len(pv_irradiance) > idx else 0,  # 22. PV irradiance (W/m²)
+                pv_output_w,                                         # 23. PV output (W)
+                net_elec_w,                                          # 24. Net electricity demand (W)
+                dwelling.heating_system.phi_h_space[idx],            # 25. Space heating (W)
+                dwelling.heating_system.phi_h_water[idx],            # 26. Water heating (W)
+                dwelling.heating_system.m_fuel[idx] * 60.0,          # 27. Gas flow (m³/h, convert from m³/min)
+                solar_collector_power[idx] if len(solar_collector_power) > idx else 0,  # 28. Solar collector power (W)
+                int(solar_collector_state[idx]) if len(solar_collector_state) > idx else 0,  # 29. Solar collector state
+                solar_collector_temp[idx] if len(solar_collector_temp) > idx else 0,  # 30. Solar collector temp (°C)
+                solar_collector_gains[idx] if len(solar_collector_gains) > idx else 0,  # 31. Solar collector gains (W)
+                self_consumption[idx] if len(self_consumption) > idx else 0,  # 32. Self-consumption (kWh)
+                0,                                                   # 33. Space cooling timer
+                0,                                                   # 34. Cooling system switched on
+                cooling_output[idx] if len(cooling_output) > idx else 0,  # 35. Cooling output (W)
+                dwelling.building.theta_cool[idx],                   # 36. Cooler emitter temp (°C)
+                heating_controls.heating_setpoint if heating_controls else 23,  # 37. Heating setpoint (°C)
+                heating_controls.cooling_setpoint if heating_controls and hasattr(heating_controls, 'cooling_setpoint') else 28,  # 38. Cooling setpoint (°C)
+                cooling_elec_w,                                      # 39. Cooling electricity (W)
+                heating_elec_w                                       # 40. Heating electricity (W)
             ]
 
             self._minute_writer.writerow(row)
@@ -199,7 +367,35 @@ class ResultsWriter:
         # Flush to disk periodically
         self._minute_file.flush()
 
-    def write_daily_summary(self, dwelling_idx: int, dwelling):
+    def _format_time_12hr(self, minute: int) -> str:
+        """
+        Format minute of day as 12-hour time string (HH:MM:SS AM/PM).
+
+        Parameters
+        ----------
+        minute : int
+            Minute of day (1-1440)
+
+        Returns
+        -------
+        str
+            Time string in format "HH:MM:SS AM" or "HH:MM:SS PM"
+        """
+        # Convert to 0-based
+        minute_0 = minute - 1
+
+        hours = minute_0 // 60
+        mins = minute_0 % 60
+
+        # Convert to 12-hour format
+        am_pm = "AM" if hours < 12 else "PM"
+        hours_12 = hours % 12
+        if hours_12 == 0:
+            hours_12 = 12
+
+        return f"{hours_12:02d}:{mins:02d}:00 {am_pm}"
+
+    def write_daily_summary(self, dwelling_idx: int, dwelling, date_str: str = "2015-01-01 00:00:00"):
         """
         Write daily summary for one dwelling - all 17 VBA-matching columns.
 
@@ -211,6 +407,8 @@ class ResultsWriter:
             Dwelling index (0-based)
         dwelling : Dwelling
             Dwelling object with simulation results
+        date_str : str
+            Date string in "YYYY-MM-DD HH:MM:SS" format (default: "2015-01-01 00:00:00")
         """
         if not self.config.save_daily_summary or self._summary_writer is None:
             return
@@ -264,7 +462,7 @@ class ResultsWriter:
         # Write all 17 columns matching VBA DailyTotals (lines 1103-1119)
         row = [
             dwelling_idx + 1,              # Column 1: Dwelling index (1-based)
-            "2015-01-01",                  # Column 2: Date (placeholder - could be passed as parameter)
+            date_str,                      # Column 2: Date (YYYY-MM-DD HH:MM:SS format)
             mean_active_occupancy,         # Column 3: Mean active occupancy
             proportion_actively_occupied,  # Column 4: Proportion day actively occupied
             lighting_kwh,                  # Column 5: Lighting demand (kWh)
