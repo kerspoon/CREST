@@ -779,6 +779,164 @@ def generate_comprehensive_report(
     print("\n" + '\n'.join(report))
 
 
+def generate_daily_totals_wide_format(
+    excel_runs: List[Dict[str, pd.DataFrame]],
+    python_daily_iqr: pd.DataFrame,
+    validation_dir: Path
+) -> pd.DataFrame:
+    """
+    Generate wide-format comparison table for daily totals.
+
+    Format:
+    - Columns: name, Dwelling, + 15 variables (with exact Excel column names)
+    - Rows: excel 1...N, py25%, py50%, py75%, % within IQR (all per dwelling)
+
+    Args:
+        excel_runs: List of Excel run data
+        python_daily_iqr: Python IQR statistics (dwelling, variable, q1, median, q3)
+        validation_dir: Output directory
+
+    Returns:
+        DataFrame with wide-format comparison
+    """
+    print("\n  Generating daily totals wide-format comparison table...")
+
+    # Get list of dwellings
+    dwellings = sorted(python_daily_iqr['dwelling'].unique())
+
+    # Use exact Excel column names from DAILY_COLUMNS
+    column_names = list(DAILY_COLUMNS.keys())
+
+    # Build rows list
+    rows = []
+
+    # 1. Add Excel run rows (excel 1, excel 2, ..., excel N for each dwelling)
+    for run_data in excel_runs:
+        run_name = run_data['run_name']
+
+        if 'daily' not in run_data or run_data['daily'] is None:
+            continue
+
+        excel_daily = run_data['daily']
+
+        # Normalize dwelling column
+        dwelling_col = find_column(excel_daily, ['Dwelling index', 'Dwelling', 'dwelling', 'dwelling_index'])
+        if dwelling_col and dwelling_col != 'Dwelling index':
+            excel_daily = excel_daily.rename(columns={dwelling_col: 'Dwelling index'})
+
+        # Extract run number from run_name (e.g., "run_01" -> 1, "vba_run_3" -> 3)
+        import re
+        match = re.search(r'(\d+)', run_name)
+        run_num = int(match.group(1)) if match else run_name
+
+        for dwelling in dwellings:
+            excel_d = excel_daily[excel_daily['Dwelling index'] == dwelling]
+
+            if len(excel_d) == 0:
+                continue
+
+            if len(excel_d) > 1:
+                excel_d = excel_d.iloc[0:1]
+
+            row = {'name': f'excel {run_num}', 'Dwelling': dwelling}
+
+            # Add values for each variable using exact Excel column names
+            for col_name in column_names:
+                if col_name in excel_d.columns:
+                    row[col_name] = excel_d[col_name].iloc[0]
+                else:
+                    row[col_name] = np.nan
+
+            rows.append(row)
+
+    # 2. Add Python quartile rows (py25%, py50%, py75% for each dwelling)
+    for quartile_name, quartile_col in [('py25%', 'q1'), ('py50%', 'median'), ('py75%', 'q3')]:
+        for dwelling in dwellings:
+            row = {'name': quartile_name, 'Dwelling': dwelling}
+
+            # Get Python IQR data for this dwelling (wide format)
+            python_d = python_daily_iqr[python_daily_iqr['dwelling'] == dwelling]
+
+            for col_name in column_names:
+                # Access column directly: {col_name}_{quartile_col}
+                stat_col = f'{col_name}_{quartile_col}'
+                if len(python_d) > 0 and stat_col in python_d.columns:
+                    row[col_name] = python_d[stat_col].iloc[0]
+                else:
+                    row[col_name] = np.nan
+
+            rows.append(row)
+
+    # 3. Add "% within IQR" rows (for each dwelling)
+    for dwelling in dwellings:
+        row = {'name': '% within IQR', 'Dwelling': dwelling}
+
+        # For each variable, calculate what % of Excel runs fell within IQR
+        python_d = python_daily_iqr[python_daily_iqr['dwelling'] == dwelling]
+
+        if len(python_d) == 0:
+            for col_name in column_names:
+                row[col_name] = np.nan
+            rows.append(row)
+            continue
+
+        for col_name in column_names:
+            # Access q1 and q3 from wide format
+            q1_col = f'{col_name}_q1'
+            q3_col = f'{col_name}_q3'
+
+            if q1_col not in python_d.columns or q3_col not in python_d.columns:
+                row[col_name] = np.nan
+                continue
+
+            q1 = python_d[q1_col].iloc[0]
+            q3 = python_d[q3_col].iloc[0]
+
+            # Count how many Excel runs fall within [q1, q3] for this dwelling & variable
+            in_iqr_count = 0
+            total_count = 0
+
+            for run_data in excel_runs:
+                if 'daily' not in run_data or run_data['daily'] is None:
+                    continue
+
+                excel_daily = run_data['daily']
+                dwelling_col = find_column(excel_daily, ['Dwelling index', 'Dwelling', 'dwelling', 'dwelling_index'])
+                if dwelling_col and dwelling_col != 'Dwelling index':
+                    excel_daily = excel_daily.rename(columns={dwelling_col: 'Dwelling index'})
+
+                excel_d = excel_daily[excel_daily['Dwelling index'] == dwelling]
+
+                if len(excel_d) > 0 and col_name in excel_d.columns:
+                    excel_value = excel_d[col_name].iloc[0]
+                    total_count += 1
+                    if q1 <= excel_value <= q3:
+                        in_iqr_count += 1
+
+            # Calculate percentage
+            if total_count > 0:
+                row[col_name] = 100.0 * in_iqr_count / total_count
+            else:
+                row[col_name] = np.nan
+
+        rows.append(row)
+
+    # Convert to DataFrame
+    df_comparison = pd.DataFrame(rows)
+
+    # Ensure columns are in the right order
+    column_order = ['name', 'Dwelling'] + column_names
+    df_comparison = df_comparison[column_order]
+
+    # Save to CSV
+    output_file = validation_dir / 'daily_totals_comparison.csv'
+    df_comparison.to_csv(output_file, index=False)
+    print(f"    ✓ Saved: daily_totals_comparison.csv")
+    print(f"      ({len(excel_runs)} Excel runs × {len(dwellings)} dwellings + quartiles + IQR summary)")
+
+    return df_comparison
+
+
 # ============================================================================
 # MAIN
 # ============================================================================
@@ -833,6 +991,7 @@ def main():
     # DAILY ANALYSIS
     daily_results = pd.DataFrame()
     daily_table = pd.DataFrame()
+    python_iqr_daily = None
     if python_daily is not None:
         python_iqr_daily = compute_python_iqr_daily(python_daily)
         daily_results = validate_excel_daily(excel_runs, python_iqr_daily)
@@ -853,7 +1012,7 @@ def main():
         total_disaggregated_comparisons=len(disagg_results)
     )
 
-    # Generate report
+    # Generate comprehensive report
     generate_comprehensive_report(
         daily_results,
         disagg_results,
@@ -862,6 +1021,10 @@ def main():
         stats_info_disagg,
         validation_dir
     )
+
+    # Generate wide-format daily comparison table (user-requested format)
+    if python_iqr_daily is not None and len(python_iqr_daily) > 0:
+        generate_daily_totals_wide_format(excel_runs, python_iqr_daily, validation_dir)
 
     print("\n" + "=" * 80)
     print(f"✓ VALIDATION COMPLETE - Results saved to: {validation_dir}")

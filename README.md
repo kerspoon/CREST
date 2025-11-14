@@ -4,69 +4,29 @@ A high-resolution (1-minute) stochastic integrated thermal-electrical domestic e
 
 **Project Goal:** Achieve 100% feature parity with the Excel VBA model - identical outputs for identical inputs (same configurations + same random seeds → same results).
 
----
 
-## TODO & status
-
-We have just doing a major reorganisation of the folder structure. This has likely broken the three major tests:
-
-1. `excel_run_and_compare` (take an excel file, and run the equivalent in python) this has been checked, it runs under the new structure but the analysis/comparison is very basic. We have scripts that do a better comparison but these are not being used. 
-	1a. improve the analysis to look at the variance in every bit of _summary_ data (min level is not going to be a fair comparison). but the total power should be similar (within X%)
-
-2. `monte_carlo` (run 1000 iterations of `monte_carlo_base` then compare statistically to multiple runs of the same in excel) this is being worked on. 
-	2a. we have both `scripts/analyse_montecarlo.py` and `scripts/monte_carlo_compare.py` (the former being older, probably more comprehensive but also not working). Combine the best of these. We want to test each excel output against the interquartile range of the python runs. By each output I mean 1) from the sheet "Results - daily totals" compare every row (dwelling) from column C "Mean active occupancy" to Q "Solar thermal collector heat gains" = 15 columns x 5 houses × 20 Excel runs) from sheet "Results - disaggregated" take columns D "Occupancy" to AN "Electricity used by heating system" (37 columns x 5 houses x 1440 mins_per_day × 20 Excel runs = about 5M data points). Currently we only look at a small subset of this. Output two tables of the summary results (one for daily total and one for disaggregated). in the `disaggregated` show how many timestamps were in the IQR, columns as the 5 houses, and rows as the 37 variables with each cell being a % of timestamps in the IQR (out of the 1440 x 20 samples). Also give a final summary for the given data (which might not be 1000 python and 20 excel runs) what sort of variance would we expect to see - how many should be falling withing the IQR with this many samples? how unlikely is it to have +/-10%, +/-1% or +/-0.1%?
- 
-3. `rnd` (aim to get full parity by checking the random number generator is called by the same function in the same order in both codebases, the main output of this is to show where the calls first diverged and to save the overall running order of the calls), it was running before the restructure.
-
-
-
-We have a mess of files in ./scripts some are used some are not. I only want to keep those used by the above 3 tests (e.g. extracting files from a xlsm is part of running the above tests) but it would be good to check the purpose of each to see if any others are useful.
-
-Once we have 1) got the tests running and 2) tidied the scripts we need to 3) try to get the tests passing (i.e. exactly the same output in the case of rnd, and statistically similar for monte_carlo). Before the reorganisation there were significant differences between the outputs of the two code bases. The reorganisation was to make it easier to check we are comparing like with like. 
-
----
 
 ## Quick Start
 
-### Installation
-
 ```bash
-# Install dependencies
-pip install -r python/requirements.txt
-
-# Verify installation
+# Install
+pip install -r python/requirements.txt 
 python python/main.py --help
-```
 
-### Run Your First Simulation
-
-**Option 1: Use an Excel file's settings (easiest)**
-
-```bash
-# Run using settings from Excel file
-python scripts/excel_run_and_compare.py excel/original.xlsm
-```
-
-This automatically:
-- Exports VBA and CSV from Excel to `excel/original/`
-- Extracts run parameters from Main Sheet
-- Runs Python with those settings
-- Creates `output/run_YYYYMMDD_01/` with results
-- Compares with Excel output (if available)
-
-**Option 2: Run Python directly**
-
-```bash
 # Run with default settings (auto-creates output/run_YYYYMMDD_NN/)
-python python/main.py 
+python python/main.py --save-detailed
 
-# Or specify output directory
-python python/main.py \\
-  --config-file excel/original/Dwellings.csv \\
-  --day 1 --month 1 \\
-  --output-dir output/my_test \\
-  --save-detailed \\
-  --seed 42
+# Run once using the same settings as an excel file (see `output/run_YYYYMMDD_01/` with results)
+python scripts/excel_run_and_compare.py excel/original.xlsm
+
+# Run 20 iteration of excel and 1000 of python then compare them statistically
+./run_excel_example.bat (in windows powershell)
+python scripts/monte_carlo_run.py
+python scripts/monte_carlo_compare.py output/monte_carlo/python_1000runs_20251114_06 output/monte_carlo/excel_20runs_20251113_02
+
+# Run using a stable portable random number generator in both excel and python and compare where they diverge as they should give identical outputs
+python scripts/rng_validation_run.py
+python scripts/rng_log_compare.py
 ```
 
 Results include:
@@ -78,14 +38,35 @@ Results include:
 
 ---
 
+
+## Current status
+
+1. We have done a major reorganisation of the folder structure. This broke the three tests which we are currently fixing. 
+2. When those a fixed I want to sort out the scripts folder. We have a mess of files in ./scripts some are used some are not. I only want to keep those used by the above 3 tests (e.g. extracting files from a xlsm is part of running the above tests) but it would be good to check the purpose of each to see if any others are useful.
+3. Try to get the tests passing (i.e. exactly the same output in the case of rnd, and statistically similar for monte_carlo). Before the reorganisation there were significant differences between the outputs of the two code bases. The reorganisation was to make it easier to check we are comparing like with like. 
+
+
+
+## TODO
+
+1. Improve the analysis of Monte Carlo. The output is not clear and it outputs some empty files. 
+      We want to test each excel output against the interquartile range of the python runs. By each output I mean 1) from the sheet "Results - daily totals" compare every row (dwelling) from column C "Mean active occupancy" to Q "Solar thermal collector heat gains" = 15 columns x 5 houses × 20 Excel runs) from sheet "Results - disaggregated" take columns D "Occupancy" to AN "Electricity used by heating system" (37 columns x 5 houses x 1440 mins_per_day × 20 Excel runs = about 5M data points). Currently we only look at a small subset of this. Output two tables of the summary results (one for daily total and one for disaggregated). in the `disaggregated` show how many timestamps were in the IQR, columns as the 5 houses, and rows as the 37 variables with each cell being a % of timestamps in the IQR (out of the 1440 x 20 samples). Also give a final summary for the given data (which might not be 1000 python and 20 excel runs) what sort of variance would we expect to see - how many should be falling withing the IQR with this many samples? how unlikely is it to have +/-10%, +/-1% or +/-0.1%?
+
+2. `scripts/rng_validation_run.py` this was broken by the reorganisation of files and needs updating. Then we can look at the `rng_log_compare.py`. The aim to get full parity by checking the random number generator is called by the same functions in the same order in both codebases, the main output of this is to show where the calls first diverged and to save the overall running order of the calls
+
+
+---
+
+
+
+
 ## Directory Structure
 
 ```
 crest/
 ├── README.md                    # This file
 ├── CLAUDE.md                    # Development instructions
-├── API_REFERENCE.md             # Technical API documentation
-├
+│
 ├── excel/                       # Excel/VBA reference implementation
 │   ├── original.xlsm                    # Base v2.3.3 model
 │   ├── original/                        # Exports from original.xlsm
