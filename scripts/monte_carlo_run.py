@@ -67,7 +67,7 @@ def run_simulation(seed: int, output_dir: Path, config_file: str, extra_args: li
         print(f"  [ERROR] Seed {seed} timed out")
         return False
     except subprocess.CalledProcessError as e:
-        print(f"  [ERROR] Seed {seed} failed: {e.stderr.decode()[:200]}")
+        print(f"  [ERROR] Seed {seed} failed: {e.stderr.decode()}")
         return False
     except Exception as e:
         print(f"  [ERROR] Seed {seed} failed: {e}")
