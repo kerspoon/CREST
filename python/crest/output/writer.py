@@ -326,19 +326,19 @@ class ResultsWriter:
         solar_collector_temp = np.zeros(1440)
         solar_collector_gains = np.zeros(1440)
         if dwelling.solar_thermal:
-            if not hasattr(dwelling.solar_thermal, 'power_incident'):
+            if not hasattr(dwelling.solar_thermal, 'P_incident'):
                 raise AttributeError(
-                    f"CRITICAL: Dwelling {dwelling_idx + 1} has solar_thermal but missing 'power_incident'. "
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has solar_thermal but missing 'P_incident'. "
                     "Solar thermal system must be fully initialized."
                 )
-            if not hasattr(dwelling.solar_thermal, 'control_state'):
+            if not hasattr(dwelling.solar_thermal, 'solar_thermal_on_off'):
                 raise AttributeError(
-                    f"CRITICAL: Dwelling {dwelling_idx + 1} has solar_thermal but missing 'control_state'. "
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has solar_thermal but missing 'solar_thermal_on_off'. "
                     "Solar thermal system must be fully initialized."
                 )
-            if not hasattr(dwelling.solar_thermal, 'temperature'):
+            if not hasattr(dwelling.solar_thermal, 'theta_collector'):
                 raise AttributeError(
-                    f"CRITICAL: Dwelling {dwelling_idx + 1} has solar_thermal but missing 'temperature'. "
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has solar_thermal but missing 'theta_collector'. "
                     "Solar thermal system must be fully initialized."
                 )
             if not hasattr(dwelling.solar_thermal, 'phi_s'):
@@ -346,20 +346,20 @@ class ResultsWriter:
                     f"CRITICAL: Dwelling {dwelling_idx + 1} has solar_thermal but missing 'phi_s'. "
                     "Solar thermal system must be fully initialized."
                 )
-            solar_collector_power = dwelling.solar_thermal.power_incident
-            solar_collector_state = dwelling.solar_thermal.control_state
-            solar_collector_temp = dwelling.solar_thermal.temperature
+            solar_collector_power = dwelling.solar_thermal.P_incident
+            solar_collector_state = dwelling.solar_thermal.solar_thermal_on_off
+            solar_collector_temp = dwelling.solar_thermal.theta_collector
             solar_collector_gains = dwelling.solar_thermal.phi_s
 
         # Cooling system data if available
         cooling_output = np.zeros(1440)
         if dwelling.cooling_system:
-            if not hasattr(dwelling.cooling_system, 'phi_cool'):
+            if not hasattr(dwelling.cooling_system, 'phi_h_cooling'):
                 raise AttributeError(
-                    f"CRITICAL: Dwelling {dwelling_idx + 1} has cooling_system but missing 'phi_cool'. "
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has cooling_system but missing 'phi_h_cooling'. "
                     "Cooling system must be fully initialized."
                 )
-            cooling_output = dwelling.cooling_system.phi_cool
+            cooling_output = dwelling.cooling_system.phi_h_cooling
 
         # Write data for each minute
         for minute in range(1, 1441):
