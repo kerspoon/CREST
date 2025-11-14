@@ -122,6 +122,7 @@ crest/
 │   ├── rng_validation_run.py    # Run with LCG logging
 │   ├── rng_log_compare.py       # RNG sequence comparison (Objective #1)
 │   ├── check_types.sh           # Run mypy type checking
+│   ├── run_excel_example.bat    # Run excel 10 times and save the output
 │   └── utils.py                 # Helper functions
 │
 └── output/                      # Simulation results
@@ -206,8 +207,8 @@ The project has **two primary objectives** for validating that the Python port m
    - `daily_summary.csv` - Combined daily totals
    - `minute_level.parquet` - Combined minute data (compressed)
 
-2. **Manually run Excel 20 times:**
-   - Use `excel/monte_carlo_base.xlsm`
+2. **Run Excel 20 times:**
+   - Use `run_excel_example.bat` with `excel/monte_carlo_base.xlsm` (needs to be done on windows)
    - Save each run to: `output/monte_carlo/excel_20runs_YYYYMMDD_NN/run_01/` through `run_20/`
    - Each run should contain:
      - `results_minute_level.csv`

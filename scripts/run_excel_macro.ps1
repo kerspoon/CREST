@@ -32,7 +32,7 @@ param(
 # Configuration
 # ===============================================================================
 
-$MacroName = "RunThermalElectricalDemandModel"
+$MacroName = "RunSimulationButton_Click"
 $SheetNames = @{
     "Results - daily totals" = "results_daily_summary.csv"
     "Results - disaggregated" = "results_minute_level.csv"
