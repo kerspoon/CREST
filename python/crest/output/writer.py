@@ -303,22 +303,22 @@ class ResultsWriter:
         # Calculate PV irradiance if PV system exists
         pv_irradiance = np.zeros(1440)
         if dwelling.pv_system:
-            if not hasattr(dwelling.pv_system, 'irradiance'):
+            if not hasattr(dwelling.pv_system, 'G_i'):
                 raise AttributeError(
-                    f"CRITICAL: Dwelling {dwelling_idx + 1} has pv_system but it's missing 'irradiance' attribute. "
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has pv_system but it's missing 'G_i' attribute. "
                     "PV system must be fully initialized."
                 )
-            pv_irradiance = dwelling.pv_system.irradiance
+            pv_irradiance = dwelling.pv_system.G_i
 
         # Calculate self-consumption if PV system exists
         self_consumption = np.zeros(1440)
         if dwelling.pv_system:
-            if not hasattr(dwelling.pv_system, 'p_self'):
+            if not hasattr(dwelling.pv_system, 'P_self'):
                 raise AttributeError(
-                    f"CRITICAL: Dwelling {dwelling_idx + 1} has pv_system but it's missing 'p_self' attribute. "
+                    f"CRITICAL: Dwelling {dwelling_idx + 1} has pv_system but it's missing 'P_self' attribute. "
                     "PV system must be fully initialized with self-consumption data."
                 )
-            self_consumption = dwelling.pv_system.p_self / 60.0 / 1000.0  # Convert W-min to kWh
+            self_consumption = dwelling.pv_system.P_self / 60.0 / 1000.0  # Convert W-min to kWh
 
         # Solar thermal data if available
         solar_collector_power = np.zeros(1440)
