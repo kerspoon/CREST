@@ -11,7 +11,7 @@
 #   -ExcelFile   : Path to the Excel .xlsm file (required)
 #   -RunCount    : Number of times to run the macro (default: 1)
 #   -OutputDir   : Directory to save CSV outputs (default: ".\excel_runs")
-#   -AddTimestamp: Add timestamp to run folders (default: $true)
+#   -NoTimestamp : Disable timestamps on run folders (use run_01, run_02, etc.)
 # ===============================================================================
 
 param(
@@ -25,7 +25,7 @@ param(
     [string]$OutputDir = ".\excel_runs",
 
     [Parameter(Mandatory=$false)]
-    [bool]$AddTimestamp = $true
+    [switch]$NoTimestamp
 )
 
 # ===============================================================================
@@ -206,12 +206,12 @@ try {
         Write-Host "==============================================================================="
 
         # Create run-specific output directory
-        if ($AddTimestamp) {
-            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-            $runDir = Join-Path $OutputDir "run_$($runIndex.ToString('00'))_${timestamp}"
-        } else {
+        if ($NoTimestamp) {
             # Zero-padded format: run_01, run_02, etc. (matches monte_carlo_compare.py)
             $runDir = Join-Path $OutputDir "run_$($runIndex.ToString('00'))"
+        } else {
+            $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
+            $runDir = Join-Path $OutputDir "run_$($runIndex.ToString('00'))_${timestamp}"
         }
 
         New-Item -ItemType Directory -Path $runDir -Force | Out-Null
