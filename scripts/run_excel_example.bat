@@ -32,7 +32,7 @@ echo Run Count:  %RUN_COUNT%
 echo Output Dir: %OUTPUT_DIR%
 echo.
 
-powershell.exe -ExecutionPolicy Bypass -File run_excel_macro.ps1 -ExcelFile "%EXCEL_FILE%" -RunCount %RUN_COUNT% -OutputDir "%OUTPUT_DIR%" -AddTimestamp $false
+powershell.exe -ExecutionPolicy Bypass -File run_excel_macro.ps1 -ExcelFile "%EXCEL_FILE%" -RunCount %RUN_COUNT% -OutputDir "%OUTPUT_DIR%" -AddTimestamp 0
 
 if %ERRORLEVEL% EQU 0 (
     echo.
