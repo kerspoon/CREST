@@ -189,6 +189,36 @@ def extract_minute_data(seed_dir: Path, seed: int) -> pd.DataFrame:
         if dwelling_col != 'dwelling':
             df = df.rename(columns={dwelling_col: 'dwelling'})
 
+        # Add numeric Minute column (1-1440) from Time column if needed
+        time_col = None
+        for col in ['Time', 'time', 'Minute', 'minute']:
+            if col in df.columns:
+                time_col = col
+                break
+
+        if time_col and df[time_col].dtype == 'object':
+            def parse_time_to_minute(t):
+                """Convert time string to minute number (1-1440)."""
+                if pd.isna(t):
+                    return None
+                t_str = str(t)
+                if ':' in t_str:
+                    # Handle "HH:MM:SS" or "HH:MM:SS AM/PM" format
+                    parts = t_str.replace(' AM', '').replace(' PM', '').split(':')
+                    hour = int(parts[0])
+                    mins = int(parts[1])
+                    # Handle 12-hour format
+                    if 'PM' in t_str and hour != 12:
+                        hour += 12
+                    elif 'AM' in t_str and hour == 12:
+                        hour = 0
+                    return hour * 60 + mins + 1  # 1-based minute
+                try:
+                    return int(float(t))
+                except (ValueError, TypeError):
+                    return None
+            df['Minute'] = df[time_col].apply(parse_time_to_minute)
+
         # Add seed metadata
         df['seed'] = seed
 

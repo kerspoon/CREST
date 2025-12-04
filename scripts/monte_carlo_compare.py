@@ -317,6 +317,31 @@ def compute_python_iqr_disaggregated(python_minute: pd.DataFrame) -> Tuple[pd.Da
 
     python_minute = python_minute.rename(columns={time_col: 'minute', dwelling_col: 'dwelling'})
 
+    # Parse time column to numeric minute (1-1440) if it's in string format
+    if python_minute['minute'].dtype == 'object':
+        def parse_time_to_minute(t):
+            """Convert time string to minute number (1-1440)."""
+            if pd.isna(t):
+                return None
+            t_str = str(t)
+            if ':' in t_str:
+                # Handle "HH:MM:SS" or "HH:MM:SS AM/PM" format
+                parts = t_str.replace(' AM', '').replace(' PM', '').split(':')
+                hour = int(parts[0])
+                mins = int(parts[1])
+                # Handle 12-hour format
+                if 'PM' in t_str and hour != 12:
+                    hour += 12
+                elif 'AM' in t_str and hour == 12:
+                    hour = 0
+                return hour * 60 + mins + 1  # 1-based minute
+            try:
+                return int(float(t))
+            except (ValueError, TypeError):
+                return None
+        python_minute['minute'] = python_minute['minute'].apply(parse_time_to_minute)
+        print(f"  Parsed time column to numeric minutes (1-1440)")
+
     # Check column coverage
     available, missing, unmapped = check_column_coverage(
         python_minute, DISAGGREGATED_COLUMNS, "disaggregated"
