@@ -432,20 +432,37 @@ def validate_excel_disaggregated(
             print(f"  ⚠ Skipping {run_name} - missing time/dwelling columns")
             continue
 
-        # Parse time column (may be "HH:MM:SS" format)
+        # Parse time column to minute number (1-1440)
+        # Excel exports can have different time formats:
+        # - Fractional days: 0 = midnight, 0.5 = noon, 1/1440 ≈ 0.000694 = 1 minute
+        # - String "HH:MM:SS" format
+        # - Integer minute numbers
         excel_minute = excel_minute.copy()
-        if excel_minute[time_col].dtype == 'object':
-            # Convert "HH:MM:SS" to minute number (1-1440)
-            def parse_time(t):
-                if pd.isna(t):
-                    return None
-                if ':' in str(t):
-                    parts = str(t).split(':')
-                    return int(parts[0]) * 60 + int(parts[1]) + 1
-                return int(t)
-            excel_minute['minute'] = excel_minute[time_col].apply(parse_time)
-        else:
-            excel_minute['minute'] = excel_minute[time_col].astype(int)
+
+        def parse_excel_time(t):
+            """Convert Excel time value to minute number (1-1440)."""
+            if pd.isna(t):
+                return None
+            t_str = str(t)
+            # Check for "HH:MM:SS" string format
+            if ':' in t_str:
+                parts = t_str.split(':')
+                return int(parts[0]) * 60 + int(parts[1]) + 1
+            # Try numeric conversion
+            try:
+                t_float = float(t)
+                # Check if it looks like fractional day (0 to 1 range)
+                # 1440 minutes per day, so max fractional is ~0.999
+                if 0 <= t_float < 1:
+                    # Fractional day: convert to minute (1-based)
+                    return round(t_float * 1440) + 1
+                else:
+                    # Already an integer minute (or close to it)
+                    return int(round(t_float))
+            except (ValueError, TypeError):
+                return None
+
+        excel_minute['minute'] = excel_minute[time_col].apply(parse_excel_time)
 
         excel_minute['dwelling'] = excel_minute[dwelling_col].astype(int)
 
