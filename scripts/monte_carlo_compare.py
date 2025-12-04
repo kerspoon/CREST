@@ -825,7 +825,7 @@ def generate_comprehensive_report(
     print("GENERATING COMPREHENSIVE REPORT")
     print("=" * 80)
 
-    # Save detailed results
+    # Save detailed results (with warnings for empty files)
     daily_results.to_csv(validation_dir / 'daily_totals_detailed.csv', index=False)
     disagg_results.to_csv(validation_dir / 'disaggregated_detailed.csv', index=False)
 
@@ -833,10 +833,26 @@ def generate_comprehensive_report(
     daily_table.to_csv(validation_dir / 'daily_totals_summary.csv')
     disagg_table.to_csv(validation_dir / 'disaggregated_summary.csv')
 
-    print(f"  ✓ Saved: daily_totals_detailed.csv")
-    print(f"  ✓ Saved: disaggregated_detailed.csv")
-    print(f"  ✓ Saved: daily_totals_summary.csv")
-    print(f"  ✓ Saved: disaggregated_summary.csv")
+    # Report what was saved, with warnings for empty files
+    if len(daily_results) > 0:
+        print(f"  ✓ Saved: daily_totals_detailed.csv ({len(daily_results)} rows)")
+    else:
+        print(f"  ⚠ Saved: daily_totals_detailed.csv (EMPTY - 0 rows)")
+
+    if len(disagg_results) > 0:
+        print(f"  ✓ Saved: disaggregated_detailed.csv ({len(disagg_results)} rows)")
+    else:
+        print(f"  ⚠ Saved: disaggregated_detailed.csv (EMPTY - 0 rows)")
+
+    if len(daily_table) > 0:
+        print(f"  ✓ Saved: daily_totals_summary.csv ({len(daily_table)} variables)")
+    else:
+        print(f"  ⚠ Saved: daily_totals_summary.csv (EMPTY - no variables matched)")
+
+    if len(disagg_table) > 0:
+        print(f"  ✓ Saved: disaggregated_summary.csv ({len(disagg_table)} variables)")
+    else:
+        print(f"  ⚠ Saved: disaggregated_summary.csv (EMPTY - no variables matched)")
 
     # Generate text report
     report = []
