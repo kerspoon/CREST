@@ -40,12 +40,15 @@ Results include:
 ---
 
 
-## Current status
+## Current Status
 
-1. Try to get the tests passing (i.e. exactly the same output in the case of rnd, and statistically similar for monte_carlo). There are significant differences between the outputs of the two code bases.
+**RNG Validation:** IN PROGRESS - See [`RNG_DIVERGENCE_INVESTIGATION.md`](./RNG_DIVERGENCE_INVESTIGATION.md) for detailed findings.
+
+**Summary:** RNG sequences diverge at call #83,118. Root cause identified: Python's lighting module has fewer switch-on events (38 vs 144), causing different RNG consumption rates. Two fixes applied (appliances ownership RNG, irradiance threshold rounding) but core issue in lighting switch-on condition remains unsolved.
+
+**Next steps:** Debug why lighting switch-on condition evaluates differently despite identical inputs.
 
 ---
-
 
 
 ## Directory Structure

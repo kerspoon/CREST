@@ -125,10 +125,12 @@ class Lighting:
         irradiance_mean = float(light_config_raw.iloc[3, 5])  # Row 4, Col F
         irradiance_sd = float(light_config_raw.iloc[3, 6])     # Row 4, Col G
 
-        self.irradiance_threshold = self._get_monte_carlo_normal_dist_guess(
+        # VBA uses GetPortableNormalInteger which returns CInt (rounded integer)
+        # intIrradianceThreshold = GetPortableNormalInteger(mean, sd)
+        self.irradiance_threshold = round(self._get_monte_carlo_normal_dist_guess(
             irradiance_mean,
             irradiance_sd
-        )
+        ))
 
         print(f"  Irradiance threshold params: mean={irradiance_mean}, sd={irradiance_sd}, th={self.irradiance_threshold}")
 
@@ -296,7 +298,9 @@ class Lighting:
                 # If (blnLowIrradiance And (Rnd() < (dblEffectiveOccupancy * dblCalibratedRelativeUseWeighting))) Then
                 # CRITICAL: VBA's And operator does NOT short-circuit - it always evaluates both sides!
                 # Python's 'and' DOES short-circuit, so we must evaluate random() first to match VBA
-                rand_switch = self.rng.random() < (effective_occ * calibrated_relative_use)
+                rand_val = self.rng.random()
+                threshold = effective_occ * calibrated_relative_use
+                rand_switch = rand_val < threshold
                 if low_irradiance and rand_switch:
 
                     # VBA: This is a switch on event (line 181)

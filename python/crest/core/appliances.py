@@ -190,15 +190,11 @@ class Appliances:
                     heat_gains_ratio=heat_gains_ratio
                 ))
 
-                # Use configured appliance ownership if provided, otherwise random
-                # VBA: aApplianceConfiguration(i, 1) = IIf(dblRan < dblProportion, True, False)
-                # VBA line 125
-                if self.config.appliance_ownership is not None and i < len(self.config.appliance_ownership):
-                    # Use pre-configured appliance ownership from CSV
-                    self.has_appliance.append(self.config.appliance_ownership[i])
-                else:
-                    # Random ownership based on probability
-                    self.has_appliance.append(self.rng.random() < ownership)
+                # VBA ALWAYS generates appliance ownership randomly - it never reads from Dwellings sheet.
+                # The ownership columns in Dwellings are OUTPUT only (written by WriteAppliances).
+                # VBA line 120: dblRan = g_PortableRNG.Random()
+                # VBA line 126: aApplianceConfiguration(i, 1) = IIf(dblRan < dblProportion, True, False)
+                self.has_appliance.append(self.rng.random() < ownership)
 
     def set_occupancy(self, occupancy):
         """Set reference to occupancy model."""
