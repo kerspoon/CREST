@@ -78,12 +78,29 @@ def extract_daily_totals(seed_dir: Path, seed: int) -> list:
     """
     Extract daily totals for each dwelling from a seed directory.
 
+    Extracts ALL 15 data columns (C-Q) from the daily summary to match Excel format:
+    - Mean active occupancy
+    - Proportion of day actively occupied
+    - Lighting demand (kWh)
+    - Appliance demand (kWh)
+    - PV output (kWh)
+    - Total dwelling electricity demand (kWh)
+    - Total self-consumption (kWh)
+    - Net dwelling electricity demand (kWh)
+    - Hot water demand (litres)
+    - Average indoor air temperature (°C)
+    - Thermal energy used for space heating (kWh)
+    - Thermal energy used for hot water heating (kWh)
+    - Gas demand (m³/day)
+    - Space thermostat set point (°C)
+    - Solar thermal collector heat gains (kWh)
+
     Args:
         seed_dir: Path to seed output directory
         seed: Seed number
 
     Returns:
-        List of dictionaries with daily totals
+        List of dictionaries with daily totals (all 15 columns)
     """
     results = []
     daily_csv = seed_dir / "results_daily_summary.csv"
@@ -91,21 +108,45 @@ def extract_daily_totals(seed_dir: Path, seed: int) -> list:
     if not daily_csv.exists():
         return results
 
+    # All 15 data columns from Excel "Results - daily totals" sheet (columns C-Q)
+    DAILY_COLUMNS = [
+        'Mean active occupancy',
+        'Proportion of day actively occupied',
+        'Lighting demand',
+        'Appliance demand',
+        'PV output',
+        'Total dwelling electricity demand',
+        'Total self-consumption',
+        'Net dwelling electricity demand',
+        'Hot water demand (litres)',
+        'Average indoor air temperature',
+        'Thermal energy used for space heating',
+        'Thermal energy used for hot water heating',
+        'Gas demand',
+        'Space thermostat set point',
+        'Solar thermal collector heat gains',
+    ]
+
     try:
         # Header format: Row 1=description, Row 2=column names, Row 3=symbols, Row 4=units, Row 5+=data
         # Skip rows 0 (description), 2 (symbols), 3 (units); keep row 1 (column names) as header
         df = pd.read_csv(daily_csv, skiprows=[0, 2, 3])
 
         for _, row in df.iterrows():
-            # Use Excel-compatible column names (matching new format)
-            results.append({
+            record = {
                 'seed': seed,
-                'dwelling': row.get('Dwelling index', row.get('Dwelling', 0)),
-                'electricity_kwh': row.get('Total dwelling electricity demand', row.get('Total_Electricity_kWh', 0)),
-                'gas_m3': row.get('Gas demand', row.get('Total_Gas_m3', 0)),
-                'water_L': row.get('Hot water demand (litres)', row.get('Total_Hot_Water_L', 0)),
-                'temp_C': row.get('Average indoor air temperature', row.get('Mean_Internal_Temp_C', 0))
-            })
+                'dwelling': int(row.get('Dwelling index', row.get('Dwelling', 0))),
+            }
+
+            # Extract all 15 data columns
+            for col in DAILY_COLUMNS:
+                if col in row.index:
+                    record[col] = row[col]
+                else:
+                    record[col] = None  # Mark missing columns explicitly
+
+            results.append(record)
+
     except Exception as e:
         print(f"  [WARN] Failed to extract daily totals for seed {seed}: {e}")
 
@@ -147,6 +188,36 @@ def extract_minute_data(seed_dir: Path, seed: int) -> pd.DataFrame:
         # Rename to standard 'dwelling' if needed
         if dwelling_col != 'dwelling':
             df = df.rename(columns={dwelling_col: 'dwelling'})
+
+        # Add numeric Minute column (1-1440) from Time column if needed
+        time_col = None
+        for col in ['Time', 'time', 'Minute', 'minute']:
+            if col in df.columns:
+                time_col = col
+                break
+
+        if time_col and df[time_col].dtype == 'object':
+            def parse_time_to_minute(t):
+                """Convert time string to minute number (1-1440)."""
+                if pd.isna(t):
+                    return None
+                t_str = str(t)
+                if ':' in t_str:
+                    # Handle "HH:MM:SS" or "HH:MM:SS AM/PM" format
+                    parts = t_str.replace(' AM', '').replace(' PM', '').split(':')
+                    hour = int(parts[0])
+                    mins = int(parts[1])
+                    # Handle 12-hour format
+                    if 'PM' in t_str and hour != 12:
+                        hour += 12
+                    elif 'AM' in t_str and hour == 12:
+                        hour = 0
+                    return hour * 60 + mins + 1  # 1-based minute
+                try:
+                    return int(float(t))
+                except (ValueError, TypeError):
+                    return None
+            df['Minute'] = df[time_col].apply(parse_time_to_minute)
 
         # Add seed metadata
         df['seed'] = seed
@@ -287,9 +358,16 @@ def main():
         for dwelling in sorted(df_daily['dwelling'].unique()):
             d = df_daily[df_daily['dwelling'] == dwelling]
             print(f"\nDwelling {dwelling} (n={len(d)}):")
-            print(f"  Electricity: {d['electricity_kwh'].mean():8.2f} ± {d['electricity_kwh'].std():.2f} kWh")
-            print(f"  Gas:         {d['gas_m3'].mean():8.2f} ± {d['gas_m3'].std():.2f} m³")
-            print(f"  Water:       {d['water_L'].mean():8.2f} ± {d['water_L'].std():.2f} L")
+            # Use the actual Excel column names
+            elec_col = 'Total dwelling electricity demand'
+            gas_col = 'Gas demand'
+            water_col = 'Hot water demand (litres)'
+            if elec_col in d.columns:
+                print(f"  Electricity: {d[elec_col].mean():8.2f} ± {d[elec_col].std():.2f} kWh")
+            if gas_col in d.columns:
+                print(f"  Gas:         {d[gas_col].mean():8.2f} ± {d[gas_col].std():.2f} m³")
+            if water_col in d.columns:
+                print(f"  Water:       {d[water_col].mean():8.2f} ± {d[water_col].std():.2f} L")
 
     print()
     print("=" * 60)
