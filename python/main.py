@@ -608,6 +608,12 @@ def main():
         action="store_true",
         help="Save stochastically generated dwelling configurations to CSV in output directory"
     )
+    parser.add_argument(
+        "--rng-log-file",
+        type=Path,
+        default=None,
+        help="Log all RNG calls to this file (enables portable LCG and debug mode automatically)"
+    )
 
     args = parser.parse_args()
 
@@ -644,17 +650,33 @@ def main():
         sys.exit(1)
 
     # Set random seed if specified
+    rng_log_file_handle = None
     if args.seed is not None:
-        # Check for debug mode via environment variable
+        # Check for debug mode via environment variable or --rng-log-file flag
         import os
+        import atexit
         debug_rng = os.environ.get('DEBUG_RNG', '').lower() in ('1', 'true', 'yes')
 
-        rng_module.set_seed(args.seed, use_portable_lcg=args.portable_rng, debug=debug_rng)
+        # If --rng-log-file specified, enable portable LCG and debug mode automatically
+        use_portable = args.portable_rng
+        if args.rng_log_file:
+            use_portable = True
+            debug_rng = True
+            # Ensure parent directory exists
+            args.rng_log_file.parent.mkdir(parents=True, exist_ok=True)
+            rng_log_file_handle = open(args.rng_log_file, 'w')
+            # Register cleanup to close file on exit
+            atexit.register(lambda: rng_log_file_handle.close() if rng_log_file_handle and not rng_log_file_handle.closed else None)
+
+        rng_module.set_seed(args.seed, use_portable_lcg=use_portable, debug=debug_rng, log_file=rng_log_file_handle)
         print(f"Using random seed: {args.seed}")
-        if args.portable_rng:
+        if use_portable:
             print("Using portable LCG for cross-platform validation")
         if debug_rng:
-            print("DEBUG MODE: Logging all random calls")
+            if args.rng_log_file:
+                print(f"DEBUG MODE: Logging all RNG calls to {args.rng_log_file}")
+            else:
+                print("DEBUG MODE: Logging all random calls to stdout")
 
     print(f"Location: {city.value}, {country.value} ({urban_rural.value})")
 

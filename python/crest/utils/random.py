@@ -9,7 +9,7 @@ identical sequences in both Python and VBA for cross-platform validation.
 """
 
 import numpy as np
-from typing import Optional, Union
+from typing import Optional, Union, TextIO
 
 
 class PortableLCG:
@@ -33,7 +33,7 @@ class PortableLCG:
     INCREMENT = 1013904223
     MODULUS = 2**32  # 4294967296
 
-    def __init__(self, seed: int = 1, debug: bool = False):
+    def __init__(self, seed: int = 1, debug: bool = False, log_file: Optional[TextIO] = None):
         """
         Initialize the LCG with a seed.
 
@@ -43,11 +43,14 @@ class PortableLCG:
             Seed value (will be taken modulo 2^32)
         debug : bool
             If True, log every random call with caller info
+        log_file : TextIO, optional
+            File handle to write RNG call logs to. If None and debug=True, prints to stdout.
         """
         # Ensure seed is in valid range [0, MODULUS)
         self.state = seed % self.MODULUS
         self.initial_seed = self.state
         self.debug = debug
+        self.log_file = log_file
         self.call_count = 0
 
     def random(self) -> float:
@@ -67,7 +70,6 @@ class PortableLCG:
 
         # Debug logging
         if self.debug:
-            import traceback
             import inspect
             self.call_count += 1
 
@@ -87,7 +89,11 @@ class PortableLCG:
             else:
                 location = f"{caller_filename}:{caller_function}:{caller_line}"
 
-            print(f"Call #{self.call_count:4d}: {result:.17f}  @ {location}")
+            log_line = f"Call #{self.call_count:4d}: {result:.17f}  @ {location}"
+            if self.log_file:
+                self.log_file.write(log_line + "\n")
+            else:
+                print(log_line)
 
         return result
 
@@ -131,7 +137,7 @@ class RandomGenerator:
     - use_portable_lcg=True: Uses PortableLCG for cross-platform validation with VBA
     """
 
-    def __init__(self, seed: Optional[int] = None, use_portable_lcg: bool = False, debug: bool = False):
+    def __init__(self, seed: Optional[int] = None, use_portable_lcg: bool = False, debug: bool = False, log_file: Optional[TextIO] = None):
         """
         Initialize the random number generator.
 
@@ -144,16 +150,19 @@ class RandomGenerator:
             If True, use PortableLCG for cross-platform validation. Default: False (use numpy).
         debug : bool, optional
             If True, log every random call with caller info. Default: False.
+        log_file : TextIO, optional
+            File handle to write RNG call logs to. If None and debug=True, prints to stdout.
         """
         self.seed = seed
         self.use_portable_lcg = use_portable_lcg
         self.debug = debug
+        self.log_file = log_file
 
         if use_portable_lcg:
             # Use PortableLCG for cross-platform validation
             if seed is None:
                 seed = 1  # PortableLCG requires a seed
-            self._lcg = PortableLCG(seed, debug=debug)
+            self._lcg = PortableLCG(seed, debug=debug, log_file=log_file)
             self.rng = None
         else:
             # Use numpy's default RNG
@@ -371,7 +380,7 @@ _global_rng: Optional[RandomGenerator] = None
 _use_portable_lcg: bool = False
 
 
-def set_seed(seed: Optional[int] = None, use_portable_lcg: bool = False, debug: bool = False):
+def set_seed(seed: Optional[int] = None, use_portable_lcg: bool = False, debug: bool = False, log_file: Optional[TextIO] = None):
     """
     Set the global random seed for reproducibility.
 
@@ -383,10 +392,12 @@ def set_seed(seed: Optional[int] = None, use_portable_lcg: bool = False, debug: 
         If True, use PortableLCG for cross-platform validation. Default: False.
     debug : bool, optional
         If True, log every random call with caller info. Default: False.
+    log_file : TextIO, optional
+        File handle to write RNG call logs to. If None and debug=True, prints to stdout.
     """
     global _global_rng, _use_portable_lcg
     _use_portable_lcg = use_portable_lcg
-    _global_rng = RandomGenerator(seed, use_portable_lcg=use_portable_lcg, debug=debug)
+    _global_rng = RandomGenerator(seed, use_portable_lcg=use_portable_lcg, debug=debug, log_file=log_file)
 
 
 def get_rng() -> RandomGenerator:

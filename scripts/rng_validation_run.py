@@ -10,14 +10,15 @@ Usage:
     python scripts/rng_validation_run.py [dwellings_file] [extra_args...]
 
 Examples:
-    # Run with default 5-dwelling test config
+    # Run with default config (excel/lcg_fixed/Dwellings.csv)
+    # If excel/lcg_fixed/ folder is missing, it will be auto-extracted from excel/lcg_fixed.xlsm
     python scripts/rng_validation_run.py
 
     # Run with custom config
-    python scripts/rng_validation_run.py excel/excel_files/test_5_dwellings.csv
+    python scripts/rng_validation_run.py excel/original/Dwellings.csv
 
     # Run with additional flags
-    python scripts/rng_validation_run.py excel/excel_files/test_5_dwellings.csv --day 15
+    python scripts/rng_validation_run.py excel/lcg_fixed/Dwellings.csv --day 15
 """
 
 import subprocess
@@ -28,7 +29,8 @@ from pathlib import Path
 from utils import create_output_dir, get_project_root, get_python_main
 
 # Default configuration
-DEFAULT_CONFIG = 'excel/excel_files/test_5_dwellings.csv'
+DEFAULT_EXCEL = 'excel/lcg_fixed.xlsm'
+DEFAULT_CONFIG = 'excel/lcg_fixed/Dwellings.csv'
 
 
 def main():
@@ -61,13 +63,34 @@ def main():
     # Check if config exists
     config_path = Path(config_file)
     if not config_path.exists():
-        print(f"ERROR: Config file not found: {config_file}")
-        print("\nAvailable configs:")
-        excel_files = Path("excel/excel_files")
-        if excel_files.exists():
-            for f in excel_files.glob("*.csv"):
+        # If using default config and it's missing, try to export from Excel
+        if config_file == DEFAULT_CONFIG:
+            excel_file = Path(DEFAULT_EXCEL)
+            if excel_file.exists():
+                print(f"Config not found: {config_file}")
+                print(f"Extracting data from: {excel_file}")
+                print()
+                export_cmd = [sys.executable, 'scripts/export_excel.py', str(excel_file)]
+                export_result = subprocess.run(export_cmd, capture_output=True, text=True)
+                if export_result.returncode != 0:
+                    print("ERROR: Failed to export Excel file:")
+                    print(export_result.stderr)
+                    sys.exit(1)
+                print(export_result.stdout)
+                # Check again
+                if not config_path.exists():
+                    print(f"ERROR: Config still not found after export: {config_file}")
+                    sys.exit(1)
+            else:
+                print(f"ERROR: Config file not found: {config_file}")
+                print(f"       Excel file also not found: {excel_file}")
+                sys.exit(1)
+        else:
+            print(f"ERROR: Config file not found: {config_file}")
+            print("\nAvailable configs:")
+            for f in sorted(Path("excel").glob("*/Dwellings.csv")):
                 print(f"  - {f}")
-        sys.exit(1)
+            sys.exit(1)
 
     # Create output directory
     output_dir = create_output_dir(
@@ -79,15 +102,15 @@ def main():
     print()
 
     # Build command
+    rng_log_path = output_dir / 'rng_calls.log'
     cmd = [
         sys.executable,
         str(get_python_main()),
         '--config-file', str(config_file),
         '--save-detailed',  # Save minute-level data
         '--output-dir', str(output_dir),
-        '--use-lcg',  # CRITICAL: Enable portable LCG
-        '--log-rng-calls',  # CRITICAL: Log all RNG calls
-        '--seed', '12345'  # Fixed seed for reproducibility
+        '--rng-log-file', str(rng_log_path),  # CRITICAL: Enable portable LCG + log all RNG calls
+        '--seed', '42'  # Fixed seed for reproducibility
     ]
 
     # Add any extra arguments
@@ -95,6 +118,10 @@ def main():
 
     print("Running simulation with LCG logging...")
     print("(This may take longer due to extensive logging)")
+
+    print('-'*80)
+    print(" ".join(cmd))
+    print('-'*80)
     print()
 
     try:
@@ -104,19 +131,18 @@ def main():
         print()
 
         # Check if RNG log was created
-        rng_log = output_dir / 'rng_calls.log'
-        if rng_log.exists():
-            log_size = rng_log.stat().st_size / (1024 * 1024)  # MB
-            print(f"✓ RNG log created: {rng_log}")
+        if rng_log_path.exists():
+            log_size = rng_log_path.stat().st_size / (1024 * 1024)  # MB
+            print(f"✓ RNG log created: {rng_log_path}")
             print(f"  Size: {log_size:.1f} MB")
 
             # Count number of RNG calls
-            with open(rng_log, 'r') as f:
+            with open(rng_log_path, 'r') as f:
                 num_calls = sum(1 for line in f)
             print(f"  Total RNG calls logged: {num_calls:,}")
         else:
             print("⚠ WARNING: RNG log not found!")
-            print("  Check that --log-rng-calls flag is properly implemented")
+            print("  Check that --rng-log-file flag is working correctly")
 
         # List output files
         print()
