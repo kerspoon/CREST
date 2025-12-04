@@ -881,6 +881,14 @@ def generate_comprehensive_report(
     report.append("  values should fall within Python's interquartile range (Q1-Q3).")
     report.append("  Values outside the 95% CI suggest a potential mismatch.")
     report.append("")
+    report.append("Probability of observing deviations (if distributions match):")
+    expected_std = stats_info.get('expected_std', 0)
+    for delta_pct in [0.1, 1.0, 10.0]:
+        delta_count = delta_pct / 100 * n_excel
+        z_score = abs(delta_count) / expected_std if expected_std > 0 else 0
+        p_value = 2 * (1 - scipy_stats.norm.cdf(z_score))  # Two-tailed
+        report.append(f"  ±{delta_pct}% deviation: {p_value:.2%} probability")
+    report.append("")
 
     # Daily totals summary
     n_daily_vars = len(daily_coverage['available']) if daily_coverage else 15
