@@ -58,46 +58,48 @@ DAILY_COLUMNS = {
     'Solar thermal collector heat gains': ('Solar thermal collector heat gains', 'kWh', 'Solar thermal gains'),
 }
 
-# Disaggregated: columns D-AN from "Results - disaggregated" sheet
+# Disaggregated: columns D-AN from "Results - disaggregated" sheet (37 data columns)
+# Python writer outputs ALL columns with EXACT Excel column names, so mapping is 1:1
 DISAGGREGATED_COLUMNS = {
     # Excel column name: (Python column name, units, description)
-    'Occupancy': ('At_Home', '', 'Occupancy state'),
-    'Activity': ('Active', '', 'Activity state'),
-    'Lighting demand': ('Lighting_W', 'W', 'Lighting power'),
-    'Appliance demand': ('Appliances_W', 'W', 'Appliance power'),
-    'Casual thermal gains from occupants, lighting and appliances': ('Casual_Gains_W', 'W', 'Casual gains'),
-    'Outdoor temperature': ('Outdoor_Temp_C', '°C', 'Outdoor temp'),
-    'Outdoor global radiation (horizontal)': ('Irradiance_Wm2', 'W/m²', 'Irradiance'),
-    'Passive solar gains': ('Passive_Solar_Gains_W', 'W', 'Passive solar'),
-    'Primary heating system thermal output': ('Total_Heat_Output_W', 'W', 'Total heating'),
-    'External building node temperature': ('External_Building_Temp_C', '°C', 'External temp'),
-    'Internal building node temperature': ('Internal_Temp_C', '°C', 'Internal temp'),
-    'Hot water demand (litres)': ('Hot_Water_Demand_L_per_min', 'L/min', 'Hot water'),
-    'Hot water temperature in hot water tank': ('Cylinder_Temp_C', '°C', 'Cylinder temp'),
-    'Space heating timer settings': (None, '', 'Heating timer'),  # Not in Python output
-    'Hot water heating timer settings': (None, '', 'HW timer'),  # Not in Python output
-    'Heating system switched on': (None, '', 'Heating on'),  # Not in Python output
-    'Hot water heating required': (None, '', 'HW heating req'),  # Not in Python output
-    'Emitter temperature': ('Emitter_Temp_C', '°C', 'Emitter temp'),
-    'Radiation incident on PV array': (None, 'W/m²', 'PV irradiance'),  # Not in Python output
-    'PV output': ('PV_Output_W', 'W', 'PV power'),
-    'Net dwelling electricity demand': ('Total_Electricity_W', 'W', 'Net electricity'),
-    'Heat output from primary heating system to space': ('Space_Heating_W', 'W', 'Space heating'),
-    'Heat output from primary heating system to hot water': ('Water_Heating_W', 'W', 'Water heating'),
-    'Fuel flow rate (gas)': ('Gas_Consumption_m3_per_min', 'm³/min', 'Gas flow'),
-    'Solar power incident on collector': (None, 'W', 'Solar collector'),  # Not in Python output
-    'Solar thermal collector control state': (None, '', 'Collector state'),  # Not in Python output
-    'Solar thermal collector temperature': (None, '°C', 'Collector temp'),  # Not in Python output
-    'Heat gains to cylinder from solar thermal collector': (None, 'W', 'Solar thermal heat'),  # Not in Python output
-    'Dwelling self-consumption': (None, 'kWh', 'Self-consumption'),  # Not in Python output
-    'Space cooling timer settings': (None, '', 'Cooling timer'),  # Not in Python output
-    'Cooling system switched on': (None, '', 'Cooling on'),  # Not in Python output
-    'Cooling output from cooling system to space': (None, 'W', 'Cooling output'),  # Not in Python output
-    'Cooler Emitter temperature': ('Cooling_Emitter_Temp_C', '°C', 'Cooling emitter'),
-    'Heating Thermostat Set Point': (None, '°C', 'Heating setpoint'),  # Not in Python output
-    'Cooling Thermostat Set Point': (None, '°C', 'Cooling setpoint'),  # Not in Python output
-    'Electricity used by cooling system': ('Cooling_Electricity_W', 'W', 'Cooling electricity'),
-    'Electricity used by heating system': ('Heating_Electricity_W', 'W', 'Heating electricity'),
+    # NOTE: Python writer.py outputs exact Excel column names, so most mappings are identical
+    'Occupancy': ('Occupancy', '', 'Occupancy state'),
+    'Activity': ('Activity', '', 'Activity state'),
+    'Lighting demand': ('Lighting demand', 'W', 'Lighting power'),
+    'Appliance demand': ('Appliance demand', 'W', 'Appliance power'),
+    'Casual thermal gains from occupants, lighting and appliances': ('Casual thermal gains from occupants, lighting and appliances', 'W', 'Casual gains'),
+    'Outdoor temperature': ('Outdoor temperature', '°C', 'Outdoor temp'),
+    'Outdoor global radiation (horizontal)': ('Outdoor global radiation (horizontal)', 'W/m²', 'Irradiance'),
+    'Passive solar gains': ('Passive solar gains', 'W', 'Passive solar'),
+    'Primary heating system thermal output': ('Primary heating system thermal output', 'W', 'Total heating'),
+    'External building node temperature': ('External building node temperature', '°C', 'External temp'),
+    'Internal building node temperature': ('Internal building node temperature', '°C', 'Internal temp'),
+    'Hot water demand (litres)': ('Hot water demand (litres)', 'L/min', 'Hot water'),
+    'Hot water temperature in hot water tank': ('Hot water temperature in hot water tank', '°C', 'Cylinder temp'),
+    'Space heating timer settings': ('Space heating timer settings', '', 'Heating timer'),
+    'Hot water heating timer settings': ('Hot water heating timer settings', '', 'HW timer'),
+    'Heating system switched on': ('Heating system switched on', '', 'Heating on'),
+    'Hot water heating required': ('Hot water heating required', '', 'HW heating req'),
+    'Emitter temperature': ('Emitter temperature', '°C', 'Emitter temp'),
+    'Radiation incident on PV array': ('Radiation incident on PV array', 'W/m²', 'PV irradiance'),
+    'PV output': ('PV output', 'W', 'PV power'),
+    'Net dwelling electricity demand': ('Net dwelling electricity demand', 'W', 'Net electricity'),
+    'Heat output from primary heating system to space': ('Heat output from primary heating system to space', 'W', 'Space heating'),
+    'Heat output from primary heating system to hot water': ('Heat output from primary heating system to hot water', 'W', 'Water heating'),
+    'Fuel flow rate (gas)': ('Fuel flow rate (gas)', 'm³/h', 'Gas flow'),
+    'Solar power incident on collector': ('Solar power incident on collector', 'W', 'Solar collector power'),
+    'Solar thermal collector control state': ('Solar thermal collector control state', '', 'Collector state'),
+    'Solar thermal collector temperature': ('Solar thermal collector temperature', '°C', 'Collector temp'),
+    'Heat gains to cylinder from solar thermal collector': ('Heat gains to cylinder from solar thermal collector', 'W', 'Solar thermal heat'),
+    'Dwelling self-consumption': ('Dwelling self-consumption', 'kWh', 'Self-consumption'),
+    'Space cooling timer settings': ('Space cooling timer settings', '', 'Cooling timer'),
+    'Cooling system switched on': ('Cooling system switched on', '', 'Cooling on'),
+    'Cooling output from cooling system to space': ('Cooling output from cooling system to space', 'W', 'Cooling output'),
+    'Cooler Emitter temperature': ('Cooler Emitter temperature', '°C', 'Cooling emitter'),
+    'Heating Thermostat Set Point': ('Heating Thermostat Set Point', '°C', 'Heating setpoint'),
+    'Cooling Thermostat Set Point': ('Cooling Thermostat Set Point', '°C', 'Cooling setpoint'),
+    'Electricity used by cooling system': ('Electricity used by cooling system', 'W', 'Cooling electricity'),
+    'Electricity used by heating system': ('Electricity used by heating system', 'W', 'Heating electricity'),
 }
 
 
@@ -111,6 +113,76 @@ def find_column(df: pd.DataFrame, possible_names: List[str]) -> Optional[str]:
         if name in df.columns:
             return name
     return None
+
+
+def check_column_coverage(
+    df: pd.DataFrame,
+    column_mapping: Dict,
+    data_type: str
+) -> Tuple[List[str], List[str], List[str]]:
+    """
+    Check which columns are available in the DataFrame.
+
+    Args:
+        df: DataFrame to check
+        column_mapping: Dict mapping Excel names to (Python name, units, description)
+        data_type: "daily" or "disaggregated" for error messages
+
+    Returns:
+        Tuple of (available_columns, missing_columns, unmapped_columns)
+    """
+    available = []
+    missing = []
+    unmapped = []
+
+    for excel_name, (py_col, units, desc) in column_mapping.items():
+        if py_col is None:
+            unmapped.append(excel_name)
+        elif py_col in df.columns:
+            available.append(excel_name)
+        elif excel_name in df.columns:  # Try Excel name directly
+            available.append(excel_name)
+        else:
+            missing.append(excel_name)
+
+    return available, missing, unmapped
+
+
+def report_column_coverage(
+    available: List[str],
+    missing: List[str],
+    unmapped: List[str],
+    data_type: str,
+    total_expected: int
+) -> None:
+    """
+    Report column coverage statistics with warnings for missing columns.
+
+    Per CLAUDE.md: "programme defensively" and crash/warn rather than fail silently.
+    """
+    total_available = len(available)
+    total_missing = len(missing)
+    total_unmapped = len(unmapped)
+
+    coverage_pct = 100 * total_available / total_expected if total_expected > 0 else 0
+
+    print(f"\n  Column coverage for {data_type}:")
+    print(f"    Available: {total_available}/{total_expected} ({coverage_pct:.0f}%)")
+
+    if total_missing > 0:
+        print(f"    ⚠ MISSING from Python output: {total_missing} columns")
+        for col in missing[:5]:  # Show first 5
+            print(f"      - {col}")
+        if len(missing) > 5:
+            print(f"      ... and {len(missing) - 5} more")
+
+    if total_unmapped > 0:
+        print(f"    ℹ Unmapped (None in mapping): {total_unmapped} columns")
+
+    # CRITICAL WARNING if coverage is too low
+    if coverage_pct < 50:
+        print(f"\n  ⚠ CRITICAL: Only {coverage_pct:.0f}% column coverage for {data_type}!")
+        print(f"    Results may be incomplete or misleading.")
 
 
 def load_python_baseline(python_dir: Path) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
@@ -224,28 +296,54 @@ def load_excel_runs(excel_dir: Path) -> List[Dict[str, pd.DataFrame]]:
 # DISAGGREGATED ANALYSIS (37 columns × 5 houses × 1440 minutes × 20 runs)
 # ============================================================================
 
-def compute_python_iqr_disaggregated(python_minute: pd.DataFrame) -> pd.DataFrame:
-    """Compute IQR statistics for each (dwelling, minute, variable) combination."""
+def compute_python_iqr_disaggregated(python_minute: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
+    """Compute IQR statistics for each (dwelling, minute, variable) combination.
+
+    Returns:
+        Tuple of (IQR DataFrame, coverage info dict)
+    """
     print("\n" + "=" * 80)
     print("COMPUTING PYTHON IQR - DISAGGREGATED DATA")
     print("=" * 80)
 
     # Normalize column names
-    time_col = find_column(python_minute, ['Minute', 'minute', 'time', 'timestep'])
-    dwelling_col = find_column(python_minute, ['dwelling', 'Dwelling', 'Dwelling_index'])
+    time_col = find_column(python_minute, ['Minute', 'minute', 'time', 'timestep', 'Time'])
+    dwelling_col = find_column(python_minute, ['dwelling', 'Dwelling', 'Dwelling_index', 'Dwelling index'])
 
     if not time_col or not dwelling_col:
         print(f"  ✗ ERROR: Missing required columns (time: {time_col}, dwelling: {dwelling_col})")
+        print(f"    Available columns: {list(python_minute.columns[:10])}...")
         sys.exit(1)
 
     python_minute = python_minute.rename(columns={time_col: 'minute', dwelling_col: 'dwelling'})
 
-    # Get available variables
-    available_vars = [(excel_name, py_col, desc)
-                      for excel_name, (py_col, units, desc) in DISAGGREGATED_COLUMNS.items()
-                      if py_col and py_col in python_minute.columns]
+    # Check column coverage
+    available, missing, unmapped = check_column_coverage(
+        python_minute, DISAGGREGATED_COLUMNS, "disaggregated"
+    )
+    report_column_coverage(available, missing, unmapped, "disaggregated", len(DISAGGREGATED_COLUMNS))
 
-    print(f"  Testing {len(available_vars)} variables (out of {len(DISAGGREGATED_COLUMNS)} total)")
+    # Store coverage info for report
+    coverage_info = {
+        'available': available,
+        'missing': missing,
+        'unmapped': unmapped,
+        'total': len(DISAGGREGATED_COLUMNS),
+        'coverage_pct': 100 * len(available) / len(DISAGGREGATED_COLUMNS)
+    }
+
+    # Get available variables (try both Python col name and Excel col name)
+    available_vars = []
+    for excel_name, (py_col, units, desc) in DISAGGREGATED_COLUMNS.items():
+        if py_col is None:
+            continue
+        # Try Python column name first, then Excel name (they should be the same now)
+        if py_col in python_minute.columns:
+            available_vars.append((excel_name, py_col, desc))
+        elif excel_name in python_minute.columns:
+            available_vars.append((excel_name, excel_name, desc))
+
+    print(f"\n  Testing {len(available_vars)} variables (out of {len(DISAGGREGATED_COLUMNS)} total)")
 
     stats_list = []
     dwellings = sorted(python_minute['dwelling'].unique())
@@ -277,7 +375,7 @@ def compute_python_iqr_disaggregated(python_minute: pd.DataFrame) -> pd.DataFram
     df_stats = pd.DataFrame(stats_list)
     print(f"\n  ✓ Computed IQR for {len(df_stats):,} (dwelling, minute) combinations")
 
-    return df_stats
+    return df_stats, coverage_info
 
 
 def validate_excel_disaggregated(
@@ -390,27 +488,52 @@ def validate_excel_disaggregated(
 # DAILY TOTALS ANALYSIS (15 columns × 5 houses × 20 runs)
 # ============================================================================
 
-def compute_python_iqr_daily(python_daily: pd.DataFrame) -> pd.DataFrame:
-    """Compute IQR statistics for daily totals by dwelling."""
+def compute_python_iqr_daily(python_daily: pd.DataFrame) -> Tuple[pd.DataFrame, Dict]:
+    """Compute IQR statistics for daily totals by dwelling.
+
+    Returns:
+        Tuple of (IQR DataFrame, coverage info dict)
+    """
     print("\n" + "=" * 80)
     print("COMPUTING PYTHON IQR - DAILY TOTALS")
     print("=" * 80)
 
     # Normalize column names
-    dwelling_col = find_column(python_daily, ['dwelling', 'Dwelling', 'Dwelling_index'])
+    dwelling_col = find_column(python_daily, ['dwelling', 'Dwelling', 'Dwelling_index', 'Dwelling index'])
     if not dwelling_col:
         print("  ✗ ERROR: No dwelling column found in daily data")
+        print(f"    Available columns: {list(python_daily.columns)}")
         sys.exit(1)
 
     python_daily = python_daily.rename(columns={dwelling_col: 'dwelling'})
 
-    # Get available variables
+    # Check column coverage
+    available, missing, unmapped = check_column_coverage(
+        python_daily, DAILY_COLUMNS, "daily totals"
+    )
+    report_column_coverage(available, missing, unmapped, "daily totals", len(DAILY_COLUMNS))
+
+    # Store coverage info for report
+    coverage_info = {
+        'available': available,
+        'missing': missing,
+        'unmapped': unmapped,
+        'total': len(DAILY_COLUMNS),
+        'coverage_pct': 100 * len(available) / len(DAILY_COLUMNS)
+    }
+
+    # Get available variables (try both Python col name and Excel col name)
     available_vars = []
     for excel_name, (py_col, units, desc) in DAILY_COLUMNS.items():
-        if py_col and py_col in python_daily.columns:
+        if py_col is None:
+            continue
+        # Try Python column name first, then Excel name
+        if py_col in python_daily.columns:
             available_vars.append((excel_name, py_col, desc))
+        elif excel_name in python_daily.columns:
+            available_vars.append((excel_name, excel_name, desc))
 
-    print(f"  Testing {len(available_vars)} variables (out of {len(DAILY_COLUMNS)} total)")
+    print(f"\n  Testing {len(available_vars)} variables (out of {len(DAILY_COLUMNS)} total)")
 
     stats_list = []
     dwellings = sorted(python_daily['dwelling'].unique())
@@ -434,7 +557,7 @@ def compute_python_iqr_daily(python_daily: pd.DataFrame) -> pd.DataFrame:
     df_stats = pd.DataFrame(stats_list)
     print(f"  ✓ Computed IQR for {len(dwellings)} dwellings")
 
-    return df_stats
+    return df_stats, coverage_info
 
 
 def validate_excel_daily(
@@ -666,7 +789,11 @@ def generate_comprehensive_report(
     daily_table: pd.DataFrame,
     disagg_table: pd.DataFrame,
     stats_info: Dict,
-    validation_dir: Path
+    validation_dir: Path,
+    daily_coverage: Optional[Dict] = None,
+    disagg_coverage: Optional[Dict] = None,
+    n_python: int = 0,
+    n_excel: int = 0,
 ) -> None:
     """Generate comprehensive validation report."""
     print("\n" + "=" * 80)
@@ -693,17 +820,47 @@ def generate_comprehensive_report(
     report.append("=" * 80)
     report.append("")
 
+    # Data summary
+    report.append("DATA SUMMARY")
+    report.append("-" * 80)
+    report.append(f"Python runs: {n_python}")
+    report.append(f"Excel runs: {n_excel}")
+    report.append("")
+
+    # Column coverage
+    report.append("COLUMN COVERAGE")
+    report.append("-" * 80)
+    if daily_coverage:
+        report.append(f"Daily totals: {len(daily_coverage['available'])}/{daily_coverage['total']} columns ({daily_coverage['coverage_pct']:.0f}%)")
+        if daily_coverage['missing']:
+            report.append(f"  Missing: {', '.join(daily_coverage['missing'][:5])}" +
+                         (f" ... and {len(daily_coverage['missing'])-5} more" if len(daily_coverage['missing']) > 5 else ""))
+    if disagg_coverage:
+        report.append(f"Disaggregated: {len(disagg_coverage['available'])}/{disagg_coverage['total']} columns ({disagg_coverage['coverage_pct']:.0f}%)")
+        if disagg_coverage['missing']:
+            report.append(f"  Missing: {', '.join(disagg_coverage['missing'][:5])}" +
+                         (f" ... and {len(disagg_coverage['missing'])-5} more" if len(disagg_coverage['missing']) > 5 else ""))
+    report.append("")
+
     # Statistical expectations
     report.append("STATISTICAL EXPECTATIONS")
     report.append("-" * 80)
-    report.append(f"Python samples: {stats_info['n_python']}")
-    report.append(f"Excel samples: {stats_info['n_excel']}")
-    report.append(f"Expected IQR percentage: {stats_info['expected_pct']:.1f}%")
-    report.append(f"95% confidence interval: {stats_info['ci_95_pct'][0]:.1f}% - {stats_info['ci_95_pct'][1]:.1f}%")
+    report.append(f"With {n_python} Python runs and {n_excel} Excel runs:")
+    report.append(f"  Expected IQR percentage: {stats_info['expected_pct']:.1f}%")
+    report.append(f"  68% confidence interval: {stats_info['ci_68_pct'][0]:.1f}% - {stats_info['ci_68_pct'][1]:.1f}%")
+    report.append(f"  95% confidence interval: {stats_info['ci_95_pct'][0]:.1f}% - {stats_info['ci_95_pct'][1]:.1f}%")
+    report.append(f"  99.7% confidence interval: {stats_info['ci_99_pct'][0]:.1f}% - {stats_info['ci_99_pct'][1]:.1f}%")
+    report.append("")
+    report.append("Interpretation:")
+    report.append("  If Python and Excel produce the same distribution, ~50% of Excel")
+    report.append("  values should fall within Python's interquartile range (Q1-Q3).")
+    report.append("  Values outside the 95% CI suggest a potential mismatch.")
     report.append("")
 
     # Daily totals summary
-    report.append("DAILY TOTALS (15 variables × 5 houses × 20 runs)")
+    n_daily_vars = len(daily_coverage['available']) if daily_coverage else 15
+    n_dwellings = len(daily_results['dwelling'].unique()) if len(daily_results) > 0 else 0
+    report.append(f"DAILY TOTALS ({n_daily_vars} variables × {n_dwellings} dwellings × {n_excel} runs)")
     report.append("-" * 80)
     if len(daily_results) > 0:
         overall_daily = daily_results.groupby('variable')['in_iqr'].agg(['sum', 'count']).reset_index()
@@ -721,7 +878,10 @@ def generate_comprehensive_report(
     report.append("")
 
     # Disaggregated summary
-    report.append("DISAGGREGATED (37 variables × 5 houses × 1440 minutes × 20 runs)")
+    n_disagg_vars = len(disagg_coverage['available']) if disagg_coverage else 37
+    n_disagg_dwellings = len(disagg_results['dwelling'].unique()) if len(disagg_results) > 0 else 0
+    total_samples_per_var = 1440 * n_excel  # minutes × Excel runs
+    report.append(f"DISAGGREGATED ({n_disagg_vars} variables × {n_disagg_dwellings} dwellings × 1440 minutes × {n_excel} runs)")
     report.append("-" * 80)
     if len(disagg_results) > 0:
         overall_disagg = disagg_results.groupby('variable').agg({
@@ -984,7 +1144,7 @@ def main():
     stats_info_daily = compute_expected_iqr_statistics(n_python, n_excel)
 
     # DISAGGREGATED ANALYSIS
-    python_iqr_disagg = compute_python_iqr_disaggregated(python_minute)
+    python_iqr_disagg, disagg_coverage = compute_python_iqr_disaggregated(python_minute)
     disagg_results = validate_excel_disaggregated(excel_runs, python_iqr_disagg)
     disagg_table = generate_disaggregated_summary_table(disagg_results) if len(disagg_results) > 0 else pd.DataFrame()
 
@@ -992,8 +1152,9 @@ def main():
     daily_results = pd.DataFrame()
     daily_table = pd.DataFrame()
     python_iqr_daily = None
+    daily_coverage = None
     if python_daily is not None:
-        python_iqr_daily = compute_python_iqr_daily(python_daily)
+        python_iqr_daily, daily_coverage = compute_python_iqr_daily(python_daily)
         daily_results = validate_excel_daily(excel_runs, python_iqr_daily)
         daily_table = generate_daily_summary_table(daily_results) if len(daily_results) > 0 else pd.DataFrame()
 
@@ -1018,8 +1179,12 @@ def main():
         disagg_results,
         daily_table,
         disagg_table,
-        stats_info_disagg,
-        validation_dir
+        stats_info_daily,  # Use daily stats for the report (more intuitive than per-minute)
+        validation_dir,
+        daily_coverage=daily_coverage,
+        disagg_coverage=disagg_coverage,
+        n_python=n_python,
+        n_excel=n_excel,
     )
 
     # Generate wide-format daily comparison table (user-requested format)
