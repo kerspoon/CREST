@@ -208,9 +208,10 @@ try {
         # Create run-specific output directory
         if ($AddTimestamp) {
             $timestamp = Get-Date -Format "yyyyMMdd_HHmmss"
-            $runDir = Join-Path $OutputDir "run_${runIndex}_${timestamp}"
+            $runDir = Join-Path $OutputDir "run_$($runIndex.ToString('00'))_${timestamp}"
         } else {
-            $runDir = Join-Path $OutputDir "run_${runIndex}"
+            # Zero-padded format: run_01, run_02, etc. (matches monte_carlo_compare.py)
+            $runDir = Join-Path $OutputDir "run_$($runIndex.ToString('00'))"
         }
 
         New-Item -ItemType Directory -Path $runDir -Force | Out-Null
