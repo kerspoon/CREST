@@ -249,7 +249,7 @@ def load_excel_runs(excel_dir: Path) -> List[Dict[str, pd.DataFrame]]:
                 # Row 2: Units symbols (Greek letters)
                 # Row 3: Units text
                 # Row 4+: Data
-                df_minute = pd.read_csv(minute_file, skiprows=[0, 2, 3], encoding='utf-8-sig')
+                df_minute = pd.read_csv(minute_file, skiprows=[0, 2, 3], encoding='latin-1')
 
                 # Verify we have the expected columns
                 if 'Dwelling index' in df_minute.columns and 'Time' in df_minute.columns:
@@ -271,7 +271,7 @@ def load_excel_runs(excel_dir: Path) -> List[Dict[str, pd.DataFrame]]:
                 # Row 2: Units symbols
                 # Row 3: Units text
                 # Row 4+: Data
-                df_daily = pd.read_csv(daily_file, skiprows=[0, 2, 3], encoding='utf-8-sig')
+                df_daily = pd.read_csv(daily_file, skiprows=[0, 2, 3], encoding='latin-1')
 
                 # Verify we have the expected columns
                 if 'Dwelling index' in df_daily.columns:
