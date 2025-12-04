@@ -203,6 +203,8 @@ def load_python_baseline(python_dir: Path) -> Tuple[Optional[pd.DataFrame], Opti
 
     if minute_df is None:
         print("  ✗ ERROR: No minute-level data found!")
+        print("    Expected: minute_level.parquet or results_minute_level.csv")
+        print("    Make sure monte_carlo_run.py completed successfully.")
         sys.exit(1)
 
     # Load daily summary
