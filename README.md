@@ -41,10 +41,8 @@ Results include:
 
 
 ## Current status
- 
-1. I want to sort out the scripts folder. We have a mess of files in ./scripts some are used some are not. I only want to keep those used by the above 3 tests (e.g. extracting files from a xlsm is part of running the above tests) but it would be good to check the purpose of each to see if any others are useful.
-2. Try to get the tests passing (i.e. exactly the same output in the case of rnd, and statistically similar for monte_carlo). Before the reorganisation there were significant differences between the outputs of the two code bases. The reorganisation was to make it easier to check we are comparing like with like. 
 
+1. Try to get the tests passing (i.e. exactly the same output in the case of rnd, and statistically similar for monte_carlo). There are significant differences between the outputs of the two code bases.
 
 ---
 
@@ -85,15 +83,15 @@ crest/
 │
 ├── scripts/                     # Validation and utility scripts
 │   ├── excel_run_and_compare.py # Run Python from Excel settings + compare
-│   ├── run_100_houses.py        # Convenience: run 100-house validation
-│   ├── extract_settings.py      # Extract settings from Excel Main Sheet
+│   ├── extract_settings.py      # Extract simulation params from Excel Main Sheet
 │   ├── export_excel.py          # Export VBA + CSV from .xlsm
 │   ├── monte_carlo_run.py       # Run N Monte Carlo iterations
 │   ├── monte_carlo_compare.py   # IQR validation (Objective #2)
 │   ├── rng_validation_run.py    # Run with LCG logging
 │   ├── rng_log_compare.py       # RNG sequence comparison (Objective #1)
 │   ├── check_types.sh           # Run mypy type checking
-│   ├── run_excel_example.bat    # Run excel 10 times and save the output
+│   ├── run_excel_example.bat    # Run Excel N times (Windows batch)
+│   ├── run_excel_macro.ps1      # PowerShell automation for Excel runs
 │   └── utils.py                 # Helper functions
 │
 └── output/                      # Simulation results
