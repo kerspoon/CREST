@@ -1,7 +1,7 @@
 # RNG Divergence Investigation
 
 **Date**: 2025-12-05
-**Status**: RNG synchronization complete, output comparison pending
+**Status**: RNG synchronized, temperature bug FIXED, appliance issue under investigation
 
 ## Summary
 
@@ -48,6 +48,32 @@ if index >= len(proportions):
     return 0
 ```
 
+### 4. Monthly Temperature Index Bug (FIXED 2025-12-05)
+
+In `climate.py`, monthly temperature data was loaded from wrong row indices:
+
+```python
+# Before (wrong) - loaded Feb-Dec data for Jan-Nov
+for month_idx in range(2, 14):  # Rows 2-13 - WRONG
+
+# After (correct) - loads Jan-Dec data correctly
+for month_idx in range(1, 13):  # Rows 1-12 - CORRECT
+```
+
+**Impact**: Python was using February's mean temperature (3.7°C) for January instead of the correct value (3.3°C), causing a constant 0.4°C offset in all temperature calculations.
+
+### 5. Overnight Clearness Division Bug (FIXED 2025-12-05)
+
+In `climate.py`, the overnight mean clearness calculation divided by `count` instead of `di`:
+
+```python
+# Before (wrong)
+overnight_mean_clearness /= count  # Number of values summed
+
+# After (correct - matching VBA)
+overnight_mean_clearness /= di  # Darkness duration in minutes
+```
+
 ### Files Already Correct (had -1 adjustment)
 
 - `python/crest/core/pv.py` line 171
@@ -76,32 +102,41 @@ Dwelling 2:
   Excel:  residents=2 building=1 heating=1 pv=2 solar=0 cooling=1 ✓
 ```
 
-## Next Steps: Output Comparison
+## Output Comparison Results
 
-The simulation outputs cannot be compared yet because the Excel files are from different runs:
+### After Temperature Fix (2025-12-05)
 
-| File | Timestamp | Description |
-|------|-----------|-------------|
-| `random_debug.txt` | 15:48 | RNG log used for validation |
-| `Results - disaggregated.csv` | 17:14 | Simulation results |
+Minute 1 temperatures now match:
+- Python: 3.839146°C
+- Excel: 3.839146°C
+- Difference: ~6e-14 (floating point precision)
 
-**Action required**: Re-run Excel once to generate both RNG log and results from the same run, then compare outputs.
+### Daily Summary - Dwelling 1
 
-### Expected Matching Fields (based on partial analysis)
+| Field | Python | Excel | Status |
+|-------|--------|-------|--------|
+| Mean active occupancy | 0.4236 | 0.4236 | ✓ Match |
+| Proportion occupied | 0.4236 | 0.4236 | ✓ Match |
+| Lighting demand | 1.9361 kWh | 1.9361 kWh | ✓ Match |
+| Hot water demand | 52 L | 52 L | ✓ Match |
+| Thermostat setpoint | 17°C | 17°C | ✓ Match |
+| Appliance demand | 10.34 kWh | 10.71 kWh | ~0.37 kWh diff |
+| PV output | 3.10 kWh | 2.39 kWh | ~0.71 kWh diff |
+| Indoor temp (avg) | 17.40°C | 16.65°C | ~0.75°C diff |
 
-These fields matched in daily summary:
-- Mean active occupancy
-- Proportion of day actively occupied
-- Lighting demand
-- Hot water demand (litres)
-- Space thermostat set point
+### Remaining Issue: Appliance Ownership
 
-These fields differed (needs re-validation with synchronized runs):
-- Appliance demand
-- PV output
-- Average indoor temperature
-- Thermal energy values
-- Solar thermal gains
+The appliance standby power differs (Python: 50W vs Excel: 60W at minute 1).
+
+**Root cause identified**: The validation logging shows mismatched dwelling indices:
+- Python's dwelling_params.log for "dwelling 1" contains RNG values from call #137510+
+- But the first appliance ownership RNG calls (at #75536) match Excel dwelling 1's values
+
+This suggests either:
+1. A bug in the validation logger's dwelling index
+2. Or the dwellings are being processed in different order
+
+The actual RNG values at calls #75536-75566 match Excel dwelling 1 exactly, so the RNG synchronization is correct. The issue is in how the simulation uses those values.
 
 ## Technical Details
 
@@ -123,5 +158,12 @@ All dwelling parameter CSVs use 1-based indices in the first column:
 | PrimaryHeatingSystems.csv | "Primary heating system index" |
 | Buildings.csv | "Building index" |
 | SolarThermalSystems.csv | "Solar thermal system index" |
+| ClimateData&CoolingTech.csv | Row 1 = Jan, Row 2 = Feb, etc. |
 
 VBA looks up by index column value. Python now correctly converts 1-based indices to 0-based for pandas iloc.
+
+## Next Steps
+
+1. Investigate the appliance ownership logging/dwelling index issue
+2. Verify PV output calculation matches after temperature fix
+3. Run comparison for other months to ensure the monthly temperature fix works across all months

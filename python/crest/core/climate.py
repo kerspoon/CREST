@@ -289,8 +289,9 @@ class GlobalClimate:
         monthly_min = []
         monthly_max = []
 
-        # Extract 12 months of data (rows 2-13 after loading)
-        for month_idx in range(2, 14):  # Rows 2-13 in loaded DataFrame
+        # Extract 12 months of data (rows 1-12 after loading)
+        # Row 0 is header, Row 1 = Jan, Row 2 = Feb, ..., Row 12 = Dec
+        for month_idx in range(1, 13):  # Rows 1-12 in loaded DataFrame
             if month_idx < len(climate_data):
                 monthly_mean.append(float(climate_data.iloc[month_idx, mean_col]))
                 monthly_min.append(float(climate_data.iloc[month_idx, min_col]))
@@ -469,16 +470,14 @@ class GlobalClimate:
         cloud_cooling_rate = 0.025
 
         # VBA lines 534-541: Calculate overnight mean clearness index
+        # VBA divides by di (darkness duration), not by count of values summed
         overnight_mean_clearness = 0
-        count = 0
         for minute in range(0, td_min_i + 1):
             overnight_mean_clearness += self.clearness_index[minute]
-            count += 1
         for minute in range(td_sunset_i, 1440):
             overnight_mean_clearness += self.clearness_index[minute]
-            count += 1
-        if count > 0:
-            overnight_mean_clearness /= count
+        if di > 0:
+            overnight_mean_clearness /= di
 
         # VBA lines 544-548: Calculate overnight temps after sunset
         for minute in range(td_sunset_i, 1440):
