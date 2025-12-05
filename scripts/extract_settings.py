@@ -10,18 +10,21 @@ How it works:
 2. Extracts settings from specific cells in Main Sheet:
    - F6: Day of month
    - H6: Month of year
+   - F7: Weekday/Weekend
+   - F8: Latitude, H8: Longitude, L8: Meridian
    - F9: City/location
    - F10: Country
    - H10: Year (for India simulations)
    - K10: Urban/Rural setting
    - F12: Number of dwellings
-3. Sets defaults for checkboxes (cannot read ActiveX controls)
+3. Reads checkbox values from VML XML inside the XLSM file:
+   - objAssignDwellingParameters: Stochastically assign dwelling parameters
+   - objDynamicOutput: Include high-resolution dynamic output
+   - objDailyTotals: Include daily demand totals
+   - objOverwriteData: Overwrite existing data
+   - objDaylightSaving: Country uses daylight saving time
+   - objPVOption: PV included as an option
 4. Outputs in requested format (text, json, or shell script)
-
-Limitations:
-- Cannot read Excel checkboxes (ActiveX/Form controls)
-- Checkbox settings must be specified via command-line flags:
-  --save-detailed, --portable-rng, etc.
 
 Usage:
     python scripts/extract_settings.py excel/original.xlsm
@@ -33,6 +36,8 @@ Usage:
 import sys
 import argparse
 import json
+import zipfile
+import re
 from pathlib import Path
 from typing import Dict, Any
 
@@ -41,6 +46,57 @@ try:
 except ImportError:
     print("ERROR: openpyxl not installed. Install with: pip install openpyxl")
     sys.exit(1)
+
+
+def extract_checkbox_values(excel_path: Path) -> Dict[str, bool]:
+    """
+    Extract checkbox values from VML XML inside the XLSM file.
+
+    XLSM files are ZIP archives. The checkbox controls are stored in
+    xl/drawings/vmlDrawing1.vml as XML with shape IDs matching the
+    checkbox names (e.g., objAssignDwellingParameters).
+
+    Args:
+        excel_path: Path to .xlsm file
+
+    Returns:
+        Dictionary mapping checkbox name to checked state (True/False)
+    """
+    checkboxes = {}
+
+    try:
+        with zipfile.ZipFile(excel_path, 'r') as z:
+            # Find all vmlDrawing files
+            vml_files = [name for name in z.namelist() if 'vmlDrawing' in name]
+
+            for vml_file in vml_files:
+                content = z.read(vml_file).decode('utf-8')
+
+                # Parse checkbox shapes using regex
+                # Shape format: <v:shape id="objName" ...>...<x:Checked>1</x:Checked>...</v:shape>
+                # Pattern to find shape blocks with checkbox ObjectType
+                shape_pattern = r'<v:shape\s+id="([^"]+)"[^>]*>.*?</v:shape>'
+
+                for match in re.finditer(shape_pattern, content, re.DOTALL):
+                    shape_block = match.group(0)
+                    shape_id = match.group(1)
+
+                    # Check if this is a checkbox
+                    if 'ObjectType="Checkbox"' in shape_block:
+                        # Check if it's checked
+                        # <x:Checked>1</x:Checked> means checked
+                        # No <x:Checked> tag or <x:Checked>0</x:Checked> means unchecked
+                        checked_match = re.search(r'<x:Checked>(\d+)</x:Checked>', shape_block)
+                        is_checked = checked_match is not None and checked_match.group(1) == '1'
+
+                        # Only store checkboxes with meaningful names (not _x0000_s####)
+                        if not shape_id.startswith('_x0000_'):
+                            checkboxes[shape_id] = is_checked
+
+    except Exception as e:
+        print(f"  Warning: Could not read checkbox values: {e}")
+
+    return checkboxes
 
 
 def extract_settings(excel_path: Path) -> Dict[str, Any]:
@@ -91,6 +147,40 @@ def extract_settings(excel_path: Path) -> Dict[str, Any]:
     month_val = main_sheet['H6'].value
     settings['month'] = int(month_val) if month_val is not None else 1
 
+    # Weekday/Weekend (F7)
+    weekday_val = main_sheet['F7'].value
+    settings['weekday'] = str(weekday_val).lower() if weekday_val is not None else 'wd'
+
+    # Latitude (F8)
+    lat_val = main_sheet['F8'].value
+    if lat_val is not None:
+        try:
+            settings['latitude'] = float(lat_val)
+        except (ValueError, TypeError):
+            settings['latitude'] = 52.77  # Default: UK
+    else:
+        settings['latitude'] = 52.77
+
+    # Longitude (H8)
+    lon_val = main_sheet['H8'].value
+    if lon_val is not None:
+        try:
+            settings['longitude'] = float(lon_val)
+        except (ValueError, TypeError):
+            settings['longitude'] = -1.26  # Default: UK
+    else:
+        settings['longitude'] = -1.26
+
+    # LST Meridian (M8) - note: label is in J8, value is in M8
+    meridian_val = main_sheet['M8'].value
+    if meridian_val is not None:
+        try:
+            settings['meridian'] = float(meridian_val)
+        except (ValueError, TypeError):
+            settings['meridian'] = 0.0  # Default: UK/England
+    else:
+        settings['meridian'] = 0.0
+
     # City/location (F9)
     city_val = main_sheet['F9'].value
     settings['city'] = str(city_val) if city_val is not None else 'England'
@@ -120,14 +210,30 @@ def extract_settings(excel_path: Path) -> Dict[str, Any]:
     # Seed - not typically in Main Sheet, default to None
     settings['seed'] = None
 
-    # Checkboxes: Excel uses ActiveX/Form controls which cannot be read by openpyxl
-    # These are UI-only controls in Excel that don't link to cell values
-    # For Python simulation, use command-line flags instead:
-    #   --save-detailed: Write minute-level results (corresponds to Q9 "Include high-resolution output")
-    #   --portable-rng: Use portable LCG for RNG validation (Excel uses VBA Rnd())
-    # Defaults:
-    settings['save_detailed'] = True  # Write detailed output
-    settings['use_portable_rng'] = False  # Use standard Python random
+    # Extract checkbox values from VML XML
+    checkboxes = extract_checkbox_values(excel_path)
+
+    # Map checkbox names to settings
+    # objAssignDwellingParameters: Stochastically assign dwelling parameters (row 13)
+    settings['assign_dwelling_params'] = checkboxes.get('objAssignDwellingParameters', True)
+
+    # objDynamicOutput: Include high-resolution dynamic output (row 14)
+    settings['save_detailed'] = checkboxes.get('objDynamicOutput', True)
+
+    # objDailyTotals: Include daily demand totals (row 15)
+    settings['save_daily_totals'] = checkboxes.get('objDailyTotals', True)
+
+    # objOverwriteData: Overwrite existing data (row 16)
+    settings['overwrite_data'] = checkboxes.get('objOverwriteData', True)
+
+    # objPVOption: PV included as an option (row 17)
+    settings['pv_enabled'] = checkboxes.get('objPVOption', True)
+
+    # objDaylightSaving: Country uses daylight saving time (row 11)
+    settings['daylight_saving'] = checkboxes.get('objDaylightSaving', True)
+
+    # Portable RNG is a Python-specific setting, not in Excel
+    settings['use_portable_rng'] = False
 
     # Print what we found for debugging
     print("\nExtracted settings:")
@@ -141,6 +247,9 @@ def format_as_shell_script(settings: Dict[str, Any], excel_path: Path) -> str:
     """
     Format settings as a shell script for re-running the simulation.
 
+    The script includes all extracted settings in an easy-to-read format,
+    allowing exact replication of the Excel configuration in Python.
+
     Args:
         settings: Settings dictionary
         excel_path: Original Excel file path
@@ -148,58 +257,97 @@ def format_as_shell_script(settings: Dict[str, Any], excel_path: Path) -> str:
     Returns:
         Shell script content
     """
+    from datetime import datetime
+
     script_lines = [
         "#!/bin/bash",
         "# CREST Simulation Run Script",
         f"# Generated from: {excel_path}",
-        f"# Date: {Path('.').absolute()}",
+        f"# Generated at: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}",
         "",
-        "# Run the Python CREST simulation with these settings",
+        "# ============================================================",
+        "# SIMULATION SETTINGS (extracted from Excel Main Sheet)",
+        "# ============================================================",
         "",
-        "python python/main.py \\",
+        "# Date settings",
+        f"DAY={settings.get('day', 1)}",
+        f"MONTH={settings.get('month', 1)}",
+        f"WEEKDAY=\"{settings.get('weekday', 'wd')}\"  # 'wd' = weekday, 'we' = weekend",
+        "",
+        "# Location settings",
+        f"LATITUDE={settings.get('latitude', 52.77)}",
+        f"LONGITUDE={settings.get('longitude', -1.26)}",
+        f"MERIDIAN={settings.get('meridian', 0.0)}  # Local standard time meridian",
+        f"CITY=\"{settings.get('city', 'England')}\"",
+        f"COUNTRY=\"{settings.get('country', 'UK')}\"",
+        f"YEAR={settings.get('year', 2006)}",
+        f"URBAN_RURAL=\"{settings.get('urban_rural', 'Urban')}\"",
+        "",
+        "# Simulation settings",
+        f"NUM_DWELLINGS={settings.get('num_dwellings', 1)}",
+        f"SEED={settings.get('seed') if settings.get('seed') is not None else '\"\"'}  # Empty for random seed",
+        "",
+        "# Checkbox settings (from Excel form controls)",
+        f"ASSIGN_DWELLING_PARAMS={'true' if settings.get('assign_dwelling_params', True) else 'false'}  # Stochastically assign dwelling parameters",
+        f"SAVE_DETAILED={'true' if settings.get('save_detailed', True) else 'false'}  # Include high-resolution dynamic output",
+        f"SAVE_DAILY_TOTALS={'true' if settings.get('save_daily_totals', True) else 'false'}  # Include daily demand totals",
+        f"OVERWRITE_DATA={'true' if settings.get('overwrite_data', True) else 'false'}  # Overwrite existing data",
+        f"PV_ENABLED={'true' if settings.get('pv_enabled', True) else 'false'}  # PV included as an option",
+        f"DAYLIGHT_SAVING={'true' if settings.get('daylight_saving', True) else 'false'}  # Country uses daylight saving time",
+        "",
+        "# Python-specific settings",
+        f"USE_PORTABLE_RNG={'true' if settings.get('use_portable_rng', False) else 'false'}  # Use portable LCG for RNG validation",
+        "",
+        "# ============================================================",
+        "# PATHS (set these before running)",
+        "# ============================================================",
+        "",
+        "# Config file containing dwelling configurations",
+        "DWELLINGS_FILE=\"${DWELLINGS_FILE:-excel/lcg_fixed/Dwellings.csv}\"",
+        "",
+        "# Output directory for results",
+        "OUTPUT_DIR=\"${OUTPUT_DIR:-output/run}\"",
+        "",
+        "# ============================================================",
+        "# RUN THE SIMULATION",
+        "# ============================================================",
+        "",
+        "# Build command line arguments",
+        "CMD_ARGS=()",
+        "CMD_ARGS+=(--day \"$DAY\")",
+        "CMD_ARGS+=(--month \"$MONTH\")",
+        "CMD_ARGS+=(--latitude \"$LATITUDE\")",
+        "CMD_ARGS+=(--longitude \"$LONGITUDE\")",
+        "CMD_ARGS+=(--meridian \"$MERIDIAN\")",
+        "CMD_ARGS+=(--country \"$COUNTRY\")",
+        "CMD_ARGS+=(--city \"$CITY\")",
+        "CMD_ARGS+=(--year \"$YEAR\")",
+        "CMD_ARGS+=(--urban-rural \"$URBAN_RURAL\")",
+        "CMD_ARGS+=(--config-file \"$DWELLINGS_FILE\")",
+        "CMD_ARGS+=(--output-dir \"$OUTPUT_DIR\")",
+        "",
+        "# Add seed if specified",
+        "if [ -n \"$SEED\" ]; then",
+        "    CMD_ARGS+=(--seed \"$SEED\")",
+        "fi",
+        "",
+        "# Add optional flags based on checkbox settings",
+        "if [ \"$SAVE_DETAILED\" = \"true\" ]; then",
+        "    CMD_ARGS+=(--save-detailed)",
+        "fi",
+        "",
+        "if [ \"$USE_PORTABLE_RNG\" = \"true\" ]; then",
+        "    CMD_ARGS+=(--portable-rng)",
+        "fi",
+        "",
+        "# Run the simulation",
+        "echo \"Running CREST simulation with settings from: ${excel_path}\"",
+        "echo \"Output directory: $OUTPUT_DIR\"",
+        "echo \"\"",
+        "",
+        "venv/bin/python python/main.py \"${CMD_ARGS[@]}\"",
+        "",
     ]
-
-    # Build command line arguments
-    args = []
-
-    if 'num_dwellings' in settings and settings['num_dwellings']:
-        args.append(f"  --num-dwellings {settings['num_dwellings']} \\")
-
-    if 'day' in settings:
-        args.append(f"  --day {settings['day']} \\")
-
-    if 'month' in settings:
-        args.append(f"  --month {settings['month']} \\")
-
-    if 'year' in settings:
-        args.append(f"  --year {settings['year']} \\")
-
-    if 'country' in settings:
-        args.append(f"  --country {settings['country']} \\")
-
-    if 'city' in settings:
-        args.append(f"  --city '{settings['city']}' \\")
-
-    if 'urban_rural' in settings:
-        args.append(f"  --urban-rural {settings['urban_rural']} \\")
-
-    if 'seed' in settings and settings['seed'] is not None:
-        args.append(f"  --seed {settings['seed']} \\")
-
-    if settings.get('save_detailed', False):
-        args.append(f"  --save-detailed \\")
-
-    if settings.get('use_portable_rng', False):
-        args.append(f"  --portable-rng \\")
-
-    # Add config file (will be set by calling script)
-    args.append(f"  --config-file \"$DWELLINGS_FILE\" \\")
-
-    # Add output directory (will be set by calling script)
-    args.append(f"  --output-dir \"$OUTPUT_DIR\"")
-
-    script_lines.extend(args)
-    script_lines.append("")
 
     return '\n'.join(script_lines)
 

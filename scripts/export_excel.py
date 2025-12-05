@@ -182,6 +182,33 @@ def main():
         num_sheets = export_csv_sheets(args.excel_file, output_dir)
         print(f"\nExported {num_sheets} sheets to CSV")
 
+    # Extract simulation settings and save as shell script
+    if not args.vba_only:
+        print()
+        print("Extracting simulation settings...")
+        try:
+            from extract_settings import extract_settings, format_as_shell_script, format_as_json
+
+            settings = extract_settings(args.excel_file)
+
+            # Save settings as JSON
+            json_path = output_dir / 'simulation_settings.json'
+            with open(json_path, 'w') as f:
+                f.write(format_as_json(settings))
+            print(f"  Saved: {json_path.name}")
+
+            # Save settings as shell script
+            shell_path = output_dir / 'run_simulation.sh'
+            with open(shell_path, 'w') as f:
+                f.write(format_as_shell_script(settings, args.excel_file))
+            shell_path.chmod(0o755)  # Make executable
+            print(f"  Saved: {shell_path.name}")
+
+        except Exception as e:
+            print(f"  Warning: Could not extract settings: {e}")
+            import traceback
+            traceback.print_exc()
+
     print()
     print(f"✓ Export complete: {output_dir}")
 
