@@ -374,10 +374,25 @@ Private Function GetIncidentRadiation(currentTimeStep As Integer) As Double
     
     Dim dblSkyDiffuseFactor As Double
     
+    
+    ' // -------------------- ADDED by JB to fix bug (5/12/2025)
+     Dim intDayOfMonth As Integer
+    Dim intMonthOfYear As Integer
+    Dim strDate As String
+    ' // --------------------
+    
     ' // Get longitude, latitude and meridian
     dblLongitude = wsMain.Range("rLongitude").Value
     dblLatitude = wsMain.Range("rLatitude").Value
     dblMeridian = wsMain.Range("rMeridian").Value
+    
+    
+    ' // -------------------- ADDED by JB to fix bug (5/12/2025)
+    intDayOfMonth = wsMain.Range("rDayOfMonth").Value
+    intMonthOfYear = wsMain.Range("rMonthOfYear").Value
+    strDate = CStr(intDayOfMonth) + "/" + CStr(intMonthOfYear) + "/2015"
+    dblDayOfYear = DatePart("y", CDate(strDate))
+    ' // --------------------
 
     ' // Determine the hour and minute
     intHour = WorksheetFunction.RoundDown(currentTimeStep / 60, 0)
@@ -424,7 +439,8 @@ Private Function GetIncidentRadiation(currentTimeStep As Integer) As Double
     dblAzimuthOfSun = 180 / PI * Application.WorksheetFunction.Asin(Cos(dblDeclination * PI / 180) * Sin(dblHourAngle * PI / 180) / Cos(dblSolarAltitudeAngle * PI / 180))
     
     ' // Calculate azimuth angle test
-    If Cos(dblHourAngle * PI / 180) >= (Tan(dblDeclination * PI / 180) / Tan(dblDeclination * PI / 180)) Then
+    ' // ---------- FIX by JB on 05/12/2025 changed from Tan(dblDeclination to Tan(dblLatitude in the denominator
+    If Cos(dblHourAngle * PI / 180) >= (Tan(dblDeclination * PI / 180) / Tan(dblLatitude * PI / 180)) Then
         dblAzimuthAngleTest = 0
     Else
         dblAzimuthAngleTest = 1
