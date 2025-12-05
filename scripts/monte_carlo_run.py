@@ -2,7 +2,7 @@
 """Run Monte Carlo simulations for CREST validation.
 
 Usage:
-    python scripts/monte_carlo_run.py [iterations] [dwellings_file] [output_flags...]
+    python scripts/monte_carlo_run.py [iterations] [--excel FILE] [output_flags...]
 
 Examples:
     # Run 1000 iterations with default settings
@@ -11,16 +11,17 @@ Examples:
     # Run 10 iterations (faster for testing)
     python scripts/monte_carlo_run.py 10
 
-    # Run 500 iterations with custom dwellings
-    python scripts/monte_carlo_run.py 500 excel/monte_carlo_base/Dwellings.csv
+    # Run 100 iterations using settings from an Excel file
+    python scripts/monte_carlo_run.py 100 --excel excel/monte_carlo_base.xlsm
 
-    # Run with additional flags
-    python scripts/monte_carlo_run.py 10 excel/monte_carlo_base/Dwellings.csv --day 15
+    # Run with additional flags (override settings)
+    python scripts/monte_carlo_run.py 10 --excel excel/lcg_fixed.xlsm --day 15
 """
 
 import subprocess
 import pandas as pd
 import sys
+import json
 from pathlib import Path
 import shutil
 
@@ -30,16 +31,109 @@ from utils import create_output_dir, get_project_root, get_python_main
 # Default values
 DEFAULT_ITERATIONS = 1000
 DEFAULT_CONFIG = 'excel/monte_carlo_base/Dwellings.csv'
+DEFAULT_EXCEL = None  # Optional: Excel file to load settings from
 
 
-def run_simulation(seed: int, output_dir: Path, config_file: str, extra_args: list) -> bool:
+def load_excel_settings(excel_path: Path) -> tuple:
+    """
+    Export Excel file and load simulation settings.
+
+    Args:
+        excel_path: Path to .xlsm file
+
+    Returns:
+        Tuple of (settings_dict, dwellings_file_path)
+    """
+    basename = excel_path.stem
+    export_dir = Path("excel") / basename
+
+    # Export Excel file (this also extracts settings)
+    print(f"Exporting Excel file: {excel_path}")
+    cmd = [sys.executable, 'scripts/export_excel.py', str(excel_path)]
+    result = subprocess.run(cmd, capture_output=True, text=True)
+    if result.returncode != 0:
+        print(f"ERROR: Failed to export Excel file")
+        print(result.stderr)
+        return {}, None
+
+    # Load settings from exported JSON
+    settings_file = export_dir / 'simulation_settings.json'
+    if not settings_file.exists():
+        print(f"WARNING: Settings file not found: {settings_file}")
+        return {}, export_dir / 'Dwellings.csv'
+
+    with open(settings_file, 'r') as f:
+        settings = json.load(f)
+
+    print(f"Loaded settings from: {settings_file}")
+
+    return settings, export_dir / 'Dwellings.csv'
+
+
+def settings_to_args(settings: dict) -> list:
+    """
+    Convert settings dictionary to command-line arguments.
+
+    Args:
+        settings: Settings dictionary from simulation_settings.json
+
+    Returns:
+        List of command-line arguments
+
+    Supported checkbox settings:
+        - save_detailed (objDynamicOutput): --save-detailed flag
+        - weekday: --weekend flag if weekday='we'
+
+    Not yet supported as flags (would need main.py changes):
+        - assign_dwelling_params: Determined by --config-file presence
+        - save_daily_totals: Not implemented
+        - pv_enabled: Determined by dwelling config
+        - daylight_saving: Not implemented as flag
+    """
+    args = []
+
+    # Date/time settings
+    if 'day' in settings:
+        args.extend(['--day', str(settings['day'])])
+    if 'month' in settings:
+        args.extend(['--month', str(settings['month'])])
+
+    # Weekend flag based on weekday setting
+    if settings.get('weekday', 'wd').lower() == 'we':
+        args.append('--weekend')
+
+    # Location settings
+    if 'latitude' in settings:
+        args.extend(['--latitude', str(settings['latitude'])])
+    if 'longitude' in settings:
+        args.extend(['--longitude', str(settings['longitude'])])
+    if 'meridian' in settings:
+        args.extend(['--meridian', str(settings['meridian'])])
+    if 'country' in settings:
+        args.extend(['--country', str(settings['country'])])
+    if 'city' in settings:
+        args.extend(['--city', str(settings['city'])])
+    if 'urban_rural' in settings:
+        args.extend(['--urban-rural', str(settings['urban_rural'])])
+
+    # Checkbox settings (only save_detailed is supported as a flag)
+    # Note: --save-detailed is typically always wanted for Monte Carlo,
+    # so we add it in run_simulation() rather than here
+
+    return args
+
+
+def run_simulation(seed: int, output_dir: Path, config_file: str, num_dwellings: int,
+                   assign_dwelling_params: bool, extra_args: list) -> bool:
     """
     Run one simulation with given seed.
 
     Args:
         seed: Random seed for this iteration
         output_dir: Directory to save results
-        config_file: Path to dwellings configuration CSV
+        config_file: Path to dwellings configuration CSV (used if assign_dwelling_params=False)
+        num_dwellings: Number of dwellings (used if assign_dwelling_params=True)
+        assign_dwelling_params: If True, generate dwellings stochastically; if False, use config file
         extra_args: Additional command-line arguments to pass to main.py
 
     Returns:
@@ -51,11 +145,16 @@ def run_simulation(seed: int, output_dir: Path, config_file: str, extra_args: li
     cmd = [
         sys.executable,  # Use current Python interpreter
         str(get_python_main()),
-        '--config-file', str(config_file),
         '--save-detailed',  # CRITICAL: Save minute-level data
         '--output-dir', str(seed_dir),
         '--seed', str(seed)
     ]
+
+    # Dwelling configuration based on assign_dwelling_params setting
+    if assign_dwelling_params:
+        cmd.extend(['--num-dwellings', str(num_dwellings)])
+    else:
+        cmd.extend(['--config-file', str(config_file)])
 
     # Add any extra arguments
     cmd.extend(extra_args)
@@ -231,56 +330,99 @@ def extract_minute_data(seed_dir: Path, seed: int) -> pd.DataFrame:
 
 def main():
     """Run Monte Carlo simulations."""
-    # Parse command-line arguments
-    num_iterations = DEFAULT_ITERATIONS
-    config_file = DEFAULT_CONFIG
-    extra_args = []
-
-    if len(sys.argv) > 1:
-        try:
-            num_iterations = int(sys.argv[1])
-        except ValueError:
-            print(f"ERROR: First argument must be number of iterations, got: {sys.argv[1]}")
-            sys.exit(1)
-
-    if len(sys.argv) > 2:
-        config_file = sys.argv[2]
-
-    if len(sys.argv) > 3:
-        extra_args = sys.argv[3:]
-
-    # Change to project root
+    # Change to project root first
     project_root = get_project_root()
     import os
     os.chdir(project_root)
 
+    # Parse command-line arguments
+    num_iterations = DEFAULT_ITERATIONS
+    config_file = DEFAULT_CONFIG
+    excel_file = DEFAULT_EXCEL
+    extra_args = []
+    settings = {}
+
+    # Parse args manually to handle --excel flag
+    args = sys.argv[1:]
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg == '--excel' and i + 1 < len(args):
+            excel_file = args[i + 1]
+            i += 2
+        elif arg.startswith('--'):
+            # Pass through other flags as extra_args
+            if i + 1 < len(args) and not args[i + 1].startswith('--'):
+                extra_args.extend([arg, args[i + 1]])
+                i += 2
+            else:
+                extra_args.append(arg)
+                i += 1
+        elif i == 0:
+            # First positional arg is iterations
+            try:
+                num_iterations = int(arg)
+            except ValueError:
+                print(f"ERROR: First argument must be number of iterations, got: {arg}")
+                sys.exit(1)
+            i += 1
+        else:
+            # Additional positional args go to extra_args
+            extra_args.append(arg)
+            i += 1
+
     print("=" * 60)
     print("CREST Monte Carlo Runner")
     print("=" * 60)
+
+    # Load settings from Excel if specified
+    if excel_file:
+        excel_path = Path(excel_file)
+        if not excel_path.exists():
+            print(f"ERROR: Excel file not found: {excel_file}")
+            sys.exit(1)
+
+        settings, dwellings_path = load_excel_settings(excel_path)
+        if dwellings_path and dwellings_path.exists():
+            config_file = str(dwellings_path)
+
+        # Convert settings to command-line args (prepend so extra_args can override)
+        settings_args = settings_to_args(settings)
+        extra_args = settings_args + extra_args
+
+        print(f"Excel file:  {excel_file}")
+        print(f"  Day: {settings.get('day')}, Month: {settings.get('month')}")
+        print(f"  Lat: {settings.get('latitude')}, Lon: {settings.get('longitude')}")
+
     print(f"Iterations:  {num_iterations}")
-    print(f"Config file: {config_file}")
     if extra_args:
         print(f"Extra args:  {' '.join(extra_args)}")
     print()
 
-    # Check if config exists
+    # Get assign_dwelling_params from settings (defaults to True = stochastic)
+    assign_dwelling_params = settings.get('assign_dwelling_params', True)
     config_path = Path(config_file)
-    if not config_path.exists():
-        print(f"ERROR: Config file not found: {config_file}")
-        print("Available configs:")
-        excel_files = Path("excel/excel_files")
-        if excel_files.exists():
-            for f in excel_files.glob("*.csv"):
-                print(f"  - {f}")
-        sys.exit(1)
 
-    # Count number of dwellings
-    try:
-        df_config = pd.read_csv(config_path)
-        num_dwellings = len(df_config)
-    except Exception as e:
-        print(f"ERROR: Failed to read config file: {e}")
-        sys.exit(1)
+    # Determine num_dwellings based on assign_dwelling_params
+    if assign_dwelling_params:
+        # Stochastic mode: get num_dwellings from settings
+        num_dwellings = settings.get('num_dwellings', 1)
+        print(f"Mode: Stochastic dwelling assignment (num_dwellings={num_dwellings})")
+    else:
+        # Fixed config mode: count dwellings from config file
+        if not config_path.exists():
+            print(f"ERROR: Config file not found: {config_file}")
+            print("  assign_dwelling_params=False requires a valid config file")
+            print("\nTip: Use --excel to specify an Excel file to export and use:")
+            print(f"  python scripts/monte_carlo_run.py {num_iterations} --excel excel/your_file.xlsm")
+            sys.exit(1)
+        try:
+            df_config = pd.read_csv(config_path)
+            num_dwellings = len(df_config)
+        except Exception as e:
+            print(f"ERROR: Failed to read config file: {e}")
+            sys.exit(1)
+        print(f"Mode: Fixed dwelling config from {config_file} ({num_dwellings} dwellings)")
 
     # Create output directory with auto-incrementing number
     output_dir = create_output_dir(
@@ -307,7 +449,8 @@ def main():
             print(f"  Progress: {seed}/{num_iterations} ({successful_runs} OK, {failed_runs} failed)")
 
         seed_dir = output_dir / f"seed_{seed:03d}"
-        success = run_simulation(seed, output_dir, config_file, extra_args)
+        success = run_simulation(seed, output_dir, config_file, num_dwellings,
+                                 assign_dwelling_params, extra_args)
 
         if success:
             successful_runs += 1

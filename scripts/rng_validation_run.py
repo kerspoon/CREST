@@ -98,20 +98,27 @@ def main():
     print(f"  Dwellings: {settings.get('num_dwellings')}")
     print()
 
-    # Check if config exists
+    # Get assign_dwelling_params from settings (defaults to True = stochastic)
+    assign_dwelling_params = settings.get('assign_dwelling_params', True)
+    num_dwellings = settings.get('num_dwellings', 5)
     config_path = Path(config_file)
-    if not config_path.exists():
-        print(f"ERROR: Config file not found: {config_file}")
-        sys.exit(1)
+
+    # Check config file exists only if using fixed config
+    if not assign_dwelling_params:
+        if not config_path.exists():
+            print(f"ERROR: Config file not found: {config_file}")
+            print("  assign_dwelling_params=False requires a valid config file")
+            sys.exit(1)
+        print(f"Mode: Fixed dwelling config from {config_file}")
+    else:
+        print(f"Mode: Stochastic dwelling assignment (num_dwellings={num_dwellings})")
 
     # Create output directory
-    num_dwellings = settings.get('num_dwellings', 5)
     output_dir = create_output_dir(
         "rng_validation",
         prefix=f"python_{num_dwellings}houses"
     )
 
-    print(f"Config file: {config_file}")
     print(f"Output directory: {output_dir}")
     if extra_args:
         print(f"Extra args:  {' '.join(extra_args)}")
@@ -122,7 +129,6 @@ def main():
     cmd = [
         sys.executable,
         str(get_python_main()),
-        '--config-file', str(config_file),
         '--output-dir', str(output_dir),
         '--rng-log-file', str(rng_log_path),  # CRITICAL: Enable portable LCG + log all RNG calls
         '--seed', '42',  # Fixed seed for reproducibility (overriding Excel since it doesn't save seed)
@@ -134,6 +140,16 @@ def main():
         '--country', str(settings.get('country', 'UK')),
         '--city', str(settings.get('city', 'England')),
     ]
+
+    # Dwelling configuration based on assign_dwelling_params setting
+    if assign_dwelling_params:
+        cmd.extend(['--num-dwellings', str(num_dwellings)])
+    else:
+        cmd.extend(['--config-file', str(config_file)])
+
+    # Add --weekend if weekday setting is 'we'
+    if settings.get('weekday', 'wd').lower() == 'we':
+        cmd.append('--weekend')
 
     # Add --save-detailed if enabled in settings
     if settings.get('save_detailed', True):

@@ -1,0 +1,21 @@
+{
+  "day": 1,
+  "month": 1,
+  "weekday": "wd",
+  "latitude": 53.4794892,
+  "longitude": -2.2451148,
+  "meridian": 0.0,
+  "city": "England",
+  "country": "UK",
+  "year": 2019,
+  "urban_rural": "Urban",
+  "num_dwellings": 2,
+  "seed": null,
+  "assign_dwelling_params": true,
+  "save_detailed": true,
+  "save_daily_totals": true,
+  "overwrite_data": true,
+  "pv_enabled": true,
+  "daylight_saving": true,
+  "use_portable_rng": false
+}

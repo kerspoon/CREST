@@ -614,6 +614,24 @@ def main():
         default=None,
         help="Log all RNG calls to this file (enables portable LCG and debug mode automatically)"
     )
+    parser.add_argument(
+        "--latitude",
+        type=float,
+        default=None,
+        help="Latitude in degrees (default: 52.77 Loughborough UK). Excel lcg_fixed uses 53.4794892 (Manchester)."
+    )
+    parser.add_argument(
+        "--longitude",
+        type=float,
+        default=None,
+        help="Longitude in degrees (default: -1.26 Loughborough UK). Excel lcg_fixed uses -2.2451148 (Manchester)."
+    )
+    parser.add_argument(
+        "--meridian",
+        type=float,
+        default=0.0,
+        help="Local standard time meridian in degrees (default: 0.0 for UK/Greenwich)"
+    )
 
     args = parser.parse_args()
 
@@ -693,7 +711,10 @@ def main():
     climate_config = ClimateConfig(
         day_of_month=args.day,
         month_of_year=args.month,
-        city=city
+        city=city,
+        latitude=args.latitude if args.latitude is not None else 52.77,
+        longitude=args.longitude if args.longitude is not None else -1.26,
+        meridian=args.meridian
     )
     # Pass the global RNG for reproducible climate generation
     global_climate = GlobalClimate(climate_config, data_loader, rng_module.get_rng())

@@ -268,7 +268,8 @@ class Lighting:
                 # VBA: Get the irradiance for this minute (lines 162-163)
                 # intIrradiance = aLocalClimate(intRunNumber).GetG_o(intTime)
                 # Note: VBA intTime is 1-based, GetG_o expects 1-based
-                irradiance = self.local_climate.get_irradiance(minute + 1)
+                # VBA uses Integer for intIrradiance, which rounds float to int
+                irradiance = round(self.local_climate.get_irradiance(minute + 1))
 
                 # VBA: Get active occupants (lines 165-167)
                 # intActiveOccupants = intActiveOccupancy(((intTime - 1) \ 10), 0)
@@ -301,6 +302,7 @@ class Lighting:
                 rand_val = self.rng.random()
                 threshold = effective_occ * calibrated_relative_use
                 rand_switch = rand_val < threshold
+
                 if low_irradiance and rand_switch:
 
                     # VBA: This is a switch on event (line 181)

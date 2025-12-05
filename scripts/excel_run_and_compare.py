@@ -66,52 +66,41 @@ def export_excel_file(excel_path: Path, export_dir: Path) -> bool:
         return False
 
 
-def extract_run_settings(excel_path: Path) -> dict:
+def extract_run_settings(export_dir: Path) -> dict:
     """
-    Extract run settings from Excel Main Sheet.
+    Load run settings from exported simulation_settings.json.
+
+    The export_excel.py script now saves settings to simulation_settings.json,
+    so we just need to read that file.
 
     Args:
-        excel_path: Path to .xlsm file
+        export_dir: Directory containing exported Excel data (with simulation_settings.json)
 
     Returns:
         Dictionary of settings
     """
     print(f"\n{'='*60}")
-    print(f"STEP 2: Extracting run settings")
+    print(f"STEP 2: Loading run settings")
     print(f"{'='*60}")
 
-    cmd = [
-        sys.executable,
-        'scripts/extract_settings.py',
-        str(excel_path),
-        '--format', 'json'
-    ]
+    settings_file = export_dir / 'simulation_settings.json'
+
+    if not settings_file.exists():
+        print(f"WARNING: Settings file not found: {settings_file}")
+        return {}
 
     try:
-        result = subprocess.run(cmd, check=True, capture_output=True, text=True)
-        # Parse JSON output
-        import json
-        # Extract JSON from output (after the debug prints)
-        lines = result.stdout.strip().split('\n')
-        # Find the JSON block (between === markers)
-        json_start = None
-        for i, line in enumerate(lines):
-            if line.strip().startswith('{'):
-                json_start = i
-                break
+        with open(settings_file, 'r') as f:
+            settings = json.load(f)
 
-        if json_start is not None:
-            json_str = '\n'.join(lines[json_start:])
-            # Remove trailing === if present
-            json_str = json_str.split('=====')[0].strip()
-            settings = json.loads(json_str)
-            return settings
-        else:
-            print("WARNING: Could not parse settings JSON")
-            return {}
+        print(f"Loaded settings from: {settings_file}")
+        for key, value in sorted(settings.items()):
+            print(f"  {key:20} = {value}")
+
+        return settings
 
     except Exception as e:
-        print(f"ERROR: Failed to extract settings: {e}")
+        print(f"ERROR: Failed to load settings: {e}")
         import traceback
         traceback.print_exc()
         return {}
@@ -123,7 +112,7 @@ def run_python_simulation(settings: dict, dwellings_file: Path, output_dir: Path
 
     Args:
         settings: Run settings from Excel
-        dwellings_file: Path to Dwellings.csv
+        dwellings_file: Path to Dwellings.csv (used if assign_dwelling_params=False)
         output_dir: Output directory
 
     Returns:
@@ -136,10 +125,19 @@ def run_python_simulation(settings: dict, dwellings_file: Path, output_dir: Path
     cmd = [
         sys.executable,
         str(get_python_main()),
-        '--config-file', str(dwellings_file),
         '--output-dir', str(output_dir),
-        '--save-detailed'
     ]
+
+    # Dwelling configuration: either stochastic or from config file
+    # assign_dwelling_params=True: Generate dwellings stochastically (use --num-dwellings)
+    # assign_dwelling_params=False: Use fixed config from Dwellings.csv (use --config-file)
+    if settings.get('assign_dwelling_params', True):
+        num_dwellings = settings.get('num_dwellings', 1)
+        cmd.extend(['--num-dwellings', str(num_dwellings)])
+        print(f"  Mode: Stochastic dwelling assignment (--num-dwellings {num_dwellings})")
+    else:
+        cmd.extend(['--config-file', str(dwellings_file)])
+        print(f"  Mode: Fixed dwelling config (--config-file {dwellings_file})")
 
     # Add settings as command-line arguments
     if 'day' in settings:
@@ -147,6 +145,10 @@ def run_python_simulation(settings: dict, dwellings_file: Path, output_dir: Path
 
     if 'month' in settings:
         cmd.extend(['--month', str(settings['month'])])
+
+    # Weekend flag based on weekday setting
+    if settings.get('weekday', 'wd').lower() == 'we':
+        cmd.append('--weekend')
 
     if 'year' in settings and settings.get('country') == 'India':
         cmd.extend(['--year', str(settings['year'])])
@@ -160,11 +162,26 @@ def run_python_simulation(settings: dict, dwellings_file: Path, output_dir: Path
     if 'urban_rural' in settings:
         cmd.extend(['--urban-rural', settings['urban_rural']])
 
+    # Location settings (latitude, longitude, meridian)
+    if 'latitude' in settings:
+        cmd.extend(['--latitude', str(settings['latitude'])])
+
+    if 'longitude' in settings:
+        cmd.extend(['--longitude', str(settings['longitude'])])
+
+    if 'meridian' in settings:
+        cmd.extend(['--meridian', str(settings['meridian'])])
+
     if 'seed' in settings and settings['seed'] is not None:
         cmd.extend(['--seed', str(settings['seed'])])
 
     if settings.get('use_portable_rng', False):
         cmd.append('--portable-rng')
+
+    # Checkbox settings
+    # save_detailed (objDynamicOutput) - Include high-resolution dynamic output
+    if settings.get('save_detailed', True):
+        cmd.append('--save-detailed')
 
     print(f"\nCommand: {' '.join(cmd)}")
     print()
@@ -389,10 +406,10 @@ def main():
         print(f"\nExport directory already exists: {export_dir}")
         print(f"Using existing exports (use --force-export to re-export)")
 
-    # Step 2: Extract settings
-    settings = extract_run_settings(args.excel_file)
+    # Step 2: Load settings (from simulation_settings.json created by export_excel.py)
+    settings = extract_run_settings(export_dir)
     if not settings:
-        print("\nWARNING: No settings extracted, using defaults")
+        print("\nWARNING: No settings loaded, using defaults")
         settings = {}
 
     # Find Dwellings.csv
