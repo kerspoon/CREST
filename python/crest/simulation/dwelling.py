@@ -152,6 +152,7 @@ class Dwelling:
             validation_logger=validation_logger
         )
         self.appliances.set_occupancy(self.occupancy)
+        self.appliances.set_heating_system(self.heating_system)
         self.building.set_appliances(self.appliances)
 
         # Create lighting
@@ -197,6 +198,7 @@ class Dwelling:
                 solar_thermal_index=config.solar_thermal_index
             )
             self.building.set_solar_thermal(self.solar_thermal)
+            self.appliances.set_solar_thermal(self.solar_thermal)
         else:
             self.solar_thermal = None
 
@@ -214,6 +216,7 @@ class Dwelling:
                 cooling_system_index=config.cooling_system_index
             )
             self.building.set_cooling_system(self.cooling_system)
+            self.appliances.set_cooling_system(self.cooling_system)
         else:
             self.cooling_system = None
 

@@ -373,10 +373,13 @@ class ResultsWriter:
             appliance_w = dwelling.appliances.get_total_demand(minute)
 
             # Calculate net electricity demand
+            # Note: appliance_w already includes heating/cooling/solar pump electricity (matching VBA TotalApplianceDemand)
             pv_output_w = dwelling.pv_system.get_pv_output(minute) if dwelling.pv_system else 0.0
             heating_elec_w = dwelling.heating_system.get_heating_system_power_demand(minute)
             cooling_elec_w = dwelling.cooling_system.get_cooling_system_power_demand(minute) if dwelling.cooling_system else 0.0
-            net_elec_w = lighting_w + appliance_w + heating_elec_w + cooling_elec_w - pv_output_w
+            # VBA: aP_net = dblTotalApplianceDemand + dblTotalLightingDemand - aP_pv
+            # Don't add heating_elec_w/cooling_elec_w separately - they're already in appliance_w
+            net_elec_w = lighting_w + appliance_w - pv_output_w
 
             # Collect all 40 variables (matching Excel column order exactly)
             # Arrays MUST be length 1440 - will crash with IndexError if not

@@ -1,7 +1,7 @@
 # RNG Divergence Investigation
 
 **Date**: 2025-12-05
-**Status**: RNG synchronized, temperature bug FIXED, appliance issue under investigation
+**Status**: RNG synchronized, temperature bug FIXED, appliance demand bug FIXED
 
 ## Summary
 
@@ -120,23 +120,40 @@ Minute 1 temperatures now match:
 | Lighting demand | 1.9361 kWh | 1.9361 kWh | ✓ Match |
 | Hot water demand | 52 L | 52 L | ✓ Match |
 | Thermostat setpoint | 17°C | 17°C | ✓ Match |
-| Appliance demand | 10.34 kWh | 10.71 kWh | ~0.37 kWh diff |
+| Appliance demand | 10.68 kWh | 10.71 kWh | ✓ ~0.03 kWh diff (fixed) |
 | PV output | 3.10 kWh | 2.39 kWh | ~0.71 kWh diff |
 | Indoor temp (avg) | 17.40°C | 16.65°C | ~0.75°C diff |
 
-### Remaining Issue: Appliance Ownership
+### 6. Appliance Total Demand Missing Heating/Cooling Electricity (FIXED 2025-12-05)
 
-The appliance standby power differs (Python: 50W vs Excel: 60W at minute 1).
+In `dwelling.py`, the Appliances object wasn't connected to heating/cooling/solar_thermal systems, so `calculate_total_demand()` didn't include their electricity usage.
 
-**Root cause identified**: The validation logging shows mismatched dwelling indices:
-- Python's dwelling_params.log for "dwelling 1" contains RNG values from call #137510+
-- But the first appliance ownership RNG calls (at #75536) match Excel dwelling 1's values
+**Root cause**: `Dwelling.__init__` called `building.set_heating_system()` but not `appliances.set_heating_system()`. The `calculate_total_demand()` method checks `if self.heating_system is not None` before adding heating electricity, but `self.heating_system` was always `None`.
 
-This suggests either:
-1. A bug in the validation logger's dwelling index
-2. Or the dwellings are being processed in different order
+**Fix applied** in `python/crest/simulation/dwelling.py`:
+```python
+# Added after creating appliances:
+self.appliances.set_heating_system(self.heating_system)
 
-The actual RNG values at calls #75536-75566 match Excel dwelling 1 exactly, so the RNG synchronization is correct. The issue is in how the simulation uses those values.
+# Added after creating solar_thermal (if any):
+self.appliances.set_solar_thermal(self.solar_thermal)
+
+# Added after creating cooling_system (if any):
+self.appliances.set_cooling_system(self.cooling_system)
+```
+
+**Also fixed** in `python/crest/output/writer.py` - removed double-counting of heating/cooling electricity in net demand calculation:
+```python
+# Before (wrong - double-counted heating/cooling):
+net_elec_w = lighting_w + appliance_w + heating_elec_w + cooling_elec_w - pv_output_w
+
+# After (correct - appliance_w already includes heating/cooling):
+net_elec_w = lighting_w + appliance_w - pv_output_w
+```
+
+**Impact**:
+- Before fix: Pa=50W at minute 1, Appliance demand=10.34 kWh/day
+- After fix: Pa=60W at minute 1, Appliance demand=10.68 kWh/day (matches Excel 10.71 kWh)
 
 ## Technical Details
 
@@ -164,6 +181,7 @@ VBA looks up by index column value. Python now correctly converts 1-based indice
 
 ## Next Steps
 
-1. Investigate the appliance ownership logging/dwelling index issue
-2. Verify PV output calculation matches after temperature fix
-3. Run comparison for other months to ensure the monthly temperature fix works across all months
+1. ~~Investigate the appliance ownership logging/dwelling index issue~~ **DONE** - Was actually a missing system reference bug
+2. Investigate PV output difference (~0.71 kWh Python vs Excel)
+3. Investigate indoor temperature difference (~0.75°C Python vs Excel)
+4. Run comparison for other months to ensure the monthly temperature fix works across all months
