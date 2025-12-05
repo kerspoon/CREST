@@ -244,8 +244,9 @@ class CRESTDataLoader:
         space_heating.columns = ['temperature', 'probability']
         space_heating = space_heating.reset_index(drop=True)
 
-        # Extract hot water setpoints (rows 24-35, columns 0-1)
-        hot_water = df.iloc[24:36, 0:2].copy()
+        # Extract hot water setpoints (rows 23-34 in 0-based, = lines 24-35 in file)
+        # CSV line 24 = 42°C (first entry), line 35 = 62°C (last entry)
+        hot_water = df.iloc[23:35, 0:2].copy()
         hot_water.columns = ['temperature', 'probability']
         hot_water = hot_water.reset_index(drop=True)
 

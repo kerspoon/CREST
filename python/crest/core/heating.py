@@ -83,7 +83,7 @@ class HeatingSystem:
         self.phi_h_output = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Total heat output (W)
         self.phi_h_water = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Heat to hot water (W)
         self.phi_h_space = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Heat to space (W)
-        self.m_fuel = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Fuel flow rate (m³/min for gas)
+        self.m_fuel = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Fuel flow rate (m³/h for gas)
         self.heating_electricity = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Electricity for heating (W)
         self.p_h = np.zeros(TIMESTEPS_PER_DAY_1MIN)  # Pump/standby electricity (W)
 
@@ -222,6 +222,17 @@ class HeatingSystem:
     def get_daily_fuel_consumption(self) -> float:
         """Get total daily fuel consumption (m³ for gas)."""
         return np.sum(self.m_fuel)
+
+    def get_heating_electricity(self, timestep: int) -> float:
+        """
+        Get heating electricity at specified timestep (1-based) in Watts.
+
+        This returns ONLY the electricity used for electric heating systems,
+        NOT including pump power. For gas systems (index 1-3), this is always 0.
+
+        VBA Reference: aHeatingElectricity array written to column AN
+        """
+        return self.heating_electricity[timestep - 1]
 
     def get_daily_heating_electricity(self) -> float:
         """Get total daily heating electricity (W·min, VBA units)."""

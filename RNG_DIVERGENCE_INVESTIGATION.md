@@ -1,187 +1,152 @@
 # RNG Divergence Investigation
 
 **Date**: 2025-12-05
-**Status**: RNG synchronized, temperature bug FIXED, appliance demand bug FIXED
+**Status**: RNG synchronized, fixing output discrepancies
 
-## Summary
+## Overview
 
-All RNG-related bugs have been fixed. Python and VBA now produce identical RNG call sequences (156,068 calls matching perfectly). Dwelling parameters match between implementations.
+Python and VBA now produce identical RNG call sequences (156,068 calls matching, giving the same random numbers to many decimal places - within 1e-10 tolerance - and being called from equivalent places in the same order the same number of times). The results for both are now deterministic and should give identical output on `lcg_fixed`.
 
-## Fixes Applied (Python only - no VBA changes)
+But there are errors, mostly with how we read in the data files.
 
-### 1. Index Lookup Bugs (1-based to 0-based conversion)
+## Common Bug Patterns 
 
-All dwelling config indices use `value_offset=1` in selection, making them 1-based. But CSV lookups were using `.iloc[]` directly without subtracting 1.
+These specific examples have been fixed but there is likely more like this.
 
-| File | Line | Fix Applied |
-|------|------|-------------|
-| `controls.py` | 73 | `heating_systems.iloc[config.heating_system_index - 1]` |
-| `controls.py` | 90 | `cooling_systems.iloc[config.cooling_system_index - 1]` |
-| `controls.py` | 202 | `buildings_data.iloc[self.config.building_index - 1]` |
-| `building.py` | 69 | `buildings_data.iloc[config.building_index - 1]` |
-| `building.py` | 96 | `heating_systems_data.iloc[config.heating_system_index - 1]` |
-| `heating.py` | 60 | `heating_systems.iloc[config.heating_system_index - 1]` |
-| `water.py` | 94 | `heating_systems.iloc[config.heating_system_index - 1]` |
+### 1. Index Off-by-One Errors (1-based vs 0-based)
 
-### 2. get_heating_type() Bug
+Dwelling config indices use `value_offset=1` in selection, making them 1-based. But CSV lookups were using `.iloc[]` directly without subtracting 1.
 
-In `loader.py`, the `get_heating_type()` function had incorrect row indexing:
+Examples fixed:
+- `controls.py`: `heating_systems.iloc[config.heating_system_index - 1]`
+- `building.py`: `buildings_data.iloc[config.building_index - 1]`
+- `loader.py`: `get_heating_type()` had incorrect row indexing
+
+### 2. CSV Row Indexing Errors
+
+Row indices in pandas (0-based) vs file line numbers (1-based) cause confusion.
+
+Examples fixed:
+- `climate.py`: Monthly temperature loaded with `range(2, 14)` instead of `range(1, 13)`
+- `loader.py`: Hot water thermostat settings used `iloc[24:36]` instead of `iloc[23:35]`
+
+### 3. Unit Conversion Errors
+
+- `writer.py`: FuelRate was multiplied by 60 (m_fuel is already in m³/h, not m³/min)
+
+### 4. Missing Component Connections
+
+- `dwelling.py`: Appliances object wasn't connected to heating/cooling/solar_thermal systems, so `calculate_total_demand()` missed their electricity usage
+
+## Validation Process
+
+### Step 1: Run validation scripts
+
+```bash
+# Run Python simulation with validation logging
+venv/bin/python3 scripts/rng_validation_run.py --validation-log
+
+# Compare dwelling parameters
+venv/bin/python3 scripts/rng_compare_params.py output/rng_validation/python_2houses_YYYYMMDD_XX/ output/rng_validation/excel_2houses_20251205_01/
+
+# Compare RNG call sequences
+venv/bin/python3 scripts/rng_log_compare.py output/rng_validation/python_2houses_YYYYMMDD_XX/ output/rng_validation/excel_2houses_20251205_01/
+```
+
+### Step 2: Compare minute-level output
+
+Compare `results_minute_level.csv` (Python) with `Results - disaggregated.csv` (Excel).
+
+**Note**: Row numbers differ - Python data starts row 5, Excel starts row 7 (Excel has 2 blank lines at start).
 
 ```python
-# Before (wrong)
-row_idx = 3 + heating_index
-return int(df.iloc[row_idx, 3])
-
-# After (correct)
-row_idx = heating_index - 1
-return int(df.iloc[row_idx]['1 = regular, 2 = combi'])
+# Load both files
+python_df = pd.read_csv('output/.../results_minute_level.csv', skiprows=[0,2,3])
+excel_df = pd.read_csv('excel/lcg_fixed/Results - disaggregated.csv', skiprows=[0,1,2,4,5])
 ```
 
-### 3. Selection Logic Bug
+### Step 3: Identify discrepancies
 
-In `main.py`, `_select_from_distribution()` didn't handle cases where probabilities don't sum to 1.0 (e.g., solar thermal with 50% coverage):
+For each column, compare Python vs Excel values:
+- Start with minute 1, dwelling 1
+- Check which columns have different data
+- Investigate the root cause
+- Fix and re-run validation
+- Repeat through all minutes
 
-```python
-# Added handling for when rand >= total probability
-if index >= len(proportions):
-    # No match found - VBA returns 0 (default uninitialized Long value)
-    return 0
-```
+## Current Status
 
-### 4. Monthly Temperature Index Bug (FIXED 2025-12-05)
+### Matching ✓
+- RNG sequences (156,068 calls)
+- Dwelling parameters (residents, building, heating, pv, solar, cooling indices)
+- Occupancy and activity states
+- Lighting demand
+- Hot water demand (litres)
+- Outdoor temperature
+- FuelRate (after fix)
 
-In `climate.py`, monthly temperature data was loaded from wrong row indices:
+### Issues Fixed (2025-12-05)
 
-```python
-# Before (wrong) - loaded Feb-Dec data for Jan-Nov
-for month_idx in range(2, 14):  # Rows 2-13 - WRONG
+#### Issue #1: Heat Gains Ratio Column Index - FIXED
 
-# After (correct) - loads Jan-Dec data correctly
-for month_idx in range(1, 13):  # Rows 1-12 - CORRECT
-```
+**Symptom:** Casual thermal gains Python=132.2 W, Excel=129.6 W (diff=2.6 W)
 
-**Impact**: Python was using February's mean temperature (3.7°C) for January instead of the correct value (3.3°C), causing a constant 0.4°C offset in all temperature calculations.
+**Root cause:** Python was loading heat_gains_ratio from wrong CSV column.
+- Python used `iloc[31]` ("Appliance mean power factor")
+- VBA uses column AG = `iloc[32]` ("Heat gains ratio for casual thermal gains")
 
-### 5. Overnight Clearness Division Bug (FIXED 2025-12-05)
+**Fix:** `appliances.py` line 189 - changed from `row.iloc[31]` to `row.iloc[32]`
 
-In `climate.py`, the overnight mean clearness calculation divided by `count` instead of `di`:
+**Verification:** After fix, first 60 minutes of dwelling 1 match exactly (129.60 W)
 
-```python
-# Before (wrong)
-overnight_mean_clearness /= count  # Number of values summed
+#### Issue #2: Electricity Used by Heating System - FIXED
 
-# After (correct - matching VBA)
-overnight_mean_clearness /= di  # Darkness duration in minutes
-```
+**Symptom:** Python=10.0 W, Excel=0.0 W at minute 0
 
-### Files Already Correct (had -1 adjustment)
+**Root cause:** Python output included pump power (`p_h`), but VBA only writes `aHeatingElectricity`.
+- VBA: `WriteHeatingSystem` writes only `aHeatingElectricity` to column AN
+- Python: `get_heating_system_power_demand()` returns `p_h + heating_electricity`
 
-- `python/crest/core/pv.py` line 171
-- `python/crest/core/solar_thermal.py` line 203
-- `python/crest/core/cooling.py` line 138
+For gas heating systems (index 1-3), `aHeatingElectricity` is always 0. The 10W was pump power.
 
-## Verification Results
+**Fix:**
+- Added `get_heating_electricity(timestep)` method to `heating.py`
+- Updated `writer.py` to use `get_heating_electricity()` instead of `get_heating_system_power_demand()`
 
-### RNG Call Matching
+**Verification:** After fix, heating electricity shows 0.0 W (matches Excel)
 
-```
-Excel calls:  156,068
-Python calls: 156,068
-All values match: True (within 1e-10 tolerance)
-```
+### Column Index Reference
 
-### Dwelling Parameters Match
+These are the correct column indices (0-based) for AppliancesAndWaterFixtures.csv:
 
-```
-Dwelling 1:
-  Python: residents=1 building=4 heating=1 pv=2 solar=2 cooling=1
-  Excel:  residents=1 building=4 heating=1 pv=2 solar=2 cooling=1 ✓
+| Column | Index | Description |
+|--------|-------|-------------|
+| E | 4 | Short name |
+| F | 5 | Proportion of dwellings with appliance |
+| G | 6 | Activity use profile |
+| P | 15 | Mean cycle power (W) |
+| R | 17 | Mean cycle length (min) |
+| S | 18 | Restart delay (min) |
+| T | 19 | Standby power (W) |
+| AD | 29 | Probability of switch on |
+| AF | 31 | Appliance mean power factor (NOT heat gains!) |
+| AG | 32 | Heat gains ratio (for casual thermal gains) |
 
-Dwelling 2:
-  Python: residents=2 building=1 heating=1 pv=2 solar=0 cooling=1
-  Excel:  residents=2 building=1 heating=1 pv=2 solar=0 cooling=1 ✓
-```
+### Current Status
 
-## Output Comparison Results
+**Matching ✓**
+- RNG sequences (156,068 calls)
+- Dwelling parameters
+- Occupancy and activity states
+- Lighting demand
+- Hot water demand
+- Outdoor temperature
+- FuelRate
+- Casual thermal gains (first 60 minutes verified)
+- Electricity used by heating system
 
-### After Temperature Fix (2025-12-05)
+**Remaining discrepancies in later minutes:**
+Large differences (~100-160 W) appear in dwelling 2 during active periods. This is likely due to:
+1. Different appliance switching behavior (needs further investigation)
+2. Different lighting switch-on counts
 
-Minute 1 temperatures now match:
-- Python: 3.839146°C
-- Excel: 3.839146°C
-- Difference: ~6e-14 (floating point precision)
-
-### Daily Summary - Dwelling 1
-
-| Field | Python | Excel | Status |
-|-------|--------|-------|--------|
-| Mean active occupancy | 0.4236 | 0.4236 | ✓ Match |
-| Proportion occupied | 0.4236 | 0.4236 | ✓ Match |
-| Lighting demand | 1.9361 kWh | 1.9361 kWh | ✓ Match |
-| Hot water demand | 52 L | 52 L | ✓ Match |
-| Thermostat setpoint | 17°C | 17°C | ✓ Match |
-| Appliance demand | 10.68 kWh | 10.71 kWh | ✓ ~0.03 kWh diff (fixed) |
-| PV output | 3.10 kWh | 2.39 kWh | ~0.71 kWh diff |
-| Indoor temp (avg) | 17.40°C | 16.65°C | ~0.75°C diff |
-
-### 6. Appliance Total Demand Missing Heating/Cooling Electricity (FIXED 2025-12-05)
-
-In `dwelling.py`, the Appliances object wasn't connected to heating/cooling/solar_thermal systems, so `calculate_total_demand()` didn't include their electricity usage.
-
-**Root cause**: `Dwelling.__init__` called `building.set_heating_system()` but not `appliances.set_heating_system()`. The `calculate_total_demand()` method checks `if self.heating_system is not None` before adding heating electricity, but `self.heating_system` was always `None`.
-
-**Fix applied** in `python/crest/simulation/dwelling.py`:
-```python
-# Added after creating appliances:
-self.appliances.set_heating_system(self.heating_system)
-
-# Added after creating solar_thermal (if any):
-self.appliances.set_solar_thermal(self.solar_thermal)
-
-# Added after creating cooling_system (if any):
-self.appliances.set_cooling_system(self.cooling_system)
-```
-
-**Also fixed** in `python/crest/output/writer.py` - removed double-counting of heating/cooling electricity in net demand calculation:
-```python
-# Before (wrong - double-counted heating/cooling):
-net_elec_w = lighting_w + appliance_w + heating_elec_w + cooling_elec_w - pv_output_w
-
-# After (correct - appliance_w already includes heating/cooling):
-net_elec_w = lighting_w + appliance_w - pv_output_w
-```
-
-**Impact**:
-- Before fix: Pa=50W at minute 1, Appliance demand=10.34 kWh/day
-- After fix: Pa=60W at minute 1, Appliance demand=10.68 kWh/day (matches Excel 10.71 kWh)
-
-## Technical Details
-
-### Root Cause of Original Bug
-
-The cooling system type lookup was the most critical bug because it affected RNG consumption:
-
-- `cooling_system_type > 1` triggers the cooling timer Markov chain (48 RNG calls)
-- Wrong lookup caused Python to run/skip this loop differently than VBA
-- This shifted all subsequent RNG values, causing complete divergence
-
-### CSV Index Structure
-
-All dwelling parameter CSVs use 1-based indices in the first column:
-
-| CSV | Index Column |
-|-----|--------------|
-| CoolingSystems.csv | "Primary heating system index" |
-| PrimaryHeatingSystems.csv | "Primary heating system index" |
-| Buildings.csv | "Building index" |
-| SolarThermalSystems.csv | "Solar thermal system index" |
-| ClimateData&CoolingTech.csv | Row 1 = Jan, Row 2 = Feb, etc. |
-
-VBA looks up by index column value. Python now correctly converts 1-based indices to 0-based for pandas iloc.
-
-## Next Steps
-
-1. ~~Investigate the appliance ownership logging/dwelling index issue~~ **DONE** - Was actually a missing system reference bug
-2. Investigate PV output difference (~0.71 kWh Python vs Excel)
-3. Investigate indoor temperature difference (~0.75°C Python vs Excel)
-4. Run comparison for other months to ensure the monthly temperature fix works across all months

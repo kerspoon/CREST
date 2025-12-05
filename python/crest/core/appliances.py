@@ -183,8 +183,10 @@ class Appliances:
                 restart_delay = int(float(row.iloc[18])) if len(row) > 18 else 0
                 standby_power = int(float(row.iloc[19])) if len(row) > 19 else 0
                 prob_switch_on = float(row.iloc[29]) if len(row) > 29 else 0.01
-                # BUG FIX: Excel column AF (32nd, 1-based) = pandas iloc[31] (0-based), not iloc[32]
-                heat_gains_ratio = float(row.iloc[31]) if len(row) > 31 else 0.8
+                # Heat gains ratio is in Excel column AG (33rd, 1-based) = pandas iloc[32] (0-based)
+                # Headers: Row 4 col[32]="Heat gains ratio", Row 5 col[32]="(for casual", Row 6 col[32]="thermal gains)"
+                # NOT column 31 which is "Appliance mean power factor"
+                heat_gains_ratio = float(row.iloc[32]) if len(row) > 32 else 0.8
 
                 self.appliances.append(ApplianceSpec(
                     name=appliance_name,

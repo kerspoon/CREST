@@ -375,7 +375,10 @@ class ResultsWriter:
             # Calculate net electricity demand
             # Note: appliance_w already includes heating/cooling/solar pump electricity (matching VBA TotalApplianceDemand)
             pv_output_w = dwelling.pv_system.get_pv_output(minute) if dwelling.pv_system else 0.0
-            heating_elec_w = dwelling.heating_system.get_heating_system_power_demand(minute)
+            # VBA writes aHeatingElectricity to column AN (not including pump power aP_h)
+            # get_heating_system_power_demand = aP_h + aHeatingElectricity (used for appliance total)
+            # But output column should be ONLY aHeatingElectricity
+            heating_elec_w = dwelling.heating_system.get_heating_electricity(minute)
             cooling_elec_w = dwelling.cooling_system.get_cooling_system_power_demand(minute) if dwelling.cooling_system else 0.0
             # VBA: aP_net = dblTotalApplianceDemand + dblTotalLightingDemand - aP_pv
             # Don't add heating_elec_w/cooling_elec_w separately - they're already in appliance_w
@@ -410,7 +413,7 @@ class ResultsWriter:
                 net_elec_w,                                          # 24. Net electricity demand (W)
                 dwelling.heating_system.phi_h_space[idx],            # 25. Space heating (W)
                 dwelling.heating_system.phi_h_water[idx],            # 26. Water heating (W)
-                dwelling.heating_system.m_fuel[idx] * 60.0,          # 27. Gas flow (m³/h, convert from m³/min)
+                dwelling.heating_system.m_fuel[idx],                  # 27. Gas flow (m³/h)
                 solar_collector_power[idx],                          # 28. Solar collector power (W)
                 int(solar_collector_state[idx]),                     # 29. Solar collector state
                 solar_collector_temp[idx],                           # 30. Solar collector temp (°C)
