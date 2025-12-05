@@ -91,7 +91,7 @@ class HotWater:
             self.h_loss = 2.0
             v_cyl = 150.0
         else:
-            heating_params = heating_systems.iloc[config.heating_system_index]
+            heating_params = heating_systems.iloc[config.heating_system_index - 1]
             try:
                 self.h_loss = heating_params['H_loss']
                 v_cyl = heating_params['V_cyl']

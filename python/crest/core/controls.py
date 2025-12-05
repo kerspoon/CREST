@@ -70,7 +70,7 @@ class HeatingControls:
         # Load heating system type (determines hot water control logic - strict mode)
         heating_systems = data_loader.load_primary_heating_systems()
         if config.heating_system_index < len(heating_systems):
-            heating_params = heating_systems.iloc[config.heating_system_index]
+            heating_params = heating_systems.iloc[config.heating_system_index -1]
             try:
                 # Column name from CSV row 2 symbols
                 self.heating_system_type = int(heating_params['1 = regular, 2 = combi'])
@@ -87,7 +87,7 @@ class HeatingControls:
         if config.cooling_system_index >= 0:
             cooling_systems = data_loader.load_cooling_systems()
             if config.cooling_system_index < len(cooling_systems):
-                cooling_params = cooling_systems.iloc[config.cooling_system_index]
+                cooling_params = cooling_systems.iloc[config.cooling_system_index -1]
                 try:
                     # Column name from CSV - cooling systems use 'Type of system'
                     self.cooling_system_type = int(cooling_params['Type of system'])
@@ -199,7 +199,7 @@ class HeatingControls:
         # Emitter setpoints from Buildings.csv (VBA lines 197, 200)
         buildings_data = self.data_loader.load_buildings()
         if self.config.building_index < len(buildings_data):
-            building_params = buildings_data.iloc[self.config.building_index]
+            building_params = buildings_data.iloc[self.config.building_index - 1]
             self.emitter_setpoint = float(building_params['theta_em'])
             self.cooler_emitter_setpoint = float(building_params['theta_cool'])
         else:

@@ -57,7 +57,7 @@ class HeatingSystem:
         if config.heating_system_index >= len(heating_systems):
             raise ValueError(f"Heating system index {config.heating_system_index} out of range")
 
-        heating_params = heating_systems.iloc[config.heating_system_index]
+        heating_params = heating_systems.iloc[config.heating_system_index - 1]
 
         # System parameters (strict mode - crash if columns missing)
         # Column names are symbols from CSV row 2 (after skiprows processing)

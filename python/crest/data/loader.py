@@ -525,10 +525,11 @@ class CRESTDataLoader:
             Heating system type code (1=regular, 2=combi, 4=no heating, 5=electric water heater)
         """
         df = self.load_primary_heating_systems()
-        # Skip header rows (4), then get the type from the appropriate row
-        # Column D (index 3) contains the "Type of system" (1=regular, 2=combi, etc.)
-        row_idx = 3 + heating_index  # 4 header rows, then 0-based indexing
-        return int(df.iloc[row_idx, 3])
+        # DataFrame already has headers skipped via load_primary_heating_systems()
+        # Column '1 = regular, 2 = combi' contains the type code
+        # heating_index is 1-based, convert to 0-based for iloc
+        row_idx = heating_index - 1
+        return int(df.iloc[row_idx]['1 = regular, 2 = combi'])
 
 
 # Singleton instance for convenience

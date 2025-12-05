@@ -66,7 +66,7 @@ class Building:
         if config.building_index >= len(buildings_data):
             raise ValueError(f"Building index {config.building_index} out of range")
 
-        building_params = buildings_data.iloc[config.building_index]
+        building_params = buildings_data.iloc[config.building_index - 1]
 
         # Thermal transfer coefficients (W/K)
         self.h_ob = building_params['H_ob']      # Outside to building fabric
@@ -93,7 +93,7 @@ class Building:
         if config.heating_system_index >= len(heating_systems_data):
             raise ValueError(f"Heating system index {config.heating_system_index} out of range")
 
-        heating_params = heating_systems_data.iloc[config.heating_system_index]
+        heating_params = heating_systems_data.iloc[config.heating_system_index - 1]
 
         # Cylinder standing losses (W/K)
         self.h_loss = heating_params['H_loss']

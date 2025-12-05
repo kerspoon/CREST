@@ -143,8 +143,15 @@ def _select_from_distribution(
     # side='right' finds first index where cumulative[index] > rand_value
     index = int(np.searchsorted(cumulative, rand_value, side='right'))
 
-    # Clamp to valid range (in case of floating point errors where sum != 1.0)
-    index = min(index, len(proportions) - 1)
+    # VBA behavior: if rand >= total probability, the loop exits without setting
+    # the index variable, leaving it at 0. This happens when proportions don't
+    # sum to 1.0 (e.g., solar thermal where only 50% of dwellings have it).
+    if index >= len(proportions):
+        # No match found - VBA returns 0 (the default uninitialized Long value)
+        # We return 0 directly, NOT value_offset (VBA doesn't add offset here)
+        if logger is not None and context:
+            logger.log_selection(context, rand_value, cumulative, -1, 0)
+        return 0
 
     # Log the selection if logger provided
     value = index + value_offset
