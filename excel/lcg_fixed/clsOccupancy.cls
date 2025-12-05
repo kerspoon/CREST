@@ -84,7 +84,7 @@ Public Sub InitialiseOccupancy(index As Integer)
     
     ' // Get the number of residents
     
-    intResidents = Application.index(wsDwellings.Range("rNumberResidentsIndex"), intDwellingIndex + intOffset).Value
+    intResidents = Application.index(wsDwellings.Range("rNumberResidentsIndex"), intDwellingIndex + intOffset).value
     
     ' // Perform a range check on the input resident count
         
@@ -96,7 +96,7 @@ Public Sub InitialiseOccupancy(index As Integer)
     
     
     ' // Perform a range check on the weekday/weekend flag
-    strCell = wsMain.Range("rDayType").Value
+    strCell = wsMain.Range("rDayType").value
     If Not (strCell = "wd" Or strCell = "we") Then
         wsMain.Range("J18") = "Error - simulation stopped"
         MsgBox "Please specify either a weekday (wd) or a weekend (we).", vbExclamation
@@ -104,7 +104,7 @@ Public Sub InitialiseOccupancy(index As Integer)
     End If
     
     ' // Get the weekday or weekend flag
-    blnWeekend = wsMain.Range("rDayType").Value = "we"
+    blnWeekend = wsMain.Range("rDayType").value = "we"
        
 
 End Sub
@@ -187,7 +187,7 @@ Public Sub RunFourStateOccupancySimulation()
     intLastColumn = intPossibleStates + 2
     
     ' // Get a string for whether it's a weekend or weekday
-    strCell = wsMain.Range("rDayType").Value
+    strCell = wsMain.Range("rDayType").value
 
     ' // Get the reference to the required worksheet
     Set wsTPM = ThisWorkbook.Sheets("tpm" + CStr(intResidents) + "_" + CStr(strCell))
@@ -211,11 +211,11 @@ Public Sub RunFourStateOccupancySimulation()
     
     For intRow = 0 To 48
         ' // Add the probability for this occupancy state
-        dblCumulativeP = dblCumulativeP + wsStartingStates.Range(strCol + CStr(intRow + 7 + IIf(blnWeekend, 54, 0))).Value
+        dblCumulativeP = dblCumulativeP + wsStartingStates.Range(strCol + CStr(intRow + 7 + IIf(blnWeekend, 54, 0))).value
         If dblRand < dblCumulativeP Then
             ' // This determines the starting occupancy state
             strCombinedState = wsStartingStates.Range("A" + CStr(intRow + 7 _
-                + IIf(blnWeekend, 54, 0))).Value
+                + IIf(blnWeekend, 54, 0))).value
             
             ' // Assign occupancy state to the first time step for this sequence
             aCombinedState(0, 0) = strCombinedState
@@ -229,7 +229,7 @@ Public Sub RunFourStateOccupancySimulation()
     ' // Get the uplift factor to force the right proportion of dwellings into having
     ' // 24 hour occupancy
     dblUplift = ws24hrOccupancy. _
-        Cells(intResidents + 3, IIf(blnWeekend = False, 6, 7)).Value
+        Cells(intResidents + 3, IIf(blnWeekend = False, 6, 7)).value
     
     ' // Set the flag to determine if this is a dwelling that should have 24 hour occupancy
     DebugLog_Random ("clsOccupancy:238 - Determine 24-hour occupancy dwelling uplift=" & dblUplift)
@@ -318,6 +318,23 @@ Public Sub RunFourStateOccupancySimulation()
         aCombinedState(intTimeStep, 0) = strCombinedState
         aActiveOccupancy(intTimeStep, 0) = WorksheetFunction.Min(CInt(Left(strCombinedState, 1)), CInt(Right(strCombinedState, 1)))
     Next intTimeStep
+    
+
+      ' // Validation logging - output active occupancy array
+      Dim occStr As String
+      Dim i As Integer
+      occStr = "["
+      For i = 0 To 143
+          occStr = occStr & CStr(aActiveOccupancy(i, 0))
+          If i < 143 Then occStr = occStr & ","
+      Next i
+      occStr = occStr & "]"
+
+      ValidationLog "ACTIVE_OCC" & vbTab & intDwellingIndex & vbTab & _
+                    "residents=" & intResidents & vbTab & _
+                    "is_24hr=" & bln24HourOccupancyDwelling & vbTab & _
+                    "values=" & occStr
+    
 
 End Sub
 

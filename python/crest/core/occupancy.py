@@ -202,9 +202,12 @@ class Occupancy:
         # VBA: rows 7-54 weekday (1-based), 61-108 weekend (1-based)
         # After removing "Combined state" row from DataFrame:
         # Weekday data starts at row 0 (first data row "00")
-        # Weekend data starts 54 rows later (49 weekday states + 5 header rows in original CSV)
-        # But we've removed the "Combined state" row, so weekend is at row 53
-        row_offset = 53 if self.config.is_weekend else 0
+        # Weekend data: rows 49-53 are blank/headers, row 54 is first weekend "00" state
+        # DataFrame structure after skiprows:
+        #   Row 48: "66" (last weekday state)
+        #   Row 49-53: blank/header rows
+        #   Row 54: "00" (first weekend state)
+        row_offset = 54 if self.config.is_weekend else 0
 
         # Get probabilities for all states
         state_probs = []
@@ -280,9 +283,9 @@ class Occupancy:
             Array of transition probabilities
         """
         # Calculate row index in TPM using VBA-compatible formula
-        # VBA uses 1-based indexing, so we need to convert
+        # Loop already uses 1-based timestep (range(1, 144)), so pass directly
         row_idx = markov.calculate_tpm_row_index(
-            timestep + 1,  # Convert to 1-based
+            timestep,  # Already 1-based from loop
             current_state,
             self.config.num_residents,
             self.num_possible_states,
@@ -318,6 +321,14 @@ class Occupancy:
         int
             Number of active occupants
         """
+        # Defensive check: state must be exactly 2 characters
+        # VBA uses Left(state,1) and Right(state,1) which always get first/last char
+        # Python uses state[0] and state[1] which assumes 2 chars
+        # If state labels are inconsistent (e.g., "6" or "123"), they would diverge
+        assert len(state) == 2, (
+            f"State string must be exactly 2 characters, got '{state}' (len={len(state)}). "
+            f"Check TPM header row or starting states data."
+        )
         at_home = int(state[0])
         active = int(state[1])
         return min(at_home, active)

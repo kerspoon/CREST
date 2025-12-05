@@ -82,16 +82,16 @@ Public Sub InitialiseCoolingSystem(dwellingIndex As Integer, runNumber As Intege
     
     intDwellingIndex = dwellingIndex
     intRunNumber = runNumber
-    intCoolingSystemIndex = Application.index(wsDwellings.Range("rCoolingIndex"), intOffset + intDwellingIndex).Value
+    intCoolingSystemIndex = Application.index(wsDwellings.Range("rCoolingIndex"), intOffset + intDwellingIndex).value
     
     With wsCoolingSystems
         ' Cooling system properties
-        strCoolingType = Application.index(.Range("rCoolingType"), intOffset + intCoolingSystemIndex).Value
-        intCoolingSystemType = Application.index(.Range("rCoolingSystemType"), intOffset + intCoolingSystemIndex).Value
-        dblPhi_hCool = Application.index(.Range("rPhi_hcool"), intOffset + intCoolingSystemIndex).Value
-        dblP_standbycool = Application.index(.Range("rP_standbycool"), intOffset + intCoolingSystemIndex).Value
-        dblP_pumpcool = Application.index(.Range("rP_pumpcool"), intOffset + intCoolingSystemIndex).Value
-        dblEta_hcool = Application.index(.Range("rEta_hcool"), intOffset + intCoolingSystemIndex).Value
+        strCoolingType = Application.index(.Range("rCoolingType"), intOffset + intCoolingSystemIndex).value
+        intCoolingSystemType = Application.index(.Range("rCoolingSystemType"), intOffset + intCoolingSystemIndex).value
+        dblPhi_hCool = Application.index(.Range("rPhi_hcool"), intOffset + intCoolingSystemIndex).value
+        dblP_standbycool = Application.index(.Range("rP_standbycool"), intOffset + intCoolingSystemIndex).value
+        dblP_pumpcool = Application.index(.Range("rP_pumpcool"), intOffset + intCoolingSystemIndex).value
+        dblEta_hcool = Application.index(.Range("rEta_hcool"), intOffset + intCoolingSystemIndex).value
             
     End With
         

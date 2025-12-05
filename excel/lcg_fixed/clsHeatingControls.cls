@@ -182,7 +182,7 @@ Public Sub InitialiseHeatingControls(dwellingIndex As Integer, runNumber As Inte
     ' // Get the control indexes
     intDwellingIndex = dwellingIndex
     intRunNumber = runNumber
-    intBuildingIndex = Application.index(wsDwellings.Range("rBuildingIndex"), intOffset + intDwellingIndex).Value
+    intBuildingIndex = Application.index(wsDwellings.Range("rBuildingIndex"), intOffset + intDwellingIndex).value
     
     ' // Get the type of heating system
     intHeatingSystemType = aPrimaryHeatingSystem(intRunNumber).GetHeatingSystemType
@@ -193,10 +193,10 @@ Public Sub InitialiseHeatingControls(dwellingIndex As Integer, runNumber As Inte
     ' // Get the thermostat set points
     
     ' // emitter set point determined by type of emitter specified in the Buildings worksheet
-    dblEmitterThermostatSetpoint = wsBuildings.Cells(intOffset + intBuildingIndex, 14).Value
+    dblEmitterThermostatSetpoint = wsBuildings.Cells(intOffset + intBuildingIndex, 14).value
     
     ' // similarly, cooler emitter set point determined by the Buildings worksheet
-    dblCoolerEmitterSetpoint = wsBuildings.Cells(intOffset + intBuildingIndex, 18).Value
+    dblCoolerEmitterSetpoint = wsBuildings.Cells(intOffset + intBuildingIndex, 18).value
     
     ' // space heating and hot water set points are determined from probability distributions
     With wsHeatingControls
@@ -212,10 +212,10 @@ Public Sub InitialiseHeatingControls(dwellingIndex As Integer, runNumber As Inte
         ' // Only use space heating if there is a gas boiler, or in a later version a reversible heat pump
         For intRow = 1 To 15
             ' // Add the probability for the temperature associated with this row
-            dblCumulativeP = dblCumulativeP + .Range("rSpaceHeatingThermostatSettings").Cells(intRow, 2).Value
+            dblCumulativeP = dblCumulativeP + .Range("rSpaceHeatingThermostatSettings").Cells(intRow, 2).value
             If dblRand < dblCumulativeP Then
                 ' // This determines the heating temperature setpoint (but see also below for dwellings with no heating)
-                dblSpaceHeatingThermostatSetpoint = .Range("rSpaceHeatingThermostatSettings").Cells(intRow, 1).Value
+                dblSpaceHeatingThermostatSetpoint = .Range("rSpaceHeatingThermostatSettings").Cells(intRow, 1).value
                 
                 Exit For
                 
@@ -225,7 +225,7 @@ Public Sub InitialiseHeatingControls(dwellingIndex As Integer, runNumber As Inte
         
         ' //The space cooling temperature set point is now calculated from the heating set point
         ' //by a fixed offset to avoid thermostat fights.
-        dblSpaceCoolingThermostatSetpoint = dblSpaceHeatingThermostatSetpoint + wsHeatingControls.Range("rCoolingOffset").Value
+        dblSpaceCoolingThermostatSetpoint = dblSpaceHeatingThermostatSetpoint + wsHeatingControls.Range("rCoolingOffset").value
         
         If intHeatingSystemType > 3 Then
         ' // Set space heating thermostat to -99 so heating is never used
@@ -244,10 +244,10 @@ Public Sub InitialiseHeatingControls(dwellingIndex As Integer, runNumber As Inte
                 
         For intRow = 1 To 12
             ' // Add the probability for the temperature associated with this row
-            dblCumulativeP = dblCumulativeP + .Range("rHotWaterThermostatSettings").Cells(intRow, 2).Value
+            dblCumulativeP = dblCumulativeP + .Range("rHotWaterThermostatSettings").Cells(intRow, 2).value
             If dblRand < dblCumulativeP Then
                 ' // This determines the temperature setpoint
-                dblHotWaterThermostatSetpoint = .Range("rHotWaterThermostatSettings").Cells(intRow, 1).Value
+                dblHotWaterThermostatSetpoint = .Range("rHotWaterThermostatSettings").Cells(intRow, 1).value
                 
                 Exit For
             
@@ -308,7 +308,7 @@ Public Sub InitialiseHeatingControls(dwellingIndex As Integer, runNumber As Inte
     ' // Determine the heating timer settings for this dwelling based on transition probabilities
     
     ' // Get the weekend or weekday flag
-    blnWeekend = wsMain.Range("rDayType").Value = "we"
+    blnWeekend = wsMain.Range("rDayType").value = "we"
     
     ' // Set the reference to the appropriate worksheet
     Set wsHeatingTPM = ThisWorkbook.Sheets("HeatingControlsTPM")
@@ -577,45 +577,45 @@ Public Sub WriteHeatingControls()
             lngRowNumber = CLng(intOffset) + CLng(intMinute) + 1440 * (CLng(intDwellingIndex) - 1)
             
             If aSpaceHeatingTimerState(intMinute, 1) = True Then
-                .Range("Q" + CStr(lngRowNumber)).Value = 1
+                .Range("Q" + CStr(lngRowNumber)).value = 1
                 
             Else
-                .Range("Q" + CStr(lngRowNumber)).Value = 0
+                .Range("Q" + CStr(lngRowNumber)).value = 0
             End If
             
             If aHotWaterTimerState(intMinute, 1) = True Then
-                .Range("R" + CStr(lngRowNumber)).Value = 1
+                .Range("R" + CStr(lngRowNumber)).value = 1
             Else
-                .Range("R" + CStr(lngRowNumber)).Value = 0
+                .Range("R" + CStr(lngRowNumber)).value = 0
             End If
             
             If aHeaterOnOff(intMinute, 1) = True Then
-                .Range("S" + CStr(lngRowNumber)).Value = 1
+                .Range("S" + CStr(lngRowNumber)).value = 1
                 
             Else
-                .Range("S" + CStr(lngRowNumber)).Value = 0
+                .Range("S" + CStr(lngRowNumber)).value = 0
             End If
             
             If aHeatWaterOnOff(intMinute, 1) = True Then
-                .Range("T" + CStr(lngRowNumber)).Value = 1
+                .Range("T" + CStr(lngRowNumber)).value = 1
             Else
-                .Range("T" + CStr(lngRowNumber)).Value = 0
+                .Range("T" + CStr(lngRowNumber)).value = 0
             End If
             
             If aSpaceCoolingTimerState(intMinute, 1) = True Then
-                .Range("AG" + CStr(lngRowNumber)).Value = 1
+                .Range("AG" + CStr(lngRowNumber)).value = 1
             Else
-                .Range("AG" + CStr(lngRowNumber)).Value = 0
+                .Range("AG" + CStr(lngRowNumber)).value = 0
             End If
             
             If aSpaceCoolingThermostatState(intMinute, 1) = True Then
-                .Range("AH" + CStr(lngRowNumber)).Value = 1
+                .Range("AH" + CStr(lngRowNumber)).value = 1
             Else
-                .Range("AH" + CStr(lngRowNumber)).Value = 0
+                .Range("AH" + CStr(lngRowNumber)).value = 0
             End If
             
-            .Range("AK" + CStr(lngRowNumber)).Value = dblSpaceHeatingThermostatSetpoint
-            .Range("AL" + CStr(lngRowNumber)).Value = dblSpaceCoolingThermostatSetpoint
+            .Range("AK" + CStr(lngRowNumber)).value = dblSpaceHeatingThermostatSetpoint
+            .Range("AL" + CStr(lngRowNumber)).value = dblSpaceCoolingThermostatSetpoint
             
         Next intMinute
            

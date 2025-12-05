@@ -139,6 +139,12 @@ Public g_PortableRNG As clsPortableLCG
 Private g_LogCount As Long
 Private g_LogFile As Integer
 
+
+' Validation logging for dwelling parameters
+Private g_ValidationLogFile As Integer
+Public g_ValidationVerbose As Boolean  ' Set True for switch-on logging (large output)
+
+
 Public Sub InitializePortableRNG(Optional Seed As Long = 1)
     '
     ' Initialize the portable random number generator.
@@ -177,6 +183,7 @@ Sub RunThermalElectricalDemandModel()
     Call InitializePortableRNG(42)  ' Use 42 to match Python tests
     
     Call InitDebugLog
+    Call InitValidationLog
     
     ' // Declare variables
     Dim intDwellingIndex As Integer
@@ -216,8 +223,8 @@ Sub RunThermalElectricalDemandModel()
     Set wsSolarThermal = ThisWorkbook.Sheets("SolarThermalSystems")
     
     ' // Get the date
-    intDayOfMonth = wsMain.Range("rDayOfMonth").Value
-    intMonthOfYear = wsMain.Range("rMonthOfYear").Value
+    intDayOfMonth = wsMain.Range("rDayOfMonth").value
+    intMonthOfYear = wsMain.Range("rMonthOfYear").value
     dteDate = DateValue(CStr(intDayOfMonth) + "/" + CStr(intMonthOfYear) + "/2015")
     
     ' // Run the global climate model (to get irradiance and temperature shared by all dwellings)
@@ -231,7 +238,7 @@ Sub RunThermalElectricalDemandModel()
     ' objGlobalClimate.WriteGlobalClimate
     
     ' // Get number of simulation runs required
-    intTotalNumberSimulationRuns = wsMain.Range("rSimulationRuns").Value
+    intTotalNumberSimulationRuns = wsMain.Range("rSimulationRuns").value
     
     ' // Reallocate the required amount of memory for the objects
     ReDim aDwelling(1 To intTotalNumberSimulationRuns)
@@ -248,9 +255,9 @@ Sub RunThermalElectricalDemandModel()
     ReDim aSolarThermal(1 To intTotalNumberSimulationRuns)
     
     ' // If existing data is to be overwritten then ...
-    If wsMain.Shapes("objOverWriteData").ControlFormat.Value = 1 Then
+    If wsMain.Shapes("objOverWriteData").ControlFormat.value = 1 Then
         ' // First sense check the number of runs specified
-        If (wsMain.Shapes("objDynamicOutput").ControlFormat.Value = 1) _
+        If (wsMain.Shapes("objDynamicOutput").ControlFormat.value = 1) _
             And (intTotalNumberSimulationRuns >= 729) Then
             wsMain.Range("J18") = "Error - simulation stopped"
             ' // this will produce more rows of results than can fit into the worksheet
@@ -264,7 +271,7 @@ Sub RunThermalElectricalDemandModel()
         wsResultsDailySums.Rows(5 & ":" & wsResultsDailySums.Rows.Count).Clear
         
         ' // ... only clear the Dwellings worksheet if the parameters are being assigned stochastically
-        If wsMain.Shapes("objAssignDwellingParameters").ControlFormat.Value = 1 Then
+        If wsMain.Shapes("objAssignDwellingParameters").ControlFormat.value = 1 Then
             wsDwellings.Rows(5 & ":" & wsDwellings.Rows.Count).Clear
             
         End If
@@ -288,7 +295,7 @@ Sub RunThermalElectricalDemandModel()
         Set rngLastCell = wsResultsAggregated.Cells(wsResultsAggregated.Rows.Count, 1).End(xlUp)
         lngRowOffsetResultsAggregated = WorksheetFunction.Max(rngLastCell.Row, 4)
         
-        If wsMain.Shapes("objAssignDwellingParameters").ControlFormat.Value = 1 Then
+        If wsMain.Shapes("objAssignDwellingParameters").ControlFormat.value = 1 Then
             Set rngLastCell = wsDwellings.Cells(wsDwellings.Rows.Count, 1).End(xlUp)
             lngRowOffsetDwellings = WorksheetFunction.Max(rngLastCell.Row, 4)
         Else
@@ -299,7 +306,7 @@ Sub RunThermalElectricalDemandModel()
             
         ' // Sense check the number of simulation runs specified
         lngMaxDwellingIndex = lngRowOffsetDwellings - 4 + intTotalNumberSimulationRuns
-        If (wsMain.Shapes("objDynamicOutput").ControlFormat.Value = 1) _
+        If (wsMain.Shapes("objDynamicOutput").ControlFormat.value = 1) _
             And (lngMaxDwellingIndex >= 729) Then
             strErrorMessage = "Please enter a number of dwellings less than " + CStr(729 - (lngRowOffsetDwellings - 4)) + "."
             ' // this will produce more rows of results than can fit into the worksheet
@@ -340,7 +347,7 @@ Sub RunThermalElectricalDemandModel()
         intDwellingIndex = lngRowOffsetDwellings - 4 + intRunNumber
         
         ' // Check if dwelling parameters are to be assigned stochastically
-        If wsMain.Shapes("objAssignDwellingParameters").ControlFormat.Value = 1 Then
+        If wsMain.Shapes("objAssignDwellingParameters").ControlFormat.value = 1 Then
             ' // then stochastically assign new dwelling parameters
             AssignDwellingParameters intDwellingIndex
         End If
@@ -511,7 +518,7 @@ Sub RunThermalElectricalDemandModel()
         ' // WRITE RESULTS FOR INDIVIDUAL DWELLING
              
         ' // If specified, write detailed dynamic simulation output to results worksheet
-        If wsMain.Shapes("objDynamicOutput").ControlFormat.Value = 1 Then
+        If wsMain.Shapes("objDynamicOutput").ControlFormat.value = 1 Then
             lngDwellingIndexRowOffset = 1440 * (CLng(intDwellingIndex) - 1)
             aDwelling(intRunNumber).WriteDwellingIndex dteDate, lngDwellingIndexRowOffset
             aOccupancy(intRunNumber).WriteOccupancy lngDwellingIndexRowOffset
@@ -529,7 +536,7 @@ Sub RunThermalElectricalDemandModel()
         End If
         
         ' // If specified, calculate and write sums of daily output for the dwelling
-        If wsMain.Shapes("objDailyTotals").ControlFormat.Value = 1 Then
+        If wsMain.Shapes("objDailyTotals").ControlFormat.value = 1 Then
             DailyTotals intDwellingIndex, intRunNumber, dteDate
         End If
     Next intRunNumber
@@ -538,11 +545,12 @@ Sub RunThermalElectricalDemandModel()
     ' // CALCULATE AGGREGATE RESULTS FOR ALL DWELLINGS
     
     ' // If specified, calculate and write aggregated high-resolution dynamic results to worksheet
-    If wsMain.Shapes("objDynamicOutput").ControlFormat.Value = 1 Then
+    If wsMain.Shapes("objDynamicOutput").ControlFormat.value = 1 Then
         AggregateResults (intDwellingNumber)
     End If
     
     Close #g_LogFile
+    Call CloseValidationLog
     
 End Sub
 
@@ -609,7 +617,7 @@ Public Sub SetApplianceDatabase()
     Dim intProportionsOffset As Integer 'Column offset when choosing appliance ownership proportions
     ' Dim intEnergiesOffset As Integer 'Column offset when choosing appliance energy use and power data
     ' // Get the year
-    intYear = wsMain.Range("rYear").Value
+    intYear = wsMain.Range("rYear").value
     ' intDayOfMonth = wsMain.Range("rDayOfMonth").Value
     intWhole = WorksheetFunction.Floor(intYear - 1, 5)
     'wsMain.Range("G1") = CStr(intWhole) 'Diagnostic only
@@ -621,11 +629,11 @@ Public Sub SetApplianceDatabase()
     'MsgBox (intIndex1)  'IntIndex1 and IntIndex2 are the indices of the columns between which
     'MsgBox (intIndex2)  'appliance ownership data is interpolated.
     ' // Get the country for appliance ownership
-    blnUK = IIf(wsMain.Range("rCountry").Value = "UK", True, False)
-    blnIndia = IIf(wsMain.Range("rCountry").Value = "India", True, False)
+    blnUK = IIf(wsMain.Range("rCountry").value = "UK", True, False)
+    blnIndia = IIf(wsMain.Range("rCountry").value = "India", True, False)
     ' // Get urban or rural location for appliance ownership
-    blnUrban = IIf(wsMain.Range("rUrbanRural").Value = "Urban", True, False)
-    blnRural = IIf(wsMain.Range("rUrbanRural").Value = "Rural", True, False)
+    blnUrban = IIf(wsMain.Range("rUrbanRural").value = "Urban", True, False)
+    blnRural = IIf(wsMain.Range("rUrbanRural").value = "Rural", True, False)
     ' MsgBox ("Rural " + CStr(blnRural))
     ' Read in the appropriate column of appliance ownerships
     aProportionsDatabase = wsAppliancesAndWaterFixtures.Range("rProportionsDatabase")
@@ -824,9 +832,9 @@ Private Sub LoadActivityStatistics()
         Set objActivityStatsItem = New clsProbabilityModifier
     
         ' // Read in the data
-        objActivityStatsItem.IsWeekend = IIf(wsActivityStats.Range("B" + CStr(i)).Value = 1, True, False)
-        objActivityStatsItem.ActiveOccupantCount = wsActivityStats.Range("C" + CStr(i)).Value
-        objActivityStatsItem.ID = wsActivityStats.Range("D" + CStr(i)).Value
+        objActivityStatsItem.IsWeekend = IIf(wsActivityStats.Range("B" + CStr(i)).value = 1, True, False)
+        objActivityStatsItem.ActiveOccupantCount = wsActivityStats.Range("C" + CStr(i)).value
+        objActivityStatsItem.ID = wsActivityStats.Range("D" + CStr(i)).value
         
         ' // Get the hourly modifiers
         For j = 0 To 143
@@ -835,7 +843,7 @@ Private Sub LoadActivityStatistics()
             strCell = Cells(i, j + 5).Address(True, False, xlA1)
         
             ' // Read the values
-            objActivityStatsItem.Modifiers(j) = wsActivityStats.Range(strCell).Value
+            objActivityStatsItem.Modifiers(j) = wsActivityStats.Range(strCell).value
             
         Next j
 
@@ -1021,25 +1029,25 @@ Public Sub AggregateResults(iNumber As Integer)
             With wsResultsDisaggregated
                 
                 ' // Get the dwelling's contribution to the aggregated total
-                dblCumulativeOccupancy = dblCumulativeOccupancy + .Cells(intOffset + intMinute + 1440 * (lngCurrentDwellingIndex - 1), 4).Value
-                dblCumulativeActivity = dblCumulativeActivity + .Cells(intOffset + intMinute + 1440 * (lngCurrentDwellingIndex - 1), 5).Value
-                dblP_e = dblP_e + .Cells(intOffset + intMinute + 1440 * (lngCurrentDwellingIndex - 1), 6).Value + .Cells(intOffset + intMinute + 1440 * (lngCurrentDwellingIndex - 1), 7).Value
-                dblP_pv = dblP_pv + .Range("W6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblPhi_hWater = dblPhi_hWater + .Range("Z6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblPhi_hSpace = dblPhi_hSpace + .Range("Y6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblPhi_s = dblPhi_s + .Range("K6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblTheta_i = dblTheta_i + .Range("N6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblV_dhw = dblV_dhw + .Range("O6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblTheta_cyl = dblTheta_cyl + .Range("P6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblSpaceTimerState = dblSpaceTimerState + .Range("Q6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblHotWaterTimerState = dblHotWaterTimerState + .Range("R6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblHeatingOnOff = dblHeatingOnOff + .Range("S6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblHotWaterHeatingOnOff = dblHotWaterHeatingOnOff + .Range("T6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblM_fuel = dblM_fuel + .Range("AA6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblPhi_collector = dblPhi_collector + .Range("AE6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblP_self = dblP_self + .Range("AF6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblCoolingTimerState = dblCoolingTimerState + .Range("AG6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
-                dblCoolingOnOff = dblCoolingOnOff + .Range("AH6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).Value
+                dblCumulativeOccupancy = dblCumulativeOccupancy + .Cells(intOffset + intMinute + 1440 * (lngCurrentDwellingIndex - 1), 4).value
+                dblCumulativeActivity = dblCumulativeActivity + .Cells(intOffset + intMinute + 1440 * (lngCurrentDwellingIndex - 1), 5).value
+                dblP_e = dblP_e + .Cells(intOffset + intMinute + 1440 * (lngCurrentDwellingIndex - 1), 6).value + .Cells(intOffset + intMinute + 1440 * (lngCurrentDwellingIndex - 1), 7).value
+                dblP_pv = dblP_pv + .Range("W6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblPhi_hWater = dblPhi_hWater + .Range("Z6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblPhi_hSpace = dblPhi_hSpace + .Range("Y6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblPhi_s = dblPhi_s + .Range("K6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblTheta_i = dblTheta_i + .Range("N6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblV_dhw = dblV_dhw + .Range("O6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblTheta_cyl = dblTheta_cyl + .Range("P6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblSpaceTimerState = dblSpaceTimerState + .Range("Q6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblHotWaterTimerState = dblHotWaterTimerState + .Range("R6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblHeatingOnOff = dblHeatingOnOff + .Range("S6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblHotWaterHeatingOnOff = dblHotWaterHeatingOnOff + .Range("T6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblM_fuel = dblM_fuel + .Range("AA6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblPhi_collector = dblPhi_collector + .Range("AE6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblP_self = dblP_self + .Range("AF6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblCoolingTimerState = dblCoolingTimerState + .Range("AG6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
+                dblCoolingOnOff = dblCoolingOnOff + .Range("AH6").Offset(intMinute + 1440 * (lngCurrentDwellingIndex - 1)).value
             End With
         Next lngCurrentDwellingIndex
         
@@ -1244,7 +1252,7 @@ Private Sub AssignDwellingParameters(dwellingIndex As Integer)
     dblCumulativeP = 0
     With wsActivityStats
         For intRow = 1 To intMaxNumberResidents
-            dblCumulativeP = dblCumulativeP + .Range("rPrNumberResidents").Cells(intRow, 1).Value
+            dblCumulativeP = dblCumulativeP + .Range("rPrNumberResidents").Cells(intRow, 1).value
             If dblRand < dblCumulativeP Then
                 intDwellingNumberResidents = intRow
                 Exit For
@@ -1258,7 +1266,7 @@ Private Sub AssignDwellingParameters(dwellingIndex As Integer)
     dblCumulativeP = 0
     With wsBuildings
         For lngRow = 1 To lngMaxBuildingIndex
-            dblCumulativeP = dblCumulativeP + .Range("rBuildingProportion").Cells(intRowOffset + lngRow, 1).Value
+            dblCumulativeP = dblCumulativeP + .Range("rBuildingProportion").Cells(intRowOffset + lngRow, 1).value
             If dblRand < dblCumulativeP Then
                 lngDwellingBuildingIndex = lngRow
                 Exit For
@@ -1272,7 +1280,7 @@ Private Sub AssignDwellingParameters(dwellingIndex As Integer)
     dblCumulativeP = 0
     With wsPrimaryHeatingSystems
         For lngRow = 1 To lngMaxPrimaryHeatingSystemIndex
-            dblCumulativeP = dblCumulativeP + .Range("rPrimaryHeatingSystemProportion").Cells(intRowOffset + lngRow, 1).Value
+            dblCumulativeP = dblCumulativeP + .Range("rPrimaryHeatingSystemProportion").Cells(intRowOffset + lngRow, 1).value
             If dblRand < dblCumulativeP Then
                 lngDwellingPrimaryHeatingSystemIndex = lngRow
                 Exit For
@@ -1286,7 +1294,7 @@ Private Sub AssignDwellingParameters(dwellingIndex As Integer)
     dblCumulativeP = 0
     With wsPVSystems
         For lngRow = 1 To lngMaxPvSystemIndex
-            dblCumulativeP = dblCumulativeP + .Range("rPVProportion").Cells(intRowOffset + lngRow, 1).Value
+            dblCumulativeP = dblCumulativeP + .Range("rPVProportion").Cells(intRowOffset + lngRow, 1).value
             If dblRand < dblCumulativeP Then
                 lngDwellingPvSystemIndex = lngRow
                 Exit For
@@ -1304,7 +1312,7 @@ Private Sub AssignDwellingParameters(dwellingIndex As Integer)
         dblCumulativeP = 0
         With wsSolarThermal
             For lngRow = 1 To lngMaxSolarThermalIndex
-                dblCumulativeP = dblCumulativeP + .Range("rSolarThermalProportion").Cells(intRowOffset + lngRow, 1).Value
+                dblCumulativeP = dblCumulativeP + .Range("rSolarThermalProportion").Cells(intRowOffset + lngRow, 1).value
                 If dblRand < dblCumulativeP Then
                     lngDwellingSolarThermalIndex = lngRow
                     Exit For
@@ -1319,7 +1327,7 @@ Private Sub AssignDwellingParameters(dwellingIndex As Integer)
     dblCumulativeP = 0
     With wsCoolingSystems
         For lngRow = 1 To lngMaxCoolingSystemIndex
-            dblCumulativeP = dblCumulativeP + .Range("rCoolingSystemProportion").Cells(intRowOffset + lngRow, 1).Value
+            dblCumulativeP = dblCumulativeP + .Range("rCoolingSystemProportion").Cells(intRowOffset + lngRow, 1).value
             If dblRand < dblCumulativeP Then
                 lngDwellingCoolingSystemIndex = lngRow
                 Exit For
@@ -1329,14 +1337,22 @@ Private Sub AssignDwellingParameters(dwellingIndex As Integer)
     
     ' // Write the dwelling parameters
     With wsDwellings
-        .Cells(intRowOffset + intCurrentDwellingIndex, 1).Value = intCurrentDwellingIndex
-        .Cells(intRowOffset + intCurrentDwellingIndex, 2).Value = intDwellingNumberResidents
-        .Cells(intRowOffset + intCurrentDwellingIndex, 3).Value = lngDwellingBuildingIndex
-        .Cells(intRowOffset + intCurrentDwellingIndex, 4).Value = lngDwellingPrimaryHeatingSystemIndex
-        .Cells(intRowOffset + intCurrentDwellingIndex, 5).Value = lngDwellingPvSystemIndex
-        .Cells(intRowOffset + intCurrentDwellingIndex, 6).Value = lngDwellingSolarThermalIndex
-        .Cells(intRowOffset + intCurrentDwellingIndex, 7).Value = lngDwellingCoolingSystemIndex
+        .Cells(intRowOffset + intCurrentDwellingIndex, 1).value = intCurrentDwellingIndex
+        .Cells(intRowOffset + intCurrentDwellingIndex, 2).value = intDwellingNumberResidents
+        .Cells(intRowOffset + intCurrentDwellingIndex, 3).value = lngDwellingBuildingIndex
+        .Cells(intRowOffset + intCurrentDwellingIndex, 4).value = lngDwellingPrimaryHeatingSystemIndex
+        .Cells(intRowOffset + intCurrentDwellingIndex, 5).value = lngDwellingPvSystemIndex
+        .Cells(intRowOffset + intCurrentDwellingIndex, 6).value = lngDwellingSolarThermalIndex
+        .Cells(intRowOffset + intCurrentDwellingIndex, 7).value = lngDwellingCoolingSystemIndex
     End With
+    
+    
+    ' Log dwelling parameters for validation
+    Call ValidationLog_DwellingParams(intCurrentDwellingIndex, intDwellingNumberResidents, _
+                                       lngDwellingBuildingIndex, lngDwellingPrimaryHeatingSystemIndex, _
+                                       lngDwellingPvSystemIndex, lngDwellingSolarThermalIndex, _
+                                       lngDwellingCoolingSystemIndex)
+
         
 End Sub
 
@@ -1487,7 +1503,7 @@ Public Function GetPortableNormalValue(dMean As Double, dSD As Double) As Double
       result = GetPortableNormalValue(dMean, dSD)
       GetPortableNormalInteger = CInt(result)
   End Function
-
+  
 
 Public Sub DebugLog_Random(msg As String)
     g_LogCount = g_LogCount + 1
@@ -1496,4 +1512,60 @@ Public Sub DebugLog_Random(msg As String)
           Print #g_LogFile, g_LogCount & ": " & msg
       End If
 End Sub
+
+
+'===============================================================================
+' Validation Logging - for dwelling parameters comparison with Python
+'===============================================================================
+Public Sub InitValidationLog()
+    On Error Resume Next
+    If g_ValidationLogFile > 0 Then Close #g_ValidationLogFile
+    On Error GoTo 0
+
+    g_ValidationLogFile = FreeFile
+    Open "C:\Users\James\Desktop\dwelling_params.txt" For Output As #g_ValidationLogFile
+
+    If Err.Number <> 0 Then
+        MsgBox "Error opening validation log file: " & Err.Description
+    End If
+
+    ' Set verbose mode (change to True to log switch-on decisions)
+    g_ValidationVerbose = False
+End Sub
+
+Public Sub ValidationLog(msg As String)
+    If g_ValidationLogFile > 0 Then
+        Print #g_ValidationLogFile, msg
+    End If
+End Sub
+
+Public Sub CloseValidationLog()
+    On Error Resume Next
+    If g_ValidationLogFile > 0 Then Close #g_ValidationLogFile
+    g_ValidationLogFile = 0
+    On Error GoTo 0
+End Sub
+
+Public Sub ValidationLog_Selection(context As String, randVal As Double, cumulative As String, selectedIdx As Integer, value As Integer)
+    ' Log selection from distribution - format matches Python
+    ValidationLog "SELECTION" & vbTab & context & vbTab & _
+                  "rand=" & Format(randVal, "0.000000000000000") & vbTab & _
+                  "cumul=" & cumulative & vbTab & _
+                  "idx=" & selectedIdx & vbTab & _
+                  "value=" & value
+End Sub
+
+Public Sub ValidationLog_DwellingParams(dwellingIdx As Integer, residents As Integer, building As Long, _
+                                        heating As Long, pv As Long, solar As Long, cooling As Long)
+    ' Log final dwelling parameters
+    ValidationLog "DWELLING" & vbTab & dwellingIdx & vbTab & _
+                  "residents=" & residents & vbTab & _
+                  "building=" & building & vbTab & _
+                  "heating=" & heating & vbTab & _
+                  "pv=" & pv & vbTab & _
+                  "solar=" & solar & vbTab & _
+                  "cooling=" & cooling
+End Sub
+
+
 

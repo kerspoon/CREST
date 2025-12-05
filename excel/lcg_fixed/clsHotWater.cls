@@ -131,8 +131,8 @@ Public Sub InitialiseHotWater(dwellingIndex As Integer, runNumber As Integer)
     intDwellingIndex = dwellingIndex
     intRunNumber = runNumber
     With wsDwellings
-        intResidents = Application.index(.Range("rNumberResidentsIndex"), intOffset + intDwellingIndex).Value
-        intHeatingSystemIndex = Application.index(.Range("rPrimaryHeatingIndex"), intOffset + intDwellingIndex).Value
+        intResidents = Application.index(.Range("rNumberResidentsIndex"), intOffset + intDwellingIndex).value
+        intHeatingSystemIndex = Application.index(.Range("rPrimaryHeatingIndex"), intOffset + intDwellingIndex).value
     End With
         
     ' // Get the active occupancy array for this dwelling
@@ -142,10 +142,10 @@ Public Sub InitialiseHotWater(dwellingIndex As Integer, runNumber As Integer)
     With wsPrimaryHeatingSystems
         
         ' // Get thermal resistance between hot water tank and internal building node
-        dblH_loss = Application.index(.Range("rH_loss"), intOffset + intHeatingSystemIndex).Value
+        dblH_loss = Application.index(.Range("rH_loss"), intOffset + intHeatingSystemIndex).value
                 
         ' // Calculate thermal capacity of hot water tank
-        dblV_cyl = Application.index(.Range("rV_cyl"), intOffset + intHeatingSystemIndex).Value
+        dblV_cyl = Application.index(.Range("rV_cyl"), intOffset + intHeatingSystemIndex).value
         dblC_cyl = SPECIFIC_HEAT_CAPACITY_WATER * dblV_cyl
         
     End With
@@ -170,7 +170,7 @@ Public Sub InitialiseHotWater(dwellingIndex As Integer, runNumber As Integer)
         dblRand = g_PortableRNG.Random()
         
         ' // Get the proportion of dwellings with this fixture
-        dblProportion = wsAppliancesAndWaterFixtures.Range("rWaterFixtureProportion").Cells(intRow, 1).Value
+        dblProportion = wsAppliancesAndWaterFixtures.Range("rWaterFixtureProportion").Cells(intRow, 1).value
         
         ' // Determine if this dwelling has this fixture
         aWaterFixtureConfiguration(intRow, 1) = IIf(dblRand < dblProportion, True, False)
@@ -212,11 +212,11 @@ Public Sub RunHotWaterDemandSimulation()
         
         ' // Get the water fixture details
         With wsAppliancesAndWaterFixtures
-            strFixtureName = .Range("E" + CStr(intFixture + intRowOffset)).Value
-            dblProbSwitchOn = .Range("AD" + CStr(intFixture + intRowOffset)).Value
-            dblMeanFlow = .Range("P" + CStr(intFixture + intRowOffset)).Value
-            strUseProfile = .Range("G" + CStr(intFixture + intRowOffset)).Value
-            dblRestartDelay = .Range("S" + CStr(intFixture + intRowOffset)).Value
+            strFixtureName = .Range("E" + CStr(intFixture + intRowOffset)).value
+            dblProbSwitchOn = .Range("AD" + CStr(intFixture + intRowOffset)).value
+            dblMeanFlow = .Range("P" + CStr(intFixture + intRowOffset)).value
+            strUseProfile = .Range("G" + CStr(intFixture + intRowOffset)).value
+            dblRestartDelay = .Range("S" + CStr(intFixture + intRowOffset)).value
         End With
         blnHasFixture = aWaterFixtureConfiguration(intFixture, 1)
         
@@ -238,7 +238,7 @@ Public Sub RunHotWaterDemandSimulation()
         Else
                         
             ' // Get the weekend or weekday flag
-            strCell = wsMain.Range("rDayType").Value
+            strCell = wsMain.Range("rDayType").value
             blnWeekend = IIf(strCell = "we", True, False)
             
             ' // Loop through each minute of the day
@@ -368,11 +368,11 @@ Private Sub StartFixture(intFixture As Integer, intMinute As Integer)
     For intRow = 1 To 151
         
         ' // Add the probability
-        dblCumulativeP = dblCumulativeP + wsWaterUsage.Range("rWaterUsageStatistics").Cells(intRow, intCol).Value
+        dblCumulativeP = dblCumulativeP + wsWaterUsage.Range("rWaterUsageStatistics").Cells(intRow, intCol).value
         
         If dblRand < dblCumulativeP Then
             ' // This determines the fixture event volume
-            dblEventVolume = wsWaterUsage.Range("rWaterUsageStatistics").Cells(intRow, 1).Value
+            dblEventVolume = wsWaterUsage.Range("rWaterUsageStatistics").Cells(intRow, 1).value
             
             Exit For
         End If

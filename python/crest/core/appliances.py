@@ -9,7 +9,7 @@ AUDIT STATUS: ✅ COMPLETE - Full VBA implementation (clsAppliances.cls)
 
 import numpy as np
 from dataclasses import dataclass
-from typing import Optional, Dict
+from typing import Optional, Dict, TYPE_CHECKING
 import pandas as pd
 
 from ..simulation.config import (
@@ -20,6 +20,9 @@ from ..simulation.config import (
 )
 from ..utils.random import RandomGenerator
 from ..data.loader import CRESTDataLoader
+
+if TYPE_CHECKING:
+    from ..utils.validation_log import ValidationLogger
 
 
 @dataclass
@@ -62,7 +65,8 @@ class Appliances:
         data_loader: CRESTDataLoader,
         activity_statistics: Dict,
         is_weekend: bool,
-        rng: Optional[RandomGenerator] = None
+        rng: Optional[RandomGenerator] = None,
+        validation_logger: Optional["ValidationLogger"] = None
     ):
         """
         Initialize appliances model.
@@ -79,9 +83,12 @@ class Appliances:
             Weekend flag for activity profiles
         rng : RandomGenerator, optional
             Random number generator
+        validation_logger : ValidationLogger, optional
+            Logger for validation data (ownership flags)
         """
         self.config = config
         self.data_loader = data_loader
+        self.validation_logger = validation_logger
         self.activity_statistics = activity_statistics
         self.is_weekend = is_weekend
         self.rng = rng if rng is not None else RandomGenerator()
@@ -148,6 +155,7 @@ class Appliances:
         # VBA loads 31 appliances (intAppliance = 1 To 31)
         self.appliances = []
         self.has_appliance = []
+        ownership_rand_values = []  # Track random values for validation logging
 
         # Note: CSV has 4 header rows when loaded with skiprows=3, header=0:
         # iloc[0-3] = additional headers, iloc[4] = first data row (CHEST_FREEZER)
@@ -194,7 +202,18 @@ class Appliances:
                 # The ownership columns in Dwellings are OUTPUT only (written by WriteAppliances).
                 # VBA line 120: dblRan = g_PortableRNG.Random()
                 # VBA line 126: aApplianceConfiguration(i, 1) = IIf(dblRan < dblProportion, True, False)
-                self.has_appliance.append(self.rng.random() < ownership)
+                rand_val = self.rng.random()
+                ownership_rand_values.append(rand_val)
+                self.has_appliance.append(rand_val < ownership)
+
+        # Log appliance ownership for validation
+        if self.validation_logger is not None:
+            self.validation_logger.log_appliances(
+                dwelling_idx=self.config.dwelling_index,
+                names=[app.name for app in self.appliances],
+                owned=self.has_appliance,
+                rand_values=ownership_rand_values
+            )
 
     def set_occupancy(self, occupancy):
         """Set reference to occupancy model."""

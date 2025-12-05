@@ -19,8 +19,10 @@ from crest.simulation.dwelling import Dwelling, DwellingConfig
 from crest.simulation.config import Country, City, UrbanRural
 from crest.output.writer import ResultsWriter, OutputConfig
 from crest.utils import random as rng_module
+from crest.utils.validation_log import ValidationLogger
 import numpy as np
 import pandas as pd
+from typing import Optional
 
 
 def load_activity_statistics(data_loader: CRESTDataLoader) -> dict:
@@ -91,7 +93,13 @@ def load_activity_statistics(data_loader: CRESTDataLoader) -> dict:
     return activity_stats
 
 
-def _select_from_distribution(proportions: np.ndarray, rng: np.random.Generator) -> int:
+def _select_from_distribution(
+    proportions: np.ndarray,
+    rng: np.random.Generator,
+    context: str = "",
+    value_offset: int = 0,
+    logger: Optional[ValidationLogger] = None
+) -> int:
     """
     Inverse transform sampling from discrete probability distribution.
 
@@ -108,17 +116,23 @@ def _select_from_distribution(proportions: np.ndarray, rng: np.random.Generator)
         Array of probabilities (must sum to ~1.0)
     rng : np.random.Generator
         Random number generator
+    context : str
+        Context string for logging (e.g., "residents", "building")
+    value_offset : int
+        Offset to add to index for the "value" (e.g., 1 for 1-based indices)
+    logger : ValidationLogger, optional
+        Logger for validation output
 
     Returns
     -------
     int
-        Selected index (0-based)
+        Selected value (index + value_offset)
 
     Examples
     --------
     >>> proportions = np.array([0.2, 0.3, 0.5])
-    >>> index = _select_from_distribution(proportions, rng)
-    >>> # Returns 0, 1, or 2 with probabilities 20%, 30%, 50%
+    >>> value = _select_from_distribution(proportions, rng, value_offset=1)
+    >>> # Returns 1, 2, or 3 with probabilities 20%, 30%, 50% (1-based)
     """
     # VBA lines 1195-1204: Generate random and find first cumulative match
     cumulative = np.cumsum(proportions)
@@ -130,13 +144,21 @@ def _select_from_distribution(proportions: np.ndarray, rng: np.random.Generator)
     index = int(np.searchsorted(cumulative, rand_value, side='right'))
 
     # Clamp to valid range (in case of floating point errors where sum != 1.0)
-    return min(index, len(proportions) - 1)
+    index = min(index, len(proportions) - 1)
+
+    # Log the selection if logger provided
+    value = index + value_offset
+    if logger is not None and context:
+        logger.log_selection(context, rand_value, cumulative, index, value)
+
+    return value  # Return with offset to match VBA 1-based indexing
 
 
 def assign_dwelling_parameters(
     data_loader: CRESTDataLoader,
     dwelling_index: int,
-    rng: np.random.Generator
+    rng: np.random.Generator,
+    validation_logger: Optional[ValidationLogger] = None
 ) -> DwellingConfig:
     """
     Stochastically assign all parameters for one dwelling.
@@ -152,6 +174,8 @@ def assign_dwelling_parameters(
         Dwelling identifier (0-based)
     rng : np.random.Generator
         Random number generator for reproducibility
+    validation_logger : ValidationLogger, optional
+        Logger for validation output
 
     Returns
     -------
@@ -165,30 +189,36 @@ def assign_dwelling_parameters(
     """
     # VBA lines 1197-1205: Determine number of residents (1-5)
     # VBA: For intRow = 1 To intMaxNumberResidents (1-based)
-    # Python: Returns 0-4, add 1 to get 1-5 residents
+    # value_offset=1 makes result 1-based (1-5 residents)
     resident_props = data_loader.load_resident_proportions()
-    num_residents_index = _select_from_distribution(resident_props, rng)
-    num_residents = num_residents_index + 1  # Convert 0-based to 1-5 range
+    num_residents = _select_from_distribution(
+        resident_props, rng, context="residents", value_offset=1, logger=validation_logger
+    )
 
     # VBA lines 1207-1218: Determine building index
     # VBA: lngDwellingBuildingIndex = lngRow (1-based)
-    # Python: Returns 0-based index, add 1 for 1-based
+    # value_offset=1 makes result 1-based
     building_props = data_loader.load_building_proportions()
-    building_index_0based = _select_from_distribution(building_props, rng)
-    building_index = building_index_0based + 1  # 1-based indexing
+    building_index = _select_from_distribution(
+        building_props, rng, context="building", value_offset=1, logger=validation_logger
+    )
 
     # VBA lines 1220-1231: Determine primary heating system index
     # VBA: lngDwellingPrimaryHeatingSystemIndex = lngRow (1-based)
+    # value_offset=1 makes result 1-based
     heating_props = data_loader.load_heating_proportions()
-    heating_index_0based = _select_from_distribution(heating_props, rng)
-    heating_index = heating_index_0based + 1  # 1-based indexing
+    heating_index = _select_from_distribution(
+        heating_props, rng, context="heating", value_offset=1, logger=validation_logger
+    )
 
     # VBA lines 1233-1244: Determine PV system index
-    # VBA: lngDwellingPvSystemIndex = lngRow
-    # Note: Index 0 = no PV, Index 1+ = PV system types
+    # VBA: lngDwellingPvSystemIndex = lngRow (1-based row index)
+    # VBA uses 1-based: Row 1 = no PV (proportion 0), Row 2+ = PV system types
     pv_props = data_loader.load_pv_proportions()
-    pv_index = _select_from_distribution(pv_props, rng)
-    # Already 0-based where 0 = no PV
+    pv_index = _select_from_distribution(
+        pv_props, rng, context="pv", value_offset=1, logger=validation_logger
+    )
+    # 1-based to match VBA: 1 = no PV, 2+ = PV system types
 
     # VBA lines 1246-1262: Determine solar thermal index
     # SPECIAL LOGIC: Combi boiler (type 2) precludes solar thermal
@@ -199,15 +229,27 @@ def assign_dwelling_parameters(
         solar_thermal_index = 0
     else:
         # VBA lines 1251-1261: Select stochastically
+        # VBA uses 1-based: Row 1 = no solar thermal (proportion 0), Row 2+ = system types
         solar_thermal_props = data_loader.load_solar_thermal_proportions()
-        solar_thermal_index = _select_from_distribution(solar_thermal_props, rng)
-        # Already 0-based where 0 = no solar thermal
+        solar_thermal_index = _select_from_distribution(
+            solar_thermal_props, rng, context="solar_thermal", value_offset=1, logger=validation_logger
+        )
+        # 1-based to match VBA: 1 = no solar thermal, 2+ = system types
 
     # VBA lines 1264-1275: Determine cooling system index
-    # Note: Index 0 = no cooling, Index 1+ = cooling system types
+    # VBA uses 1-based: Row 1 = no cooling (proportion 1), Row 2+ = cooling system types
     cooling_props = data_loader.load_cooling_proportions()
-    cooling_index = _select_from_distribution(cooling_props, rng)
-    # Already 0-based where 0 = no cooling
+    cooling_index = _select_from_distribution(
+        cooling_props, rng, context="cooling", value_offset=1, logger=validation_logger
+    )
+    # 1-based to match VBA: 1 = no cooling, 2+ = cooling system types
+
+    # Log final dwelling parameters
+    if validation_logger is not None:
+        validation_logger.log_dwelling_params(
+            dwelling_index, num_residents, building_index, heating_index,
+            pv_index, solar_thermal_index, cooling_index
+        )
 
     # VBA lines 1278-1286: Write parameters (we return DwellingConfig instead)
     return DwellingConfig(
@@ -615,6 +657,17 @@ def main():
         help="Log all RNG calls to this file (enables portable LCG and debug mode automatically)"
     )
     parser.add_argument(
+        "--validation-log-file",
+        type=Path,
+        default=None,
+        help="Log dwelling parameters (selections, bulbs, appliances) for validation comparison"
+    )
+    parser.add_argument(
+        "--validation-verbose",
+        action="store_true",
+        help="Include per-minute switch-on decisions in validation log (very large output)"
+    )
+    parser.add_argument(
         "--latitude",
         type=float,
         default=None,
@@ -698,6 +751,19 @@ def main():
 
     print(f"Location: {city.value}, {country.value} ({urban_rural.value})")
 
+    # Create validation logger if requested
+    validation_logger: Optional[ValidationLogger] = None
+    if args.validation_log_file:
+        validation_logger = ValidationLogger(
+            log_file=args.validation_log_file,
+            verbose=args.validation_verbose
+        )
+        print(f"Validation logging to: {args.validation_log_file}")
+        if args.validation_verbose:
+            print("  Verbose mode: including switch-on decisions (large output)")
+        import atexit
+        atexit.register(lambda: validation_logger.close() if validation_logger else None)
+
     # Load data
     print("Loading data...")
     data_loader = CRESTDataLoader(args.data_dir)
@@ -778,7 +844,8 @@ def main():
                 global_climate,
                 data_loader,
                 activity_statistics,
-                rng_module.get_rng()
+                rng_module.get_rng(),
+                validation_logger=validation_logger
             )
 
             print("  Running simulation...")
@@ -876,7 +943,8 @@ def main():
                 dwelling_config = assign_dwelling_parameters(
                     data_loader=data_loader,
                     dwelling_index=dwelling_idx,
-                    rng=param_rng
+                    rng=param_rng,
+                    validation_logger=validation_logger
                 )
                 # Override country/urban_rural/weekend from CLI args
                 dwelling_config.country = country
@@ -900,7 +968,8 @@ def main():
                 global_climate,
                 data_loader,
                 activity_statistics,
-                rng_module.get_rng()
+                rng_module.get_rng(),
+                validation_logger=validation_logger
             )
 
             print("  Running simulation...")

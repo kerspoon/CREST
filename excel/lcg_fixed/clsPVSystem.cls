@@ -90,8 +90,8 @@ Public Sub InitialisePVSystem(dwellingIndex As Integer, runNumber As Integer)
     intDwellingIndex = dwellingIndex
     intRunNumber = runNumber
     
-    If wsMain.Shapes("objPVOption").ControlFormat.Value = 1 Then
-        intPVSystemIndex = Application.index(wsDwellings.Range("rPvSystemIndex"), intOffset + intDwellingIndex).Value
+    If wsMain.Shapes("objPVOption").ControlFormat.value = 1 Then
+        intPVSystemIndex = Application.index(wsDwellings.Range("rPvSystemIndex"), intOffset + intDwellingIndex).value
     Else
         intPVSystemIndex = 0
     End If
@@ -101,10 +101,10 @@ Public Sub InitialisePVSystem(dwellingIndex As Integer, runNumber As Integer)
         
         ' // Get PV system variables
         With wsPVSystems
-            dblA_array = Application.index(.Range("rA_array"), intOffset + intPVSystemIndex).Value
-            dblEta_pv = Application.index(.Range("rEta_pv"), intOffset + intPVSystemIndex).Value
-            dblAzimuth = Application.index(.Range("rAzimuth"), intOffset + intPVSystemIndex).Value
-            dblSlope = Application.index(.Range("rSlope"), intOffset + intPVSystemIndex).Value
+            dblA_array = Application.index(.Range("rA_array"), intOffset + intPVSystemIndex).value
+            dblEta_pv = Application.index(.Range("rEta_pv"), intOffset + intPVSystemIndex).value
+            dblAzimuth = Application.index(.Range("rAzimuth"), intOffset + intPVSystemIndex).value
+            dblSlope = Application.index(.Range("rSlope"), intOffset + intPVSystemIndex).value
         End With
         
     End If
@@ -199,13 +199,13 @@ Public Sub CalculatePVOutput()
     Dim dblSkyDiffuseFactor As Double
     
     ' // Get longitude, latitude and meridian
-    dblLongitude = wsMain.Range("rLongitude").Value
-    dblLatitude = wsMain.Range("rLatitude").Value
-    dblMeridian = wsMain.Range("rMeridian").Value
+    dblLongitude = wsMain.Range("rLongitude").value
+    dblLatitude = wsMain.Range("rLatitude").value
+    dblMeridian = wsMain.Range("rMeridian").value
     
     ' // Get day of year
-    intDayOfMonth = wsMain.Range("rDayOfMonth").Value
-    intMonthOfYear = wsMain.Range("rMonthOfYear").Value
+    intDayOfMonth = wsMain.Range("rDayOfMonth").value
+    intMonthOfYear = wsMain.Range("rMonthOfYear").value
     strDate = CStr(intDayOfMonth) + "/" + CStr(intMonthOfYear) + "/2015" ' <--- year value is arbitrary and not relevant to the calculations
     dblDayOfYear = DatePart("y", CDate(strDate))
     
@@ -237,7 +237,7 @@ Public Sub CalculatePVOutput()
         
             ' // Update local standard time hour
             If ((dblDayOfYear >= DAY_SUMMER_TIME_STARTS And dblDayOfYear < DAY_SUMMER_TIME_END) _
-            And wsMain.Shapes("objDaylightSaving").ControlFormat.Value = 1) Then
+            And wsMain.Shapes("objDaylightSaving").ControlFormat.value = 1) Then
                 intLocalStandardTimeHour = intHour - 1
             Else
                 intLocalStandardTimeHour = intHour

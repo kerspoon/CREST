@@ -11,7 +11,7 @@ Usage:
 
 Arguments:
     python_dir    Directory containing Python run with rng_calls.log
-    excel_dir     Directory containing Excel run with rng_calls.log
+    excel_dir     Directory containing Excel run with random_debug.txt
     --tolerance   Numerical tolerance for float comparison (default: 1e-10)
     --verbose     Show detailed output for all comparisons
     --max-diff    Maximum number of differences to show (default: 50)
@@ -285,7 +285,7 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter
     )
     parser.add_argument('python_dir', help='Directory containing Python run with rng_calls.log')
-    parser.add_argument('excel_dir', help='Directory containing Excel run with rng_calls.log')
+    parser.add_argument('excel_dir', help='Directory containing Excel run with random_debug.txt')
     parser.add_argument('--tolerance', '-t', type=float, default=1e-10,
                        help='Numerical tolerance for float comparison (default: 1e-10)')
     parser.add_argument('--verbose', '-v', action='store_true',
@@ -316,7 +316,7 @@ def main():
 
     # Find RNG log files
     python_log = python_dir / 'rng_calls.log'
-    excel_log = excel_dir / 'rng_calls.log'
+    excel_log = excel_dir / 'random_debug.txt'  # Excel outputs this filename
 
     if not python_log.exists():
         print(f"ERROR: Python RNG log not found: {python_log}")

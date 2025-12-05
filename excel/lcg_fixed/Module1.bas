@@ -41,7 +41,7 @@ Private Sub TestLCGSequence(ByVal Seed As Long, ByVal Count As Long)
     '
     Dim lcg As New clsPortableLCG
     Dim i As Long
-    Dim Value As Double
+    Dim value As Double
 
     Debug.Print ""
     Debug.Print String(80, "=")
@@ -53,10 +53,10 @@ Private Sub TestLCGSequence(ByVal Seed As Long, ByVal Count As Long)
     lcg.Initialize Seed
 
     For i = 1 To Count
-        Value = lcg.Random()
+        value = lcg.Random()
         Debug.Print Format(i, "0") & Space(8 - Len(CStr(i))) & _
                     Format(lcg.State, "0") & Space(15 - Len(Format(lcg.State, "0"))) & _
-                    Format(Value, "0.00000000000000000")
+                    Format(value, "0.00000000000000000")
     Next i
 
     Debug.Print String(80, "=")
@@ -69,7 +69,7 @@ Private Sub TestRandomInt()
     '
     Dim lcg As New clsPortableLCG
     Dim i As Long
-    Dim Value As Long
+    Dim value As Long
 
     Debug.Print ""
     Debug.Print String(80, "=")
@@ -81,8 +81,8 @@ Private Sub TestRandomInt()
     lcg.Initialize 42
 
     For i = 1 To 20
-        Value = lcg.RandomInt(1, 7)
-        Debug.Print "  Roll " & i & ": " & Value
+        value = lcg.RandomInt(1, 7)
+        Debug.Print "  Roll " & i & ": " & value
     Next i
 
     Debug.Print String(80, "=")

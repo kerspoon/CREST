@@ -99,7 +99,7 @@ Public Sub SimulateClearnessIndex()
             strCol = Left(strCol, InStr(strCol, "$") - 1)
             
             ' // Store the data
-            aKArray(y, x) = wsClearnessIndexTPM.Range(strCol + CStr(y + 9)).Value
+            aKArray(y, x) = wsClearnessIndexTPM.Range(strCol + CStr(y + 9)).value
         Next x
     Next y
     
@@ -237,13 +237,13 @@ Public Sub CalculateGlobalIrradiance()
     Dim dblSkyDiffuseFactor As Double
     
     ' // Get longitude, latitude and meridian
-    dblLongitude = wsMain.Range("rLongitude").Value
-    dblLatitude = wsMain.Range("rLatitude").Value
-    dblMeridian = wsMain.Range("rMeridian").Value
+    dblLongitude = wsMain.Range("rLongitude").value
+    dblLatitude = wsMain.Range("rLatitude").value
+    dblMeridian = wsMain.Range("rMeridian").value
            
     ' // Get day of year
-    intDayOfMonth = wsMain.Range("rDayOfMonth").Value
-    intMonthOfYear = wsMain.Range("rMonthOfYear").Value
+    intDayOfMonth = wsMain.Range("rDayOfMonth").value
+    intMonthOfYear = wsMain.Range("rMonthOfYear").value
     strDate = CStr(intDayOfMonth) + "/" + CStr(intMonthOfYear) + "/2015" ' <--- year value is arbitrary and not relevant to the calculations
     dblDayOfYear = DatePart("y", CDate(strDate))
         
@@ -265,7 +265,7 @@ Public Sub CalculateGlobalIrradiance()
         ' // Update local standard time hour but only if Daylight saving applies in that country
         ' If wsMain.Shapes("objDaylightSaving").ControlFormat.Value = 1 Then
         If ((dblDayOfYear >= DAY_SUMMER_TIME_STARTS And dblDayOfYear < DAY_SUMMER_TIME_END) _
-            And wsMain.Shapes("objDaylightSaving").ControlFormat.Value = 1) Then
+            And wsMain.Shapes("objDaylightSaving").ControlFormat.value = 1) Then
             intLocalStandardTimeHour = intHour - 1
         Else
             intLocalStandardTimeHour = intHour
@@ -606,13 +606,13 @@ Private Sub Td_model()
     Dim i As Integer
     
     ' Select Location for temperature climate
-    blnEngland = IIf(wsMain.Range("rCity").Value = "England", True, False)
-    blnN_Delhi = IIf(wsMain.Range("rCity").Value = "N Delhi", True, False)
-    blnMumbai = IIf(wsMain.Range("rCity").Value = "Mumbai", True, False)
-    blnBengaluru = IIf(wsMain.Range("rCity").Value = "Bengaluru", True, False)
-    blnChennai = IIf(wsMain.Range("rCity").Value = "Chennai", True, False)
-    blnKolkata = IIf(wsMain.Range("rCity").Value = "Kolkata", True, False)
-    blnItanagar = IIf(wsMain.Range("rCity").Value = "Itanagar", True, False)
+    blnEngland = IIf(wsMain.Range("rCity").value = "England", True, False)
+    blnN_Delhi = IIf(wsMain.Range("rCity").value = "N Delhi", True, False)
+    blnMumbai = IIf(wsMain.Range("rCity").value = "Mumbai", True, False)
+    blnBengaluru = IIf(wsMain.Range("rCity").value = "Bengaluru", True, False)
+    blnChennai = IIf(wsMain.Range("rCity").value = "Chennai", True, False)
+    blnKolkata = IIf(wsMain.Range("rCity").value = "Kolkata", True, False)
+    blnItanagar = IIf(wsMain.Range("rCity").value = "Itanagar", True, False)
     ' Read in monthly average temperatures from Climate Data worksheet
     If blnEngland Then
         aMonthlyTemps = wsClimateData.Range("rEnglandTemps")

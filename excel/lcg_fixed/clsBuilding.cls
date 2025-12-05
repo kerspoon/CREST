@@ -173,7 +173,7 @@ Public Property Get GetPhi_hSpace(timestep As Integer)
     
     dblEmitterDeadband = 5
     
-    dblTheta_emTarget = dblEmitterDeadband + Application.index(wsBuildings.Range("rTheta_em"), intOffset + intBuildingIndex).Value
+    dblTheta_emTarget = dblEmitterDeadband + Application.index(wsBuildings.Range("rTheta_em"), intOffset + intBuildingIndex).value
     
     ' // Get the relevant building thermal node temperatures
     If timestep = 1 Then
@@ -212,7 +212,7 @@ Public Property Get GetPhi_hCooling(timestep As Integer)
     
     dblEmitterDeadband = 5
     
-    dblTheta_coolTarget = Application.index(wsBuildings.Range("rTheta_cool"), intOffset + intBuildingIndex).Value _
+    dblTheta_coolTarget = Application.index(wsBuildings.Range("rTheta_cool"), intOffset + intBuildingIndex).value _
         - dblEmitterDeadband
         
     ' // Get the relevant building thermal node temperatures
@@ -250,24 +250,24 @@ Public Sub InitialiseBuilding(dwellingIndex As Integer, runNumber As Integer)
     intDwellingIndex = dwellingIndex
     intRunNumber = runNumber
     With wsDwellings
-        intBuildingIndex = Application.index(.Range("rBuildingIndex"), intDwellingIndex + intOffset).Value
-        intHeatingSystemIndex = Application.index(.Range("rPrimaryHeatingIndex"), intOffset + intDwellingIndex).Value
+        intBuildingIndex = Application.index(.Range("rBuildingIndex"), intDwellingIndex + intOffset).value
+        intHeatingSystemIndex = Application.index(.Range("rPrimaryHeatingIndex"), intOffset + intDwellingIndex).value
     End With
     
     With wsBuildings
     
         ' // Get building thermal model parameters
-        dblH_ob = Application.index(.Range("rH_ob"), intOffset + intBuildingIndex).Value
-        dblH_bi = Application.index(.Range("rH_bi"), intOffset + intBuildingIndex).Value
-        dblH_v = Application.index(.Range("rH_v"), intOffset + intBuildingIndex).Value
-        dblC_b = Application.index(.Range("rC_b"), intOffset + intBuildingIndex).Value
-        dblC_i = Application.index(.Range("rC_i"), intOffset + intBuildingIndex).Value
-        dblA_s = Application.index(.Range("rA_s"), intOffset + intBuildingIndex).Value
-        dblH_em = Application.index(.Range("rH_em"), intOffset + intBuildingIndex).Value
-        dblC_em = Application.index(.Range("rC_em"), intOffset + intBuildingIndex).Value
+        dblH_ob = Application.index(.Range("rH_ob"), intOffset + intBuildingIndex).value
+        dblH_bi = Application.index(.Range("rH_bi"), intOffset + intBuildingIndex).value
+        dblH_v = Application.index(.Range("rH_v"), intOffset + intBuildingIndex).value
+        dblC_b = Application.index(.Range("rC_b"), intOffset + intBuildingIndex).value
+        dblC_i = Application.index(.Range("rC_i"), intOffset + intBuildingIndex).value
+        dblA_s = Application.index(.Range("rA_s"), intOffset + intBuildingIndex).value
+        dblH_em = Application.index(.Range("rH_em"), intOffset + intBuildingIndex).value
+        dblC_em = Application.index(.Range("rC_em"), intOffset + intBuildingIndex).value
         ' // Extra parameters added to represent the properties of the cooling system
-        dblH_cool = Application.index(.Range("rH_emcool"), intOffset + intBuildingIndex).Value
-        dblC_cool = Application.index(.Range("rC_emcool"), intOffset + intBuildingIndex).Value
+        dblH_cool = Application.index(.Range("rH_emcool"), intOffset + intBuildingIndex).value
+        dblC_cool = Application.index(.Range("rC_emcool"), intOffset + intBuildingIndex).value
                 
     End With
     
@@ -275,10 +275,10 @@ Public Sub InitialiseBuilding(dwellingIndex As Integer, runNumber As Integer)
     With wsPrimaryHeatingSystems
         
         ' // Get thermal resistance between hot water tank and internal building node
-        dblH_loss = Application.index(.Range("rH_loss"), intOffset + intHeatingSystemIndex).Value
+        dblH_loss = Application.index(.Range("rH_loss"), intOffset + intHeatingSystemIndex).value
                 
         ' // Calculate thermal capacity of hot water tank
-        dblV_cyl = Application.index(.Range("rV_cyl"), intOffset + intHeatingSystemIndex).Value
+        dblV_cyl = Application.index(.Range("rV_cyl"), intOffset + intHeatingSystemIndex).value
         dblC_cyl = SPECIFIC_HEAT_CAPACITY_WATER * dblV_cyl
         
     End With

@@ -113,7 +113,7 @@ End Sub
 ' Helper Functions
 '===============================================================================
 
-Private Function ModuloDouble(ByVal Value As Double, ByVal Divisor As Double) As Double
+Private Function ModuloDouble(ByVal value As Double, ByVal Divisor As Double) As Double
     '
     ' Compute Value mod Divisor for positive doubles.
     ' VBA's Mod operator only works with integers, so we need this helper.
@@ -122,7 +122,7 @@ Private Function ModuloDouble(ByVal Value As Double, ByVal Divisor As Double) As
     ' But we use a simpler approach for positive values.
     '
 
-    ModuloDouble = Value - Int(Value / Divisor) * Divisor
+    ModuloDouble = value - Int(value / Divisor) * Divisor
 
     ' Handle floating point errors that might make result negative or >= Divisor
     If ModuloDouble < 0 Then

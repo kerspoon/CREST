@@ -128,7 +128,7 @@ Public Sub InitialiseSolarThermal(dwellingIndex As Integer, runNumber As Integer
     ' // Get indexes
     intDwellingIndex = dwellingIndex
     intRunNumber = runNumber
-    intSolarThermalIndex = Application.index(wsDwellings.Range("rSolarThermalIndex"), intOffset + intDwellingIndex).Value
+    intSolarThermalIndex = Application.index(wsDwellings.Range("rSolarThermalIndex"), intOffset + intDwellingIndex).value
     
     ' // Check if the dwelling has solar thermal
     If intSolarThermalIndex > 0 Then
@@ -136,21 +136,21 @@ Public Sub InitialiseSolarThermal(dwellingIndex As Integer, runNumber As Integer
         ' // Get system variables
         With wsSolarThermal
         
-            dblN = .Cells(intOffset + intSolarThermalIndex, 3).Value
-            dblA_coll_aperture = .Cells(intOffset + intSolarThermalIndex, 4).Value
-            dblA_coll_absorb = .Cells(intOffset + intSolarThermalIndex, 5).Value
-            dblA_coll_gross = .Cells(intOffset + intSolarThermalIndex, 6).Value
-            dblEtaZero = .Cells(intOffset + intSolarThermalIndex, 7).Value
-            dblK1 = .Cells(intOffset + intSolarThermalIndex, 8).Value
-            dblK2 = .Cells(intOffset + intSolarThermalIndex, 9).Value
-            dblFPrime = .Cells(intOffset + intSolarThermalIndex, 10).Value
-            dblU_LLin = .Cells(intOffset + intSolarThermalIndex, 11).Value
-            dblM_pump = .Cells(intOffset + intSolarThermalIndex, 12).Value
-            dblP_pumpsolar = .Cells(intOffset + intSolarThermalIndex, 13).Value
-            dblC_collector = .Cells(intOffset + intSolarThermalIndex, 14).Value
-            dblTau_alpha = .Cells(intOffset + intSolarThermalIndex, 15).Value
-            dblSlope = .Cells(intOffset + intSolarThermalIndex, 16).Value
-            dblAzimuth = .Cells(intOffset + intSolarThermalIndex, 17).Value
+            dblN = .Cells(intOffset + intSolarThermalIndex, 3).value
+            dblA_coll_aperture = .Cells(intOffset + intSolarThermalIndex, 4).value
+            dblA_coll_absorb = .Cells(intOffset + intSolarThermalIndex, 5).value
+            dblA_coll_gross = .Cells(intOffset + intSolarThermalIndex, 6).value
+            dblEtaZero = .Cells(intOffset + intSolarThermalIndex, 7).value
+            dblK1 = .Cells(intOffset + intSolarThermalIndex, 8).value
+            dblK2 = .Cells(intOffset + intSolarThermalIndex, 9).value
+            dblFPrime = .Cells(intOffset + intSolarThermalIndex, 10).value
+            dblU_LLin = .Cells(intOffset + intSolarThermalIndex, 11).value
+            dblM_pump = .Cells(intOffset + intSolarThermalIndex, 12).value
+            dblP_pumpsolar = .Cells(intOffset + intSolarThermalIndex, 13).value
+            dblC_collector = .Cells(intOffset + intSolarThermalIndex, 14).value
+            dblTau_alpha = .Cells(intOffset + intSolarThermalIndex, 15).value
+            dblSlope = .Cells(intOffset + intSolarThermalIndex, 16).value
+            dblAzimuth = .Cells(intOffset + intSolarThermalIndex, 17).value
             
         End With
         
@@ -382,14 +382,14 @@ Private Function GetIncidentRadiation(currentTimeStep As Integer) As Double
     ' // --------------------
     
     ' // Get longitude, latitude and meridian
-    dblLongitude = wsMain.Range("rLongitude").Value
-    dblLatitude = wsMain.Range("rLatitude").Value
-    dblMeridian = wsMain.Range("rMeridian").Value
+    dblLongitude = wsMain.Range("rLongitude").value
+    dblLatitude = wsMain.Range("rLatitude").value
+    dblMeridian = wsMain.Range("rMeridian").value
     
     
     ' // -------------------- ADDED by JB to fix bug (5/12/2025)
-    intDayOfMonth = wsMain.Range("rDayOfMonth").Value
-    intMonthOfYear = wsMain.Range("rMonthOfYear").Value
+    intDayOfMonth = wsMain.Range("rDayOfMonth").value
+    intMonthOfYear = wsMain.Range("rMonthOfYear").value
     strDate = CStr(intDayOfMonth) + "/" + CStr(intMonthOfYear) + "/2015"
     dblDayOfYear = DatePart("y", CDate(strDate))
     ' // --------------------
@@ -411,7 +411,7 @@ Private Function GetIncidentRadiation(currentTimeStep As Integer) As Double
                
     ' // Update local standard time hour
     If ((dblDayOfYear >= DAY_SUMMER_TIME_STARTS And dblDayOfYear < DAY_SUMMER_TIME_END) _
-    And wsMain.Shapes("objOverWriteData").ControlFormat.Value = 1) Then
+    And wsMain.Shapes("objOverWriteData").ControlFormat.value = 1) Then
         intLocalStandardTimeHour = intHour - 1
     Else
         intLocalStandardTimeHour = intHour

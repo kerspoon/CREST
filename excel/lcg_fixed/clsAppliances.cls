@@ -112,21 +112,49 @@ Public Sub InitialiseAppliances(dwellingIndex As Integer, runNumber As Integer)
     intOffset = 12
     
     ' // For each appliance
+    Dim applianceRands(1 To 31) As Double
+    Dim applianceNames(1 To 31) As String
+    Dim applianceOwned(1 To 31) As Boolean
+
     For i = 1 To 31
-    
+
         DebugLog_Random ("clsAppliances:119 - Select appliance ownership")
-    
+
         ' // Get a random number
         dblRan = g_PortableRNG.Random()
-        
+        applianceRands(i) = dblRan
+
         ' // Get the proportion of houses with this appliance
-        dblProportion = wsAppliancesAndWaterFixtures.Range("rApplianceProportion").Cells(i, 1).Value
-        
+        dblProportion = wsAppliancesAndWaterFixtures.Range("rApplianceProportion").Cells(i, 1).value
+
+        ' // Get the appliance name (column E, offset by 8 rows)
+        applianceNames(i) = wsAppliancesAndWaterFixtures.Range("E" & CStr(i + 8)).value
+
         ' // Determine if this simulated dwelling has this appliance
         aApplianceConfiguration(i, 1) = IIf(dblRan < dblProportion, True, False)
- 
+        applianceOwned(i) = aApplianceConfiguration(i, 1)
+
     Next i
-    
+
+    ' Validation logging - appliance ownership
+    For i = 1 To 31
+        Dim ownedFlag As Integer
+        ownedFlag = IIf(applianceOwned(i), 1, 0)
+        ValidationLog "APPLIANCE" & vbTab & intDwellingIndex & vbTab & _
+                      "idx=" & (i - 1) & vbTab & _
+                      applianceNames(i) & "=" & ownedFlag & vbTab & _
+                      "rand=" & Format(applianceRands(i), "0.000000000000000")
+    Next i
+
+    ' Summary line
+    Dim totalOwned As Integer
+    totalOwned = 0
+    For i = 1 To 31
+        If applianceOwned(i) Then totalOwned = totalOwned + 1
+    Next i
+    ValidationLog "APPLIANCES_SUMMARY" & vbTab & intDwellingIndex & vbTab & _
+                  "owned=" & totalOwned & "/31"
+
 End Sub
 
 
@@ -161,20 +189,20 @@ Public Sub RunApplianceSimulation()
         intRestartDelayTimeLeft = 0
         ' // Get the appliance details
         With wsAppliancesAndWaterFixtures
-            strApplianceType = .Range("E" + CStr(intAppliance + intApplianceSourceCellOffsetY)).Value
-            intMeanCycleLength = .Range("R" + CStr(intAppliance + intApplianceSourceCellOffsetY)).Value
-            intCyclesPerYear = .Range("X" + CStr(intAppliance + intApplianceSourceCellOffsetY)).Value
+            strApplianceType = .Range("E" + CStr(intAppliance + intApplianceSourceCellOffsetY)).value
+            intMeanCycleLength = .Range("R" + CStr(intAppliance + intApplianceSourceCellOffsetY)).value
+            intCyclesPerYear = .Range("X" + CStr(intAppliance + intApplianceSourceCellOffsetY)).value
     
-            intStandbyPower = .Range("T" + CStr(intAppliance + intApplianceSourceCellOffsetY)).Value
-            intRatedPower = .Range("P" + CStr(intAppliance + intApplianceSourceCellOffsetY)).Value
-            dblProbSwitchOn = .Range("AD" + CStr(intAppliance + intApplianceSourceCellOffsetY)).Value
-            dblOwnership = .Range("F" + CStr(intAppliance + intApplianceSourceCellOffsetY)).Value
+            intStandbyPower = .Range("T" + CStr(intAppliance + intApplianceSourceCellOffsetY)).value
+            intRatedPower = .Range("P" + CStr(intAppliance + intApplianceSourceCellOffsetY)).value
+            dblProbSwitchOn = .Range("AD" + CStr(intAppliance + intApplianceSourceCellOffsetY)).value
+            dblOwnership = .Range("F" + CStr(intAppliance + intApplianceSourceCellOffsetY)).value
     'wsMain.Range("M18") = "Appliance number " + CStr(intAppliance) + " Got this far"
-            intTargetAveragekWhYear = .Range("V" + CStr(intAppliance + intApplianceSourceCellOffsetY)).Value
+            intTargetAveragekWhYear = .Range("V" + CStr(intAppliance + intApplianceSourceCellOffsetY)).value
     'wsMain.Range("M19") = "Appliance number " + CStr(intAppliance) + " Got this far"
     'NB All parameters that get turned into integers must have values of 32768 or smaller
-            strUseProfile = .Range("G" + CStr(intAppliance + intApplianceSourceCellOffsetY)).Value
-            intRestartDelay = .Range("S" + CStr(intAppliance + intApplianceSourceCellOffsetY)).Value
+            strUseProfile = .Range("G" + CStr(intAppliance + intApplianceSourceCellOffsetY)).value
+            intRestartDelay = .Range("S" + CStr(intAppliance + intApplianceSourceCellOffsetY)).value
         End With
     
         blnHasAppliance = aApplianceConfiguration(intAppliance, 1)
@@ -201,7 +229,7 @@ Public Sub RunApplianceSimulation()
             intRatedPower = GetPortableNormalInteger(Val(intRatedPower), intRatedPower / 10)
     
             ' // Get the weekday or weekend flag
-            blnWeekend = IIf(wsMain.Range("rDayType").Value = "wd", False, True)
+            blnWeekend = IIf(wsMain.Range("rDayType").value = "wd", False, True)
              
             ' // Loop through each minute of the day
             intMinute = 1
@@ -338,7 +366,7 @@ Public Sub WriteAppliances(dwellingIndexRowOffset As Long)
     
     With wsDwellings
         For intAppliance = 1 To 31
-        .Cells(intDwellingIndex + 4, intAppliance + 8).Value = aApplianceConfiguration(intAppliance, 1) * -1
+        .Cells(intDwellingIndex + 4, intAppliance + 8).value = aApplianceConfiguration(intAppliance, 1) * -1
         Next intAppliance
     End With
     
@@ -359,7 +387,7 @@ Public Sub CalculateThermalGains()
     Dim vntHeatGainsRatio() As Variant
     Dim dblAppliancePower As Double
         
-    vntHeatGainsRatio = wsAppliancesAndWaterFixtures.Range("rHeatGainsRatio").Value
+    vntHeatGainsRatio = wsAppliancesAndWaterFixtures.Range("rHeatGainsRatio").value
     
     For intMinute = 1 To 1440
         
@@ -486,3 +514,5 @@ Private Function GetPowerUsage(ByVal intCycleTimeLeft As Integer) As Integer
     End Select
 
 End Function
+
+

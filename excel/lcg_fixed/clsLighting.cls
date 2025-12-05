@@ -77,9 +77,9 @@ Public Sub InitialiseLighting(dwellingIndex As Integer, runNumber As Integer)
     
     ' // Determine the irradiance threshold of this house
     With wsLightConfig
-        Debug.Print "intIrradianceThreshold Irradiance threshold variation mean=" & .Range("iIrradianceThresholdMean").Value & " sd=" & .Range("iIrradianceThresholdSd").Value
-        DebugLog_Random ("clsLighting:83 - Irradiance threshold variation mean=" & .Range("iIrradianceThresholdMean").Value & " sd=" & .Range("iIrradianceThresholdSd").Value)
-        intIrradianceThreshold = GetPortableNormalInteger(.Range("iIrradianceThresholdMean").Value, .Range("iIrradianceThresholdSd").Value)
+        Debug.Print "intIrradianceThreshold Irradiance threshold variation mean=" & .Range("iIrradianceThresholdMean").value & " sd=" & .Range("iIrradianceThresholdSd").value
+        DebugLog_Random ("clsLighting:83 - Irradiance threshold variation mean=" & .Range("iIrradianceThresholdMean").value & " sd=" & .Range("iIrradianceThresholdSd").value)
+        intIrradianceThreshold = GetPortableNormalInteger(.Range("iIrradianceThresholdMean").value, .Range("iIrradianceThresholdSd").value)
     End With
     
     ' // Choose a random house from the list of 100 provided in the bulbs sheet
@@ -97,7 +97,7 @@ Public Sub InitialiseLighting(dwellingIndex As Integer, runNumber As Integer)
     intActiveOccupancy = aOccupancy(intRunNumber).GetActiveOccupancy
         
     ' // Get the calibration scalar
-    dblCalibrationScalar = wsLightConfig.Range("F24").Value
+    dblCalibrationScalar = wsLightConfig.Range("F24").value
     
     
     
@@ -121,7 +121,7 @@ Public Sub InitialiseLighting(dwellingIndex As Integer, runNumber As Integer)
     debugStr = "  Effective occ: ["
     For i = 0 To 5
         If i > 0 Then
-            debugStr = debugStr & wsLightConfig.Range("E" & CStr(37 + i)).Value
+            debugStr = debugStr & wsLightConfig.Range("E" & CStr(37 + i)).value
         Else
             debugStr = debugStr & "0.0"
         End If
@@ -131,7 +131,23 @@ Public Sub InitialiseLighting(dwellingIndex As Integer, runNumber As Integer)
     Debug.Print debugStr
     
     ' ====== DEBUG OUTPUT END ======
-        
+
+    ' Validation logging - bulb configuration
+    Dim bulbPowers As String
+    bulbPowers = "["
+    For i = 1 To intNumBulbs
+        bulbPowers = bulbPowers & CStr(aBulbArray(1, i + 2))
+        If i < intNumBulbs Then bulbPowers = bulbPowers & ","
+    Next i
+    bulbPowers = bulbPowers & "]"
+
+    ValidationLog "BULB_CONFIG" & vbTab & intDwellingIndex & vbTab & _
+                  "config=" & intBulbConfiguration & vbTab & _
+                  "num_bulbs=" & intNumBulbs & vbTab & _
+                  "powers=" & bulbPowers & vbTab & _
+                  "irrad_thresh=" & intIrradianceThreshold & vbTab & _
+                  "calib_scalar=" & Format(dblCalibrationScalar, "0.000000000000000")
+
 End Sub
 
 
@@ -167,9 +183,9 @@ Public Sub RunLightingSimulation()
         intRating = aBulbArray(1, i + 2)
         
         'Scale down bulb power for Indian total lighting electricity demand
-        blnIndia = IIf(wsMain.Range("rCountry").Value = "India", True, False)
+        blnIndia = IIf(wsMain.Range("rCountry").value = "India", True, False)
         If blnIndia Then
-            intRating = intRating * wsLightConfig.Range("G24").Value
+            intRating = intRating * wsLightConfig.Range("G24").value
         End If
             
 
@@ -184,6 +200,11 @@ Public Sub RunLightingSimulation()
         DebugLog_Random ("clsLighting:151 - Calibrated relative use weighting (exponential) scalar=" & dblCalibrationScalar)
         dblCalibratedRelativeUseWeighting = -dblCalibrationScalar * Application.WorksheetFunction.Ln(g_PortableRNG.Random())
         aSimulationArray(3, i) = dblCalibratedRelativeUseWeighting
+        
+        ' Validation logging - per-bulb relative use
+        ValidationLog "BULB_USE" & vbTab & intDwellingIndex & vbTab & _
+                      "bulb=" & (i - 1) & vbTab & _
+                      "calibrated_use=" & Format(dblCalibratedRelativeUseWeighting, "0.000000000000000")
         
         ' // Calculate the bulb usage at each minute of the day
         intTime = 1
@@ -208,7 +229,7 @@ Public Sub RunLightingSimulation()
             blnLowIrradiance = ((intIrradiance < intIrradianceThreshold) Or (g_PortableRNG.Random() < 0.05))
 
             ' // Get the effective occupancy for this number of active occupants to allow for sharing
-            dblEffectiveOccupancy = wsLightConfig.Range("E" + CStr(37 + intActiveOccupants)).Value
+            dblEffectiveOccupancy = wsLightConfig.Range("E" + CStr(37 + intActiveOccupants)).value
 
             ' // Check the probability of a switch on at this time
             DebugLog_Random ("clsLighting:179 - Light switch-on decision occupancy=" & dblEffectiveOccupancy)
@@ -224,14 +245,14 @@ Public Sub RunLightingSimulation()
                 For j = 1 To 9
                 
                     ' // Get the cumulative probability of this duration
-                    cml = wsLightConfig.Range("E" + CStr(54 + j)).Value
+                    cml = wsLightConfig.Range("E" + CStr(54 + j)).value
                 
                     ' // Check to see if this is the type of light
                     If r1 < cml Then
                     
                         ' // Get the durations
-                        intLowerDuration = wsLightConfig.Range("C" + CStr(54 + j)).Value
-                        intUpperDuration = wsLightConfig.Range("D" + CStr(54 + j)).Value
+                        intLowerDuration = wsLightConfig.Range("C" + CStr(54 + j)).value
+                        intUpperDuration = wsLightConfig.Range("D" + CStr(54 + j)).value
                         
                         ' // Get another random number
                         DebugLog_Random ("clsLighting:200 - Light state determination r2")

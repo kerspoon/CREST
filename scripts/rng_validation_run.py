@@ -9,7 +9,7 @@ This script implements Objective #1: RNG Call Sequence Matching
 - Output log can be compared with Excel VBA equivalent
 
 Usage:
-    python scripts/rng_validation_run.py [--no-export] [extra_args...]
+    python scripts/rng_validation_run.py [--no-export] [--validation-log] [extra_args...]
 
 Examples:
     # Run with default (exports from Excel first, uses exported settings)
@@ -17,6 +17,9 @@ Examples:
 
     # Skip export (use existing exported data)
     python scripts/rng_validation_run.py --no-export
+
+    # Enable validation logging (dwelling params, bulbs, appliances)
+    python scripts/rng_validation_run.py --validation-log
 
     # Override seed
     python scripts/rng_validation_run.py --seed 12345
@@ -45,7 +48,8 @@ def main():
 
     # Parse arguments
     skip_export = '--no-export' in sys.argv
-    extra_args = [arg for arg in sys.argv[1:] if arg != '--no-export']
+    enable_validation_log = '--validation-log' in sys.argv
+    extra_args = [arg for arg in sys.argv[1:] if arg not in ('--no-export', '--validation-log')]
 
     print("=" * 80)
     print("CREST RNG VALIDATION RUN")
@@ -126,6 +130,7 @@ def main():
 
     # Build command using settings from exported JSON
     rng_log_path = output_dir / 'rng_calls.log'
+    validation_log_path = output_dir / 'dwelling_params.log' if enable_validation_log else None
     cmd = [
         sys.executable,
         str(get_python_main()),
@@ -154,6 +159,10 @@ def main():
     # Add --save-detailed if enabled in settings
     if settings.get('save_detailed', True):
         cmd.append('--save-detailed')
+
+    # Add validation logging if enabled
+    if validation_log_path:
+        cmd.extend(['--validation-log-file', str(validation_log_path)])
 
     # Add any extra arguments (these can override settings above)
     cmd.extend(extra_args)
@@ -185,6 +194,17 @@ def main():
         else:
             print("⚠ WARNING: RNG log not found!")
             print("  Check that --rng-log-file flag is working correctly")
+
+        # Check validation log if enabled
+        if validation_log_path and validation_log_path.exists():
+            val_size = validation_log_path.stat().st_size / 1024  # KB
+            with open(validation_log_path, 'r') as f:
+                num_entries = sum(1 for line in f if line.strip())
+            print(f"✓ Validation log created: {validation_log_path}")
+            print(f"  Size: {val_size:.1f} KB, Entries: {num_entries:,}")
+        elif validation_log_path:
+            print("⚠ WARNING: Validation log not found!")
+            print("  Check that --validation-log-file flag is working correctly")
 
         # List output files
         print()
@@ -228,10 +248,15 @@ def main():
     print("Next steps:")
     print(f"1. Manually run Excel ({DEFAULT_EXCEL}) with same settings and seed=42")
     print(f"2. Save Excel output to: output/rng_validation/excel_{num_dwellings}houses_YYYYMMDD_NN/")
-    print("3. Compare logs:")
+    print("3. Compare RNG logs:")
     print(f"   python scripts/rng_log_compare.py \\")
     print(f"     {output_dir} \\")
     print(f"     output/rng_validation/excel_{num_dwellings}houses_YYYYMMDD_NN")
+    if enable_validation_log:
+        print("4. Compare validation params:")
+        print(f"   python scripts/validation_params_compare.py \\")
+        print(f"     {output_dir} \\")
+        print(f"     output/rng_validation/excel_{num_dwellings}houses_YYYYMMDD_NN")
     print()
 
 

@@ -20,6 +20,7 @@ from ..core.solar_thermal import SolarThermal
 from ..core.cooling import CoolingSystem
 from ..data.loader import CRESTDataLoader
 from ..utils.random import RandomGenerator
+from ..utils.validation_log import ValidationLogger
 from ..simulation.config import (
     TIMESTEPS_PER_DAY_1MIN,
     Country,
@@ -56,7 +57,8 @@ class Dwelling:
         global_climate,
         data_loader: CRESTDataLoader,
         activity_statistics: dict,
-        rng: Optional[RandomGenerator] = None
+        rng: Optional[RandomGenerator] = None,
+        validation_logger: Optional[ValidationLogger] = None
     ):
         """
         Initialize dwelling.
@@ -73,12 +75,15 @@ class Dwelling:
             Activity probability profiles
         rng : RandomGenerator, optional
             Random number generator
+        validation_logger : ValidationLogger, optional
+            Logger for validation data (bulbs, appliances, etc.)
         """
         self.config = config
         self.global_climate = global_climate
         self.data_loader = data_loader
         self.activity_statistics = activity_statistics
         self.rng = rng if rng is not None else RandomGenerator()
+        self.validation_logger = validation_logger
 
         # Create local climate
         self.local_climate = LocalClimate(global_climate, config.dwelling_index)
@@ -142,7 +147,10 @@ class Dwelling:
             urban_rural=config.urban_rural,
             appliance_ownership=config.appliance_ownership
         )
-        self.appliances = Appliances(app_config, data_loader, activity_statistics, config.is_weekend, self.rng)
+        self.appliances = Appliances(
+            app_config, data_loader, activity_statistics, config.is_weekend, self.rng,
+            validation_logger=validation_logger
+        )
         self.appliances.set_occupancy(self.occupancy)
         self.building.set_appliances(self.appliances)
 
@@ -151,7 +159,10 @@ class Dwelling:
             dwelling_index=config.dwelling_index,
             country=config.country
         )
-        self.lighting = Lighting(light_config, data_loader, self.rng)
+        self.lighting = Lighting(
+            light_config, data_loader, self.rng,
+            validation_logger=validation_logger
+        )
         self.lighting.set_occupancy(self.occupancy)
         self.lighting.set_local_climate(self.local_climate)
         self.building.set_lighting(self.lighting)
@@ -225,6 +236,16 @@ class Dwelling:
         # VBA: clsOccupancy:204-238 (init) + :298 (143 transitions)
         self.occupancy.initialize()  # 2 RNG calls
         self.occupancy.run_simulation()  # 143 RNG calls
+
+        # Log active occupancy array for validation
+        if self.validation_logger is not None:
+            self.validation_logger.log_active_occupancy(
+                dwelling_idx=self.config.dwelling_index,
+                residents=self.config.num_residents,
+                is_24hr=self.occupancy._is_24hr_occupancy_dwelling,
+                values=self.occupancy.active_occupancy,
+                combined_states=self.occupancy.combined_states
+            )
 
         # 2. Lighting: Initialize + run simulation
         # VBA: clsLighting:79-87 (init) + simulation

@@ -129,8 +129,9 @@ class CRESTDataLoader:
         """
         # Skip rows 0-3 (headers) and row 5 ("Combined state" label)
         # Use row 4 as column headers
+        # Use dtype={0: str} to preserve state labels like "00", "01" as 2-char strings
         rows_to_skip = [0, 1, 2, 3, 5]
-        return self._load_csv("Starting_states.csv", skiprows=rows_to_skip, header=0)
+        return self._load_csv("Starting_states.csv", skiprows=rows_to_skip, header=0, dtype={0: str})
 
     def load_24hr_occupancy(self) -> pd.DataFrame:
         """Load 24-hour occupancy correction factors."""
@@ -438,9 +439,10 @@ class CRESTDataLoader:
         Returns array of proportions (one per building type)
         """
         df = self.load_buildings()
-        # Skip header rows (4 rows), then column B (index 1) has proportions
+        # Column B (index 1) has proportions
+        # load_buildings() already skips header rows, so data starts at row 0
         # Stop at first NaN value (blank row)
-        proportions = df.iloc[4:, 1].values
+        proportions = df.iloc[:, 1].values
         # Filter out NaN values
         proportions = proportions[~pd.isna(proportions)]
         return proportions.astype(float)
@@ -453,9 +455,10 @@ class CRESTDataLoader:
         Returns array of proportions (one per heating system type)
         """
         df = self.load_primary_heating_systems()
-        # Skip header rows (4 rows), then column B (index 1) has proportions
+        # Column B (index 1) has proportions
+        # load_primary_heating_systems() already skips header rows, so data starts at row 0
         # Filter out NaN values
-        proportions = df.iloc[4:, 1].values
+        proportions = df.iloc[:, 1].values
         proportions = proportions[~pd.isna(proportions)]
         return proportions.astype(float)
 
@@ -467,9 +470,10 @@ class CRESTDataLoader:
         Returns array of proportions (index 0 = no PV, index 1+ = PV system types)
         """
         df = self.load_pv_systems()
-        # Skip header rows (4 rows), then column B (index 1) has proportions
+        # Column B (index 1) has proportions
+        # load_pv_systems() already skips header rows, so data starts at row 0
         # Filter out NaN values
-        proportions = df.iloc[4:, 1].values
+        proportions = df.iloc[:, 1].values
         proportions = proportions[~pd.isna(proportions)]
         return proportions.astype(float)
 
@@ -481,9 +485,10 @@ class CRESTDataLoader:
         Returns array of proportions (index 0 = no solar thermal, index 1+ = system types)
         """
         df = self.load_solar_thermal_systems()
-        # Skip header rows (4 rows), then column B (index 1) has proportions
+        # Column B (index 1) has proportions
+        # load_solar_thermal_systems() already skips header rows, so data starts at row 0
         # Filter out NaN values
-        proportions = df.iloc[4:, 1].values
+        proportions = df.iloc[:, 1].values
         proportions = proportions[~pd.isna(proportions)]
         return proportions.astype(float)
 
@@ -495,9 +500,10 @@ class CRESTDataLoader:
         Returns array of proportions (index 0 = no cooling, index 1+ = system types)
         """
         df = self.load_cooling_systems()
-        # Skip header rows (4 rows), then column B (index 1) has proportions
+        # Column B (index 1) has proportions
+        # load_cooling_systems() already skips header rows, so data starts at row 0
         # Filter out NaN values
-        proportions = df.iloc[4:, 1].values
+        proportions = df.iloc[:, 1].values
         proportions = proportions[~pd.isna(proportions)]
         return proportions.astype(float)
 

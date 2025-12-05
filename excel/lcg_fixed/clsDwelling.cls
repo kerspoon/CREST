@@ -35,10 +35,10 @@ Public Sub InitialiseDwelling(index As Integer)
     intDwellingIndex = index
     
     With wsDwellings
-        intResidents = Application.index(.Range("rNumberResidentsIndex"), intDwellingIndex + intOffset).Value
-        intBuildingIndex = Application.index(.Range("rBuildingIndex"), intDwellingIndex + intOffset).Value
-        intPrimaryHeatingIndex = Application.index(.Range("rPrimaryHeatingIndex"), intDwellingIndex + intOffset).Value
-        intPVSystemIndex = Application.index(.Range("rPvSystemIndex"), intDwellingIndex + intOffset).Value
+        intResidents = Application.index(.Range("rNumberResidentsIndex"), intDwellingIndex + intOffset).value
+        intBuildingIndex = Application.index(.Range("rBuildingIndex"), intDwellingIndex + intOffset).value
+        intPrimaryHeatingIndex = Application.index(.Range("rPrimaryHeatingIndex"), intDwellingIndex + intOffset).value
+        intPVSystemIndex = Application.index(.Range("rPvSystemIndex"), intDwellingIndex + intOffset).value
     End With
 
 End Sub

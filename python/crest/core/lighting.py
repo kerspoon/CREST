@@ -10,7 +10,7 @@ AUDIT STATUS: ✅ COMPLETE - Full VBA implementation (clsLighting.cls)
 import numpy as np
 import pandas as pd
 from dataclasses import dataclass
-from typing import Optional
+from typing import Optional, TYPE_CHECKING
 
 from ..simulation.config import (
     TIMESTEPS_PER_DAY_1MIN,
@@ -19,6 +19,9 @@ from ..simulation.config import (
 )
 from ..utils.random import RandomGenerator
 from ..data.loader import CRESTDataLoader
+
+if TYPE_CHECKING:
+    from ..utils.validation_log import ValidationLogger
 
 
 @dataclass
@@ -45,7 +48,8 @@ class Lighting:
         self,
         config: LightingConfig,
         data_loader: CRESTDataLoader,
-        rng: Optional[RandomGenerator] = None
+        rng: Optional[RandomGenerator] = None,
+        validation_logger: Optional["ValidationLogger"] = None
     ):
         """
         Initialize lighting model.
@@ -58,10 +62,13 @@ class Lighting:
             Data loader for lighting specs
         rng : RandomGenerator, optional
             Random number generator
+        validation_logger : ValidationLogger, optional
+            Logger for validation data (bulb config, switch decisions)
         """
         self.config = config
         self.data_loader = data_loader
         self.rng = rng if rng is not None else RandomGenerator()
+        self.validation_logger = validation_logger
 
         # VBA: intDwellingIndex, intRunNumber (lines 19-20)
         self.dwelling_index = config.dwelling_index
@@ -207,6 +214,20 @@ class Lighting:
             cumulative_prob = float(light_config_raw.iloc[row_idx, 4])  # Col E
             self.duration_ranges.append((lower_dur, upper_dur, cumulative_prob))
 
+        # Store for validation logging
+        self._bulb_config_idx = bulb_config_idx
+
+        # Log bulb configuration for validation
+        if self.validation_logger is not None:
+            self.validation_logger.log_bulb_config(
+                dwelling_idx=self.dwelling_index,
+                config_idx=bulb_config_idx,
+                num_bulbs=self.num_bulbs,
+                powers=list(self.bulb_powers),
+                irradiance_threshold=self.irradiance_threshold,
+                calibration_scalar=self.calibration_scalar
+            )
+
     def _get_monte_carlo_normal_dist_guess(self, mean: float, std_dev: float) -> float:
         """
         Generate a normally distributed random value.
@@ -247,6 +268,10 @@ class Lighting:
         # interleaved with simulation logic. This ensures correct RNG sequence.
         self.bulb_relative_use = np.zeros(self.num_bulbs)
 
+        # Track switch-on statistics for validation logging
+        total_switch_ons = 0
+        total_minutes_on = 0
+
         # VBA: For each bulb (line 131)
         # For i = 1 To intNumBulbs
         for bulb_idx in range(self.num_bulbs):
@@ -259,6 +284,14 @@ class Lighting:
             # dblCalibratedRelativeUseWeighting = -dblCalibrationScalar * Application.WorksheetFunction.Ln(Rnd())
             calibrated_relative_use = -self.calibration_scalar * np.log(self.rng.random())
             self.bulb_relative_use[bulb_idx] = calibrated_relative_use
+
+            # Log per-bulb calibrated relative use
+            if self.validation_logger is not None:
+                self.validation_logger.log_bulb_use(
+                    dwelling_idx=self.dwelling_index,
+                    bulb_idx=bulb_idx,
+                    calibrated_use=calibrated_relative_use
+                )
 
             # VBA: Calculate the bulb usage at each minute of the day (lines 154-240)
             # intTime = 1, Do While (intTime <= 1440)
@@ -288,7 +321,8 @@ class Lighting:
                 # blnLowIrradiance = ((intIrradiance < intIrradianceThreshold) Or (Rnd() < 0.05))
                 # CRITICAL: VBA's Or operator does NOT short-circuit - it always evaluates both sides!
                 # Python's 'or' DOES short-circuit, so we must evaluate random() first to match VBA
-                rand_5pct = self.rng.random() < 0.05
+                rand_5pct_val = self.rng.random()
+                rand_5pct = rand_5pct_val < 0.05
                 low_irradiance = (irradiance < self.irradiance_threshold) or rand_5pct
 
                 # VBA: Get effective occupancy for sharing (line 176)
@@ -303,9 +337,12 @@ class Lighting:
                 threshold = effective_occ * calibrated_relative_use
                 rand_switch = rand_val < threshold
 
-                if low_irradiance and rand_switch:
+                switched_on = low_irradiance and rand_switch
+
+                if switched_on:
 
                     # VBA: This is a switch on event (line 181)
+                    total_switch_ons += 1
 
                     # VBA: Determine how long this bulb is on for (lines 183-209)
                     r1 = self.rng.random()
@@ -321,6 +358,24 @@ class Lighting:
                             # Python int() truncates (floors), which is different behavior
                             light_duration = round(r2 * (upper_dur - lower_dur) + lower_dur)
                             break
+
+                    # Log switch-on decision in verbose mode
+                    if self.validation_logger is not None:
+                        self.validation_logger.log_switch_decision(
+                            dwelling_idx=self.dwelling_index,
+                            bulb_idx=bulb_idx,
+                            minute=minute,
+                            irradiance=irradiance,
+                            irrad_threshold=self.irradiance_threshold,
+                            active_occ=active_occupants,
+                            effective_occ=effective_occ,
+                            calibrated_use=calibrated_relative_use,
+                            rand_5pct=rand_5pct_val,
+                            rand_switch=rand_val,
+                            low_irrad=low_irradiance,
+                            switched_on=True,
+                            duration=light_duration
+                        )
 
                     # VBA: Light stays on for duration (lines 211-228)
                     # For j = 1 To intLightDuration
@@ -341,6 +396,7 @@ class Lighting:
                         # VBA: Store the demand (line 223)
                         # aSimulationArray(3 + intTime, i) = intRating
                         self.bulb_demands[minute, bulb_idx] = bulb_rating
+                        total_minutes_on += 1
 
                         # VBA: Increment the time (line 226)
                         minute += 1
@@ -350,6 +406,14 @@ class Lighting:
                     # aSimulationArray(3 + intTime, i) = 0
                     self.bulb_demands[minute, bulb_idx] = 0
                     minute += 1
+
+        # Log switch-on summary for this dwelling
+        if self.validation_logger is not None:
+            self.validation_logger.log_switch_summary(
+                dwelling_idx=self.dwelling_index,
+                total_switch_ons=total_switch_ons,
+                total_minutes_on=total_minutes_on
+            )
 
         # VBA: TotalLightingDemand() called separately (lines 252-272)
         self._calculate_total_demand()

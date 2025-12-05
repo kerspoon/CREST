@@ -125,18 +125,18 @@ Public Sub InitialiseHeatingSystem(dwellingIndex As Integer, runNumber As Intege
     
     intDwellingIndex = dwellingIndex
     intRunNumber = runNumber
-    intHeatingSystemIndex = Application.index(wsDwellings.Range("rPrimaryHeatingIndex"), intOffset + intDwellingIndex).Value
+    intHeatingSystemIndex = Application.index(wsDwellings.Range("rPrimaryHeatingIndex"), intOffset + intDwellingIndex).value
     
     With wsPrimaryHeatingSystems
     
-        strHeatingType = Application.index(.Range("rHeatingType"), intOffset + intHeatingSystemIndex).Value
-        intHeatingSystemType = Application.index(.Range("rHeatingSystemType"), intOffset + intHeatingSystemIndex).Value
-        strFuelType = Application.index(.Range("rFuelType"), intOffset + intHeatingSystemIndex).Value
-        dblFuelFlowRate = Application.index(.Range("rFuelFlowRate"), intOffset + intHeatingSystemIndex).Value
-        dblPhi_h = Application.index(.Range("rPhi_h"), intOffset + intHeatingSystemIndex).Value
-        dblP_standby = Application.index(.Range("rP_standby"), intOffset + intHeatingSystemIndex).Value
-        dblP_pump = Application.index(.Range("rP_pump"), intOffset + intHeatingSystemIndex).Value
-        dblEta_h = Application.index(.Range("rEta_h"), intOffset + intHeatingSystemIndex).Value
+        strHeatingType = Application.index(.Range("rHeatingType"), intOffset + intHeatingSystemIndex).value
+        intHeatingSystemType = Application.index(.Range("rHeatingSystemType"), intOffset + intHeatingSystemIndex).value
+        strFuelType = Application.index(.Range("rFuelType"), intOffset + intHeatingSystemIndex).value
+        dblFuelFlowRate = Application.index(.Range("rFuelFlowRate"), intOffset + intHeatingSystemIndex).value
+        dblPhi_h = Application.index(.Range("rPhi_h"), intOffset + intHeatingSystemIndex).value
+        dblP_standby = Application.index(.Range("rP_standby"), intOffset + intHeatingSystemIndex).value
+        dblP_pump = Application.index(.Range("rP_pump"), intOffset + intHeatingSystemIndex).value
+        dblEta_h = Application.index(.Range("rEta_h"), intOffset + intHeatingSystemIndex).value
             
     End With
         
