@@ -123,14 +123,22 @@ Note: `active_occupancy` (min of both digits) is still used internally for therm
 ## Remaining Acceptable Differences
 
 ### Appliance Demand (max 7W, typically 1-3W)
-- Floating-point accumulation from summing 31 appliances per minute
-- VBA uses Double, Python uses numpy float64
-- Within acceptable numerical tolerance
+- **Root cause**: Rounding method difference
+  - VBA `CInt()`: Traditional rounding (0.5 rounds UP) - slight upward bias
+  - Python `round()`: Banker's rounding (0.5 rounds to EVEN) - statistically unbiased
+- **Impact**: Excel consistently ~0.5W higher than Python
+- **Total bias**: 0.22 kWh/day across 20 houses (0.02% of demand)
+- **Verdict**: Python is slightly more accurate; both are valid implementations
 
 ### Heating Output (max 27W at transitions)
-- Indoor temperature drifts ~0.009°C from floating-point accumulation in thermal model
-- Only visible at heating on/off transition points
+- **Root cause chain**:
+  1. Appliance rounding difference (1W)
+  2. → Casual thermal gains differ (1W)
+  3. → Indoor temperature drifts (0.009°C over 900 minutes)
+  4. → Heating demand calculation affected at setpoint transitions
+- Only visible at heating on/off transition points (partial power moments)
 - Mean difference is -0.04W (negligible)
+- Max 27W is 0.12% of 21750W max output
 
 ---
 
