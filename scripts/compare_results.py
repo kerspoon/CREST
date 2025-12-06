@@ -115,17 +115,17 @@ def write_comparison_csv(output_path: Path, headers: list, sum_diff: pd.Series,
 
         # Write sum row
         sum_row = ['SUM()'] + [f'{sum_diff.get(col, 0):.4f}' for col in abs_diff.columns]
-        f.write('\t'.join(sum_row) + '\n')
+        f.write(','.join(sum_row) + '\n')
 
         # Write max row
         max_row = ['MAX()'] + [f'{max_diff.get(col, 0):.4f}' for col in abs_diff.columns]
-        f.write('\t'.join(max_row) + '\n')
+        f.write(','.join(max_row) + '\n')
 
         # Write blank separator
         f.write('\n')
 
         # Write abs diff data
-        abs_diff.to_csv(f, index=False, sep='\t', float_format='%.4f')
+        abs_diff.to_csv(f, index=False, float_format='%.4f')
 
 
 def print_summary(sum_diff: pd.Series, max_diff: pd.Series):
