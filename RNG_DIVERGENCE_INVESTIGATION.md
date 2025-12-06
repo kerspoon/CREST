@@ -1,7 +1,7 @@
 # RNG Divergence Investigation
 
 **Date**: 2025-12-06
-**Status**: Excellent match - daily totals within 0.02 kWh, minute-level within small tolerances
+**Status**: Excellent match - 18 columns perfect, daily totals within 0.02 kWh
 
 ## Overview
 
@@ -20,8 +20,9 @@ venv/bin/python3 scripts/compare_results.py excel/lcg_fixed/ output/rng_validati
 
 ### Latest Comparison Results (2025-12-06)
 
-**Perfect matches (16 columns):**
+**Perfect matches (18 columns):**
 - Dwelling index, Occupancy, Lighting demand, Hot water demand
+- Outdoor temperature, Outdoor global radiation
 - Space/HW heating timer settings, Heating system switched on, HW heating required
 - Solar thermal collector control state
 - Space cooling timer settings, Cooling system switched on, Cooling output
@@ -31,6 +32,10 @@ venv/bin/python3 scripts/compare_results.py excel/lcg_fixed/ output/rng_validati
 - Net electricity demand: 0.0132 kWh
 - Average indoor temperature: 0.0012°C
 - All other columns < 0.002
+
+**Minute-level max differences:**
+- Primary heating output: 18.56 W (floating point accumulation)
+- Appliance demand: 3.0 W (integer rounding)
 
 ---
 
@@ -67,23 +72,20 @@ dblSolarIncidentAngle = (180 / PI) * Application.WorksheetFunction.Acos(...)
 
 **Fix**: Changed to use `heating_controls.heater_on_off[idx]` and `heating_controls.heat_water_on_off[idx]`.
 
----
+### 5. Climate Data 1-Based vs 0-Based Index Bug (writer.py)
 
-## Known Outstanding Issues
+**Problem**: `get_temperature(idx)` and `get_irradiance(idx)` were called with 0-based `idx`, but these functions expect 1-based `minute`. This caused a 1-timestep shift in outdoor temperature and radiation values.
 
-### GlobalClimate.csv Export Mismatch
-
-The exported `excel/lcg_fixed/GlobalClimate.csv` appears to be from a **summer simulation** rather than January 1:
-- Shows clear sky irradiance ~965 W/m² at 08:47
-- On January 1 at 53.5°N, max solar altitude is only 13.49° (clear sky should be ~8-12 W/m²)
-
-**Note**: This is an export/logging issue only. The actual Results files use correct climate data internally for January 1.
-
-### Small Remaining Differences
-
-- **Outdoor global radiation**: ~85 W/m² max diff (related to GlobalClimate.csv export issue)
-- **Primary heating output**: ~18 W max diff (floating point accumulation)
-- **Appliance demand**: ~3 W max diff (likely RNG timing or integer rounding)
+**Fix**: Changed lines 398-399 from:
+```python
+dwelling.local_climate.get_temperature(idx),
+dwelling.local_climate.get_irradiance(idx),
+```
+to:
+```python
+dwelling.local_climate.get_temperature(minute),
+dwelling.local_climate.get_irradiance(minute),
+```
 
 ---
 
@@ -98,6 +100,8 @@ VBA assigns Double to Integer using `CInt()` which ROUNDS. Python `int()` TRUNCA
 ### 2. Index Off-by-One Errors (1-based vs 0-based)
 
 Dwelling config indices use `value_offset=1` in selection, making them 1-based. But CSV lookups were using `.iloc[]` directly without subtracting 1.
+
+**Climate getters expect 1-based minute, not 0-based index!**
 
 ### 3. Location/Date Parameters Not Passed
 

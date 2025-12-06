@@ -395,8 +395,8 @@ class ResultsWriter:
                 lighting_w,                                          # 6. Lighting demand (W)
                 appliance_w,                                         # 7. Appliance demand (W)
                 dwelling.building.phi_c[idx],                        # 8. Casual gains (W)
-                dwelling.local_climate.get_temperature(idx),         # 9. Outdoor temp (°C)
-                dwelling.local_climate.get_irradiance(idx),          # 10. Global radiation (W/m²)
+                dwelling.local_climate.get_temperature(minute),      # 9. Outdoor temp (°C) - 1-based
+                dwelling.local_climate.get_irradiance(minute),       # 10. Global radiation (W/m²) - 1-based
                 dwelling.building.phi_s[idx],                        # 11. Passive solar gains (W)
                 dwelling.heating_system.phi_h_output[idx],           # 12. Primary heating output (W)
                 dwelling.building.theta_b[idx],                      # 13. External building temp (°C)
