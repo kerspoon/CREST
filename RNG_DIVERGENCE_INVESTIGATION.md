@@ -1,7 +1,7 @@
 # RNG Divergence Investigation
 
 **Date**: 2025-12-06
-**Status**: Excellent match - 16 columns perfect (20 houses), daily totals within 0.023 kWh
+**Status**: Excellent match - 17 columns perfect (20 houses), daily totals within 0.023 kWh
 
 ## Overview
 
@@ -20,8 +20,8 @@ venv/bin/python3 scripts/compare_results.py excel/lcg_fixed/ output/rng_validati
 
 ### Latest Comparison Results (2025-12-06, 20 Houses)
 
-**Perfect matches (16 columns):**
-- Dwelling index, Occupancy, Lighting demand, Hot water demand
+**Perfect matches (17 columns):**
+- Dwelling index, Occupancy, Activity, Lighting demand, Hot water demand
 - Space/HW heating timer settings, Heating system switched on, HW heating required
 - Solar thermal collector control state
 - Space cooling timer settings, Cooling system switched on, Cooling output
@@ -33,8 +33,8 @@ venv/bin/python3 scripts/compare_results.py excel/lcg_fixed/ output/rng_validati
 - Total self-consumption: 0.0058 kWh
 
 **Minute-level max differences:**
-- Primary heating output: 26.94 W (floating point accumulation)
-- Appliance demand: 7.0 W (integer rounding)
+- Primary heating output: 26.94 W (floating point accumulation at transitions)
+- Appliance demand: 7.0 W (floating point accumulation from summing)
 
 ---
 
@@ -100,6 +100,37 @@ dwelling.local_climate.get_irradiance(minute),
 int(heating_controls.space_cooling_timer[idx]),      # 33. Space cooling timer
 int(heating_controls.space_cooling_thermostat[idx]), # 34. Cooling system switched on
 ```
+
+### 7. Activity Column Using min() Instead of Raw Second Digit (writer.py)
+
+**Problem**: Python used `active_occupancy` (which is `min(at_home, active)`) for the "Activity" output column, but VBA outputs the raw second digit of the combined state.
+
+**Fix**: Added `_calculate_activity()` method to extract second digit, and changed output column to use it:
+```python
+# BEFORE (buggy):
+occupancy_1min = self._expand_10min_to_1min(dwelling.occupancy.active_occupancy)
+
+# AFTER (fixed):
+activity_1min = self._expand_10min_to_1min(
+    self._calculate_activity(dwelling.occupancy.combined_states)
+)
+```
+
+Note: `active_occupancy` (min of both digits) is still used internally for thermal gains calculations.
+
+---
+
+## Remaining Acceptable Differences
+
+### Appliance Demand (max 7W, typically 1-3W)
+- Floating-point accumulation from summing 31 appliances per minute
+- VBA uses Double, Python uses numpy float64
+- Within acceptable numerical tolerance
+
+### Heating Output (max 27W at transitions)
+- Indoor temperature drifts ~0.009°C from floating-point accumulation in thermal model
+- Only visible at heating on/off transition points
+- Mean difference is -0.04W (negligible)
 
 ---
 

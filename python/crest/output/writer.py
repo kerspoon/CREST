@@ -261,9 +261,13 @@ class ResultsWriter:
             return
 
         # Get occupancy data (10-minute resolution, expand to 1-minute)
-        occupancy_1min = self._expand_10min_to_1min(dwelling.occupancy.active_occupancy)
+        # VBA outputs: Occupancy = first digit (at_home), Activity = second digit (raw activity)
+        # NOTE: active_occupancy (min of both) is used internally for thermal gains, NOT for output
         at_home_1min = self._expand_10min_to_1min(
             self._calculate_at_home(dwelling.occupancy.combined_states)
+        )
+        activity_1min = self._expand_10min_to_1min(
+            self._calculate_activity(dwelling.occupancy.combined_states)
         )
 
         # Get heating controls - MUST exist for all dwellings
@@ -390,8 +394,8 @@ class ResultsWriter:
                 dwelling_idx + 1,                                    # 1. Dwelling index
                 date_str,                                            # 2. Date
                 time_str,                                            # 3. Time
-                int(at_home_1min[idx]),                             # 4. Occupancy
-                int(occupancy_1min[idx]),                           # 5. Activity
+                int(at_home_1min[idx]),                             # 4. Occupancy (first digit)
+                int(activity_1min[idx]),                            # 5. Activity (second digit, raw)
                 lighting_w,                                          # 6. Lighting demand (W)
                 appliance_w,                                         # 7. Appliance demand (W)
                 dwelling.building.phi_c[idx],                        # 8. Casual gains (W)
@@ -601,6 +605,8 @@ class ResultsWriter:
         """
         Calculate number of people at home from combined occupancy states.
 
+        VBA: intOccupancy = CInt(Left(aCombinedState(...), 1))
+
         Parameters
         ----------
         combined_states : np.ndarray
@@ -609,13 +615,38 @@ class ResultsWriter:
         Returns
         -------
         np.ndarray
-            Number of people at home
+            Number of people at home (first digit of state)
         """
         at_home = np.zeros(len(combined_states))
         for i, state in enumerate(combined_states):
             if state and len(str(state)) >= 1:
                 at_home[i] = int(str(state)[0])
         return at_home
+
+    def _calculate_activity(self, combined_states: np.ndarray) -> np.ndarray:
+        """
+        Calculate activity level from combined occupancy states.
+
+        VBA: intActivity = CInt(Right(aCombinedState(...), 1))
+
+        NOTE: This is the RAW second digit, NOT min(at_home, active).
+        The min is used internally for thermal gains, but output uses raw value.
+
+        Parameters
+        ----------
+        combined_states : np.ndarray
+            Array of combined state strings (e.g., "11", "10", "00")
+
+        Returns
+        -------
+        np.ndarray
+            Activity level (second digit of state)
+        """
+        activity = np.zeros(len(combined_states))
+        for i, state in enumerate(combined_states):
+            if state and len(str(state)) >= 2:
+                activity[i] = int(str(state)[1])
+        return activity
 
     def close(self):
         """Close all open files."""
