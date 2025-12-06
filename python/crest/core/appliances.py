@@ -266,7 +266,8 @@ class Appliances:
 
             # VBA: Randomly delay the start of appliances with restart delay (line 195)
             # intRestartDelayTimeLeft = Rnd() * intRestartDelay * 2
-            restart_delay_time_left = int(self.rng.random() * appliance.restart_delay * 2)
+            # BUG FIX: VBA assigns Double to Integer which ROUNDS, use round() not int()
+            restart_delay_time_left = round(self.rng.random() * appliance.restart_delay * 2)
 
             # VBA: Make the rated power variable over a normal distribution (line 197)
             # intRatedPower = GetMonteCarloNormalDistGuess(Val(intRatedPower), intRatedPower / 10)
@@ -433,7 +434,8 @@ class Appliances:
             # VBA: CycleLength = CInt(70 * ((0 - Log(1 - Rnd())) ^ 1.1))
             # Note: VBA Log is natural log (ln), Python np.log is also natural log
             # Average viewing time is approximately 73 minutes
-            cycle_length = int(70 * ((0 - np.log(1 - self.rng.random())) ** 1.1))
+            # BUG FIX: VBA CInt() ROUNDS, Python int() TRUNCATES - use round()
+            cycle_length = round(70 * ((0 - np.log(1 - self.rng.random())) ** 1.1))
 
         # VBA: Heating appliances get variation (lines 424-428)
         elif appliance.name in ["STORAGE_HEATER", "ELEC_SPACE_HEATING"]:
@@ -534,8 +536,9 @@ class Appliances:
         """
         # VBA uses WorksheetFunction.NormInv(Rnd(), mean, std_dev)
         # Python equivalent: use Box-Muller or inverse CDF
+        # BUG FIX: VBA CInt() ROUNDS, Python int() TRUNCATES - use round()
         value = self.rng.normal(mean, std_dev)
-        return int(value)
+        return round(value)
 
     def calculate_total_demand(self):
         """

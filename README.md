@@ -28,6 +28,9 @@ python scripts/monte_carlo_compare.py output/monte_carlo/python_1000runs_2025111
 ## copy excel/lcg_fixed.xlsm to windows and in file properties disable protection, then open in excel and run then copy random_debug.txt to output\rng_validation\excel_20251204_01
 python scripts/rng_validation_run.py
 python scripts/rng_log_compare.py
+
+# Compare Python vs Excel minute-level results (outputs to output/comparison/comparison_YYYYMMDD_NN/)
+python scripts/compare_results.py excel/lcg_fixed/ output/rng_validation/python_2houses_YYYYMMDD_NN
 ```
 
 Results include:
@@ -42,11 +45,9 @@ Results include:
 
 ## Current Status
 
-**RNG Validation:** IN PROGRESS - See [`RNG_DIVERGENCE_INVESTIGATION.md`](./RNG_DIVERGENCE_INVESTIGATION.md) for detailed findings.
+**RNG Validation:** COMPLETE - See [`RNG_DIVERGENCE_INVESTIGATION.md`](./RNG_DIVERGENCE_INVESTIGATION.md) for detailed findings.
 
-**Summary:** RNG sequences diverge at call #83,118. Root cause identified: Python's lighting module has fewer switch-on events (38 vs 144), causing different RNG consumption rates. Two fixes applied (appliances ownership RNG, irradiance threshold rounding) but core issue in lighting switch-on condition remains unsolved.
-
-**Next steps:** Debug why lighting switch-on condition evaluates differently despite identical inputs.
+**Summary:** RNG sequences now match (156,068 calls identical). Lighting and occupancy match perfectly. Minor appliance differences remain (~0.07%) due to floating point precision in normal distribution calculations. Thermal outputs show larger cascading differences under investigation.
 
 ---
 
@@ -92,6 +93,7 @@ crest/
 │   ├── monte_carlo_compare.py   # IQR validation (Objective #2)
 │   ├── rng_validation_run.py    # Run with LCG logging
 │   ├── rng_log_compare.py       # RNG sequence comparison (Objective #1)
+│   ├── compare_results.py       # Compare Python vs Excel minute-level results
 │   ├── check_types.sh           # Run mypy type checking
 │   ├── run_excel_example.bat    # Run Excel N times (Windows batch)
 │   ├── run_excel_macro.ps1      # PowerShell automation for Excel runs
