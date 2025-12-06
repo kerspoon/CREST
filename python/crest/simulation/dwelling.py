@@ -174,13 +174,18 @@ class Dwelling:
         if config.pv_system_index > 0:
             self.pv_system = PVSystem(data_loader, self.rng)
             # Use run_number=1 for single dwelling simulation
+            # Pass location parameters from global climate config
             self.pv_system.initialize(
                 dwelling_index=config.dwelling_index,
                 run_number=1,
                 climate=self.local_climate,
                 appliances=self.appliances,
                 lighting=self.lighting,
-                pv_system_index=config.pv_system_index
+                pv_system_index=config.pv_system_index,
+                latitude=global_climate.config.latitude,
+                longitude=global_climate.config.longitude,
+                meridian=global_climate.config.meridian,
+                day_of_year=global_climate.day_of_year
             )
         else:
             self.pv_system = None
@@ -190,12 +195,17 @@ class Dwelling:
         if config.solar_thermal_index > 0:
             self.solar_thermal = SolarThermal(data_loader, self.rng)
             # Use run_number=1 for single dwelling simulation
+            # Pass location parameters from global climate config
             self.solar_thermal.initialize(
                 dwelling_index=config.dwelling_index,
                 run_number=1,
                 climate=self.local_climate,
                 building=self.building,
-                solar_thermal_index=config.solar_thermal_index
+                solar_thermal_index=config.solar_thermal_index,
+                latitude=global_climate.config.latitude,
+                longitude=global_climate.config.longitude,
+                meridian=global_climate.config.meridian,
+                day_of_year=global_climate.day_of_year
             )
             self.building.set_solar_thermal(self.solar_thermal)
             self.appliances.set_solar_thermal(self.solar_thermal)

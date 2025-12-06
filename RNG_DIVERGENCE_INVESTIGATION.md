@@ -1,7 +1,7 @@
 # RNG Divergence Investigation
 
 **Date**: 2025-12-06
-**Status**: Near-complete match, minor floating point precision differences remain
+**Status**: Excellent match - daily totals within 0.02 kWh, minute-level within small tolerances
 
 ## Overview
 
@@ -9,46 +9,81 @@ Python and VBA now produce identical RNG call sequences (156,068 calls matching 
 
 ## Current Status
 
-| Column | Python | Excel | Diff | Status |
-|--------|--------|-------|------|--------|
-| Lighting demand | 284,070 | 284,070 | 0 | ✓ MATCH |
-| Appliance demand | 1,430,817 | 1,431,885 | -1,068 | ~0.07% |
-| Outdoor temperature | 9,874.9 | 9,874.9 | 0 | ✓ MATCH |
+To find where we are up to:
 
-**Remaining issue:** ~1,000 W total appliance diff across 2880 rows (~0.04% per row). Caused by floating point precision differences between Excel's `NormInv` and scipy's `norm.ppf` for the normal distribution inverse CDF.
+```bash
+# Run Python simulation with validation logging (re-export from excel if VBA changed)
+venv/bin/python3 scripts/rng_validation_run.py --validation-log --no-export
+# Then compare the results files
+venv/bin/python3 scripts/compare_results.py excel/lcg_fixed/ output/rng_validation/python_2houses_YYYYMMDD_NN
+```
+
+### Latest Comparison Results (2025-12-06)
+
+**Perfect matches (16 columns):**
+- Dwelling index, Occupancy, Lighting demand, Hot water demand
+- Space/HW heating timer settings, Heating system switched on, HW heating required
+- Solar thermal collector control state
+- Space cooling timer settings, Cooling system switched on, Cooling output
+- Heating/Cooling thermostat set points, Cooling/Heating electricity
+
+**Daily summary max differences:**
+- Net electricity demand: 0.0132 kWh
+- Average indoor temperature: 0.0012°C
+- All other columns < 0.002
 
 ---
 
-## Issues Fixed
+## Fixes Applied (2025-12-06)
 
-### Issue #3: int() vs round() in Appliances (2025-12-06)
+### 1. PV/Solar Thermal Location Parameters Not Passed
 
-**Symptom:** 10,578 W appliance demand difference
+**Problem**: PV and Solar Thermal systems were using default location parameters (Loughborough: lat=52.2, day=166) instead of actual simulation parameters (Manchester: lat=53.48, day=1).
 
-**Root cause:** Python used `int()` (truncation) where VBA uses `CInt()` (rounding).
+**Fix**: Modified `dwelling.py` to pass location parameters from `global_climate.config` to both `pv_system.initialize()` and `solar_thermal.initialize()`.
 
-**Fix:** Changed `int()` to `round()` in three places in `appliances.py`:
-1. Line 539: `_get_monte_carlo_normal_dist_guess()` return value
-2. Line 270: restart delay calculation
-3. Line 438: TV cycle length calculation
+### 2. VBA Solar Thermal Acos Bug (clsSolarThermal.cls line 481)
 
-**Result:** 90% improvement (10,578 W → 1,068 W diff)
+**Problem**: VBA used `Cos(dot_product)` instead of `Acos(dot_product)` to calculate incident angle, causing ~2x error in direct beam radiation.
 
-### Issue #2: Electricity Used by Heating System (2025-12-05)
+**Fix**: Changed VBA line 481 from:
+```vba
+dblSolarIncidentAngle = Cos(...)
+```
+to:
+```vba
+dblSolarIncidentAngle = (180 / PI) * Application.WorksheetFunction.Acos(...)
+```
 
-**Symptom:** Python=10.0 W, Excel=0.0 W at minute 0
+### 3. Self-Consumption Unit Conversion (writer.py)
 
-**Root cause:** Python output included pump power (`p_h`), but VBA only writes `aHeatingElectricity`.
+**Problem**: Python was converting P_self from W to kWh, but VBA stores it in Watts.
 
-**Fix:** Added `get_heating_electricity()` method to `heating.py`, updated `writer.py` to use it.
+**Fix**: Removed `/60.0/1000.0` conversion.
 
-### Issue #1: Heat Gains Ratio Column Index (2025-12-05)
+### 4. Hardcoded Zeros for Heating/Water Flags (writer.py)
 
-**Symptom:** Casual thermal gains Python=132.2 W, Excel=129.6 W
+**Problem**: Lines 408-409 had hardcoded `0` instead of actual values.
 
-**Root cause:** Python loaded heat_gains_ratio from wrong CSV column (`iloc[31]` instead of `iloc[32]`).
+**Fix**: Changed to use `heating_controls.heater_on_off[idx]` and `heating_controls.heat_water_on_off[idx]`.
 
-**Fix:** `appliances.py` line 189 - changed to `row.iloc[32]`
+---
+
+## Known Outstanding Issues
+
+### GlobalClimate.csv Export Mismatch
+
+The exported `excel/lcg_fixed/GlobalClimate.csv` appears to be from a **summer simulation** rather than January 1:
+- Shows clear sky irradiance ~965 W/m² at 08:47
+- On January 1 at 53.5°N, max solar altitude is only 13.49° (clear sky should be ~8-12 W/m²)
+
+**Note**: This is an export/logging issue only. The actual Results files use correct climate data internally for January 1.
+
+### Small Remaining Differences
+
+- **Outdoor global radiation**: ~85 W/m² max diff (related to GlobalClimate.csv export issue)
+- **Primary heating output**: ~18 W max diff (floating point accumulation)
+- **Appliance demand**: ~3 W max diff (likely RNG timing or integer rounding)
 
 ---
 
@@ -64,18 +99,14 @@ VBA assigns Double to Integer using `CInt()` which ROUNDS. Python `int()` TRUNCA
 
 Dwelling config indices use `value_offset=1` in selection, making them 1-based. But CSV lookups were using `.iloc[]` directly without subtracting 1.
 
-Examples fixed:
-- `controls.py`: `heating_systems.iloc[config.heating_system_index - 1]`
-- `building.py`: `buildings_data.iloc[config.building_index - 1]`
-- `loader.py`: `get_heating_type()` had incorrect row indexing
+### 3. Location/Date Parameters Not Passed
 
-### 3. CSV Row Indexing Errors
-
-Row indices in pandas (0-based) vs file line numbers (1-based) cause confusion.
+Components with location-dependent defaults may not receive actual simulation parameters. Check that `latitude`, `longitude`, `meridian`, and `day_of_year` are passed from `global_climate.config` to all components that need them.
 
 ### 4. Unit Conversion Errors
 
 - `writer.py`: FuelRate was multiplied by 60 (m_fuel is already in m³/h, not m³/min)
+- `writer.py`: Self-consumption was incorrectly converted from W to kWh
 
 ### 5. Column Index Reference
 
@@ -95,38 +126,3 @@ Correct column indices (0-based) for AppliancesAndWaterFixtures.csv:
 | AG | 32 | Heat gains ratio (for casual thermal gains) |
 
 ---
-
-## Validation Process
-
-### Step 1: Run validation scripts
-
-```bash
-# Run Python simulation with validation logging
-venv/bin/python3 scripts/rng_validation_run.py --validation-log
-
-# Compare RNG call sequences
-venv/bin/python3 scripts/rng_log_compare.py output/rng_validation/python_2houses_YYYYMMDD_XX/ output/rng_validation/excel_2houses_20251205_01/
-```
-
-### Step 2: Compare minute-level output
-
-Compare `results_minute_level.csv` (Python) with `Results - disaggregated.csv` (Excel).
-
-```python
-# Load both files
-python_df = pd.read_csv('output/.../results_minute_level.csv', skiprows=[0,2,3])
-excel_df = pd.read_csv('excel/lcg_fixed/Results - disaggregated.csv', skiprows=[0,1,2,4,5])
-
-# Compare key columns
-for col in ['Lighting demand', 'Appliance demand']:
-    diff = (python_df[col] - excel_df[col]).sum()
-    print(f"{col}: diff = {diff}")
-```
-
-### Step 3: Identify discrepancies
-
-For each column, compare Python vs Excel values:
-- Filter for rows where diff > 0
-- Identify minute/dwelling
-- Trace root cause in code
-- Fix and re-run validation

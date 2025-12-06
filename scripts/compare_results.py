@@ -113,12 +113,14 @@ def write_comparison_csv(output_path: Path, headers: list, sum_diff: pd.Series,
         for header in headers:
             f.write(header + '\n')
 
-        # Write sum row
-        sum_row = ['SUM()'] + [f'{sum_diff.get(col, 0):.4f}' for col in abs_diff.columns]
+        # Write sum row (skip first column - it's used for the label)
+        # First column is "Dwelling index" which we replace with "SUM()"
+        data_cols = abs_diff.columns[1:]  # Skip first column
+        sum_row = ['SUM()'] + [f'{sum_diff.get(col, 0):.4f}' for col in data_cols]
         f.write(','.join(sum_row) + '\n')
 
-        # Write max row
-        max_row = ['MAX()'] + [f'{max_diff.get(col, 0):.4f}' for col in abs_diff.columns]
+        # Write max row (skip first column - it's used for the label)
+        max_row = ['MAX()'] + [f'{max_diff.get(col, 0):.4f}' for col in data_cols]
         f.write(','.join(max_row) + '\n')
 
         # Write blank separator

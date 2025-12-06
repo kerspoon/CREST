@@ -477,22 +477,23 @@ Private Function GetIncidentRadiation(currentTimeStep As Integer) As Double
         
     End If
         
-    ' // Calculate solar incident angle on panel
-    dblSolarIncidentAngle = Cos((Cos(dblSolarAltitudeAngle * PI / 180) * Cos(dblAdjustedAzimuthOfSun * PI / 180 - dblAzimuth * PI / 180) * Sin(dblSlope * PI / 180)) + (Sin(dblSolarAltitudeAngle * PI / 180) * Cos(dblSlope * PI / 180)))
-    
-    ' // Get clearsky beam radiation at surface (plane tracking the sun)
-    dblG_oClearsky = aLocalClimate(intRunNumber).GetG_oClearsky(currentTimeStep)
-                
-    ' // Calculate direct beam radiation on panel
-    If Abs(dblSolarIncidentAngle) > 90 Then
-        
-        dblG_direct = 0
-        
-    Else
-    
-        dblG_direct = dblG_oClearsky * Cos(dblSolarIncidentAngle * PI / 180)
-        
-    End If
+      ' // Calculate solar incident angle on panel
+      ' // FIX by JB: Changed Cos() to Acos() - need arc-cosine to get angle from dot product
+      dblSolarIncidentAngle = (180 / PI) * Application.WorksheetFunction.Acos((Cos(dblSolarAltitudeAngle * PI / 180) * Cos(dblAdjustedAzimuthOfSun * PI / 180 - dblAzimuth * PI / 180) * Sin(dblSlope * PI / 180)) + (Sin(dblSolarAltitudeAngle * PI / 180) * Cos(dblSlope * PI / 180)))
+
+      ' // Get clearsky beam radiation at surface (plane tracking the sun)
+      dblG_oClearsky = aLocalClimate(intRunNumber).GetG_oClearsky(currentTimeStep)
+
+      ' // Calculate direct beam radiation on panel
+      If Abs(dblSolarIncidentAngle) > 90 Then
+
+          dblG_direct = 0
+
+      Else
+
+          dblG_direct = dblG_oClearsky * Cos(dblSolarIncidentAngle * PI / 180)
+
+      End If
     
     ' // Calculate diffuse radiation on panel
     dblG_diffuse = dblSkyDiffuseFactor * dblG_oClearsky * ((1 + Cos(dblSlope * PI / 180)) / 2)

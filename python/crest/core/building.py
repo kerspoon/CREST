@@ -195,9 +195,9 @@ class Building:
             theta_cool_prev = self.theta_cool[idx - 1]
             theta_cyl_prev = self.theta_cyl[idx - 1]
 
-        # Get external conditions
-        theta_o = self.local_climate.get_temperature(idx) if self.local_climate else 10.0
-        g_o = self.local_climate.get_irradiance(idx) if self.local_climate else 0.0
+        # Get external conditions (climate methods expect 1-based timestep)
+        theta_o = self.local_climate.get_temperature(timestep) if self.local_climate else 10.0
+        g_o = self.local_climate.get_irradiance(timestep) if self.local_climate else 0.0
 
         # Get thermal gains from various sources
         phi_h_space = self.heating_system.get_heat_to_space(timestep) if self.heating_system else 0.0

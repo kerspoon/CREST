@@ -318,7 +318,7 @@ class ResultsWriter:
                     f"CRITICAL: Dwelling {dwelling_idx + 1} has pv_system but it's missing 'P_self' attribute. "
                     "PV system must be fully initialized with self-consumption data."
                 )
-            self_consumption = dwelling.pv_system.P_self / 60.0 / 1000.0  # Convert W-min to kWh
+            self_consumption = dwelling.pv_system.P_self  # Already in Watts (W)
 
         # Solar thermal data if available
         solar_collector_power = np.zeros(1440)
@@ -405,8 +405,8 @@ class ResultsWriter:
                 dwelling.building.theta_cyl[idx],                    # 16. Cylinder temp (°C)
                 int(heating_timer[idx]),                             # 17. Space heating timer
                 int(hw_timer[idx]),                                  # 18. HW heating timer
-                0,                                                   # 19. Heating system switched on
-                0,                                                   # 20. HW heating required
+                int(heating_controls.heater_on_off[idx]),            # 19. Heating system switched on
+                int(heating_controls.heat_water_on_off[idx]),        # 20. HW heating required
                 dwelling.building.theta_em[idx],                     # 21. Emitter temp (°C)
                 pv_irradiance[idx],                                  # 22. PV irradiance (W/m²)
                 pv_output_w,                                         # 23. PV output (W)
@@ -418,7 +418,7 @@ class ResultsWriter:
                 int(solar_collector_state[idx]),                     # 29. Solar collector state
                 solar_collector_temp[idx],                           # 30. Solar collector temp (°C)
                 solar_collector_gains[idx],                          # 31. Solar collector gains (W)
-                self_consumption[idx],                               # 32. Self-consumption (kWh)
+                self_consumption[idx],                               # 32. Self-consumption (W)
                 0,                                                   # 33. Space cooling timer
                 0,                                                   # 34. Cooling system switched on
                 cooling_output[idx],                                 # 35. Cooling output (W)
