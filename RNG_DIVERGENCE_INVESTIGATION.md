@@ -1,11 +1,11 @@
 # RNG Divergence Investigation
 
 **Date**: 2025-12-06
-**Status**: Excellent match - 18 columns perfect, daily totals within 0.02 kWh
+**Status**: Excellent match - 16 columns perfect (20 houses), daily totals within 0.023 kWh
 
 ## Overview
 
-Python and VBA now produce identical RNG call sequences (156,068 calls matching within 1e-10 tolerance). Results are deterministic with identical seeds on `lcg_fixed`.
+Python and VBA now produce identical RNG call sequences (1.6M+ calls for 20 houses matching within 1e-10 tolerance). Results are deterministic with identical seeds on `lcg_fixed`.
 
 ## Current Status
 
@@ -15,27 +15,26 @@ To find where we are up to:
 # Run Python simulation with validation logging (re-export from excel if VBA changed)
 venv/bin/python3 scripts/rng_validation_run.py --validation-log --no-export
 # Then compare the results files
-venv/bin/python3 scripts/compare_results.py excel/lcg_fixed/ output/rng_validation/python_2houses_YYYYMMDD_NN
+venv/bin/python3 scripts/compare_results.py excel/lcg_fixed/ output/rng_validation/python_20houses_YYYYMMDD_NN
 ```
 
-### Latest Comparison Results (2025-12-06)
+### Latest Comparison Results (2025-12-06, 20 Houses)
 
-**Perfect matches (18 columns):**
+**Perfect matches (16 columns):**
 - Dwelling index, Occupancy, Lighting demand, Hot water demand
-- Outdoor temperature, Outdoor global radiation
 - Space/HW heating timer settings, Heating system switched on, HW heating required
 - Solar thermal collector control state
 - Space cooling timer settings, Cooling system switched on, Cooling output
 - Heating/Cooling thermostat set points, Cooling/Heating electricity
 
 **Daily summary max differences:**
-- Net electricity demand: 0.0132 kWh
-- Average indoor temperature: 0.0012°C
-- All other columns < 0.002
+- Net electricity demand: 0.0228 kWh
+- Average indoor temperature: 0.0048°C
+- Total self-consumption: 0.0058 kWh
 
 **Minute-level max differences:**
-- Primary heating output: 18.56 W (floating point accumulation)
-- Appliance demand: 3.0 W (integer rounding)
+- Primary heating output: 26.94 W (floating point accumulation)
+- Appliance demand: 7.0 W (integer rounding)
 
 ---
 
@@ -85,6 +84,21 @@ to:
 ```python
 dwelling.local_climate.get_temperature(minute),
 dwelling.local_climate.get_irradiance(minute),
+```
+
+### 6. Hardcoded Zeros for Cooling Timer/Thermostat (writer.py)
+
+**Problem**: Lines 422-423 had hardcoded `0` for "Space cooling timer" and "Cooling system switched on" columns.
+
+**Fix**: Changed to use actual values from `heating_controls`:
+```python
+# BEFORE (buggy):
+0,                                                   # 33. Space cooling timer
+0,                                                   # 34. Cooling system switched on
+
+# AFTER (fixed):
+int(heating_controls.space_cooling_timer[idx]),      # 33. Space cooling timer
+int(heating_controls.space_cooling_thermostat[idx]), # 34. Cooling system switched on
 ```
 
 ---

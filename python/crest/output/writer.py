@@ -419,8 +419,8 @@ class ResultsWriter:
                 solar_collector_temp[idx],                           # 30. Solar collector temp (°C)
                 solar_collector_gains[idx],                          # 31. Solar collector gains (W)
                 self_consumption[idx],                               # 32. Self-consumption (W)
-                0,                                                   # 33. Space cooling timer
-                0,                                                   # 34. Cooling system switched on
+                int(heating_controls.space_cooling_timer[idx]),      # 33. Space cooling timer
+                int(heating_controls.space_cooling_thermostat[idx]), # 34. Cooling system switched on
                 cooling_output[idx],                                 # 35. Cooling output (W)
                 dwelling.building.theta_cool[idx],                   # 36. Cooler emitter temp (°C)
                 heating_controls.space_heating_setpoint,             # 37. Heating setpoint (°C)
