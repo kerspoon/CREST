@@ -1,0 +1,35 @@
+Heating or Cooling system model parameters,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Primary heating system index,Proportion of dwellings with this heating system,Type of heating unit,Type of system,Type of fuel,Fuel flow rate (nominal),Calorific value of fuel,Calorific value of fuel flow rate,Thermal efficiency,Heat output of unit,Standby power,Pump power,DHW cylinder volume,DHW Tank Heat Loss,,,,Database of Heating Systems to Choose From,,,,,,,,,,,,
+,,,"1 = regular, 2 = combi",,mfuel,,,ηh,φh,Pstandby,Ppump,Vcyl,Hloss,,,,UK,Urban India,,,,,,Rural India,,,,,
+,,,,,m3/h or kW,MJ/m3 or MJ/kWh,W,%,W,W,W,ltr,WK-1,,,,Any Year,2006,2011.0,2016.0,2021.0,2026.0,2031.0,2006,2011.0,2016.0,2021.0,2026.0,2031.0
+1,1,Boiler (regular),1,Mains gas,2.61,40,28999.999999999996,0.75,21749.999999999996,10,20,125,1.5,,,,1,0,0.0,0.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0
+2,0,Boiler (combi),2,Mains gas,2.61,40,28999.999999999996,0.75,21749.999999999996,10,20,5,0.5,,,,0,0,0.0,0.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0
+3,0,Boiler (system),1,Mains gas,1.64,40,18222.22222222222,0.75,13666.666666666664,10,20,125,1.5,,,,0,0,0.0,0.0,0.0,0.0,0.0,0,0.0,0.0,0.0,0.0,0.0
+4,0,No Heating or Cooling,4,Electricity,0,3.6,0,0,0,0,0,5,0.5,,No Heating,,0,0.6387923388657757,0.5541881270758107,0.43544465604036164,0.29613029983016703,0.13332571853716535,0.019577351940629595,1,1.0,1.0,1.0,1.0,1.0
+5,0,Electric Water Heater,5,Electricity,2,3.6,2000,1,2000,0,20,50,0.5,,Electric Water Heater,,0,0.3612076611342243,0.44581187292418933,0.5645553439596384,0.703869700169833,0.8666742814628347,0.9804226480593704,0,0.0,0.0,0.0,0.0,0.0
+,,,,,,,,,,,,,,,,Check Total,1,1,1.0,1.0,1.0,1.0,1.0,1,1.0,1.0,1.0,1.0,1.0
+References:,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+‘RESIDENTIAL CONSUMPTION OF ELECTRICITY IN INDIA DOCUMENTATION OF DATA AND METHODOLOGY’,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"Background Paper, ‘India: Strategies for Low Carbon Growth’, DRAFT July 2008, The World Bank",,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+www.moef.nic.in/downloads/public-information/Residentialpowerconsumption.pdf,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"Table 1: Population and Urbanization, 2006-2030",,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Table 11:Population of Heating / Cooling Appliances (millions) used later in heating and cooling models,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Table 13: Parc Average Operating per-Unit Power Consumption,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Table 14: Parc Average Standby per-Unit Power Consumption,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Table 15: Parc Average per-Unit Annual Operating Time,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"All the above are for scenario 1. Energy efficiency improvments are available in some appliances under scenario 2, not counting the rebound effect.",,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+Assumptions:,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+"In the UK, all heating is by gas boilers",,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,
+,,,,,,,,,,,,,,,,,,,,,,,,,,,,,

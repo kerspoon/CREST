@@ -1,7 +1,7 @@
 #!/bin/bash
 # CREST Simulation Run Script
-# Generated from: excel/lcg_fixed.xlsm
-# Generated at: 2025-12-06 11:00:10
+# Generated from: excel/monte_carlo_base_fixed.xlsm
+# Generated at: 2025-12-07 08:35:34
 
 # ============================================================
 # SIMULATION SETTINGS (extracted from Excel Main Sheet)
@@ -22,11 +22,11 @@ YEAR=2019
 URBAN_RURAL="Urban"
 
 # Simulation settings
-NUM_DWELLINGS=20
+NUM_DWELLINGS=5
 SEED=""  # Empty for random seed
 
 # Checkbox settings (from Excel form controls)
-ASSIGN_DWELLING_PARAMS=true  # Stochastically assign dwelling parameters
+ASSIGN_DWELLING_PARAMS=false  # Stochastically assign dwelling parameters
 SAVE_DETAILED=true  # Include high-resolution dynamic output
 SAVE_DAILY_TOTALS=true  # Include daily demand totals
 OVERWRITE_DATA=true  # Overwrite existing data

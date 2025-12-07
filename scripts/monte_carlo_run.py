@@ -30,7 +30,8 @@ from utils import create_output_dir, get_project_root, get_python_main
 
 # Default values
 DEFAULT_ITERATIONS = 1000
-DEFAULT_CONFIG = 'excel/monte_carlo_base/Dwellings.csv'
+DEFAULT_CONFIG = 'excel/monte_carlo_base_fixed/Dwellings.csv'
+DEFAULT_SETTINGS = 'excel/monte_carlo_base_fixed/simulation_settings.json'
 DEFAULT_EXCEL = None  # Optional: Excel file to load settings from
 
 
@@ -394,6 +395,26 @@ def main():
         print(f"  Day: {settings.get('day')}, Month: {settings.get('month')}")
         print(f"  Lat: {settings.get('latitude')}, Lon: {settings.get('longitude')}")
 
+    else:
+        # No Excel file specified - load settings from JSON (like rng_validation_run.py)
+        settings_path = Path(DEFAULT_SETTINGS)
+        if settings_path.exists():
+            with open(settings_path, 'r') as f:
+                settings = json.load(f)
+
+            # Convert settings to command-line args (prepend so extra_args can override)
+            settings_args = settings_to_args(settings)
+            extra_args = settings_args + extra_args
+
+            print(f"Settings:    {settings_path}")
+            print(f"  Day: {settings.get('day')}, Month: {settings.get('month')}")
+            print(f"  Lat: {settings.get('latitude')}, Lon: {settings.get('longitude')}")
+        else:
+            print(f"WARNING: Settings file not found: {settings_path}")
+            print("         Using Python defaults (day=15, month=6)")
+            print("         Run: python scripts/export_excel.py excel/monte_carlo_base.xlsm")
+            print()
+
     print(f"Iterations:  {num_iterations}")
     if extra_args:
         print(f"Extra args:  {' '.join(extra_args)}")
@@ -418,7 +439,11 @@ def main():
             sys.exit(1)
         try:
             df_config = pd.read_csv(config_path)
-            num_dwellings = len(df_config)
+            # Count valid dwelling rows (skip header rows - look for numeric first column)
+            num_dwellings = 0
+            for _, row in df_config.iterrows():
+                if pd.notna(row.iloc[0]) and str(row.iloc[0]).isdigit():
+                    num_dwellings += 1
         except Exception as e:
             print(f"ERROR: Failed to read config file: {e}")
             sys.exit(1)

@@ -45,9 +45,38 @@ Results include:
 
 ## Current Status
 
-**RNG Validation:** COMPLETE - See [`RNG_DIVERGENCE_INVESTIGATION.md`](./RNG_DIVERGENCE_INVESTIGATION.md) for detailed findings.
+**Validation:** COMPLETE - See [`RNG_DIVERGENCE_INVESTIGATION.md`](./RNG_DIVERGENCE_INVESTIGATION.md) for detailed findings.
 
-**Summary:** RNG sequences now match (156,068 calls identical). Lighting and occupancy match perfectly. Minor appliance differences remain (~0.07%) due to floating point precision in normal distribution calculations. Thermal outputs show larger cascading differences under investigation.
+### Results (20 houses, 28,800 minute-level rows)
+
+| Metric | Value |
+|--------|-------|
+| Perfect match columns | 17 of 40 |
+| RNG calls verified | 1.6M+ identical |
+| Max daily electricity diff | 0.023 kWh |
+| Max temperature diff | 0.005°C |
+
+**17 columns with exact match:**
+- Occupancy, Activity, Lighting, Hot water demand
+- All timer settings and on/off states
+- All thermostat setpoints
+- Heating/Cooling electricity
+
+**Remaining differences (acceptable):**
+- Appliance demand: max 7W (0.02%) - Python uses banker's rounding (more accurate)
+- Heating output: max 27W at transitions - cascades from appliance rounding through thermal model
+
+### VBA Bug Fixes
+
+Three bugs were discovered in the original Excel VBA code during validation. See [`EXCEL_VBA_FIXES.md`](./EXCEL_VBA_FIXES.md) for fix instructions.
+
+| Bug | Location | Impact |
+|-----|----------|--------|
+| Day of year undefined | `clsSolarThermal.cls` ~378 | Solar position uses day 0 |
+| Tan(x)/Tan(x) = 1 | `clsSolarThermal.cls` ~427 | Sunrise check always passes |
+| Cos() not Acos() | `clsSolarThermal.cls` ~465 | ~2x error in beam radiation |
+
+**Fixed files:** `lcg_fixed.xlsm` has all fixes. Create `monte_carlo_fixed.xlsm` or `original_fixed.xlsm` using the instructions.
 
 ---
 
@@ -58,9 +87,11 @@ Results include:
 crest/
 ├── README.md                    # This file
 ├── CLAUDE.md                    # Development instructions
+├── EXCEL_VBA_FIXES.md           # VBA bug fix instructions
 │
 ├── excel/                       # Excel/VBA reference implementation
-│   ├── original.xlsm                    # Base v2.3.3 model
+│   ├── original.xlsm                    # Base v2.3.3 model (has Acos bug)
+│   ├── original_fixed.xlsm              # Bug-fixed version (create using EXCEL_VBA_FIXES.md)
 │   ├── original/                        # Exports from original.xlsm
 │   │   ├── *.cls, *.bas                 # VBA code
 │   │   ├── Dwellings.csv                # Dwelling configurations
@@ -68,9 +99,10 @@ crest/
 │   │   └── *.csv                        # Data sheets (ActivityStats, etc.)
 │   ├── original_100houses.xlsm          # Reference 100-house run
 │   ├── original_100houses/              # Exports from 100-house model
-│   ├── monte_carlo_base.xlsm            # 5 varies test houses to use for monte carlo
+│   ├── monte_carlo_base.xlsm            # 5 varied test houses (has Acos bug)
+│   ├── monte_carlo_fixed.xlsm           # Bug-fixed version (create using EXCEL_VBA_FIXES.md)
 │   ├── monte_carlo_base/                # export from the monte carlo base
-│   ├── lcg_fixed.xlsm                   # LCG version with bug fixes
+│   ├── lcg_fixed.xlsm                   # LCG + bug fixes (deterministic comparison)
 │   └── lcg_fixed/                       # Exports from LCG model
 │
 ├── python/                      # Python implementation
@@ -182,7 +214,8 @@ The project has **two primary objectives** for validating that the Python port m
    - `minute_level.parquet` - Combined minute data (compressed)
 
 2. **Run Excel 20 times:**
-   - Use `run_excel_example.bat` with `excel/monte_carlo_base.xlsm` (needs to be done on windows)
+   - First, create `monte_carlo_fixed.xlsm` using instructions in [`EXCEL_VBA_FIXES.md`](./EXCEL_VBA_FIXES.md)
+   - Use `run_excel_example.bat` with `excel/monte_carlo_fixed.xlsm` (needs to be done on Windows)
    - Save each run to: `output/monte_carlo/excel_20runs_YYYYMMDD_NN/run_01/` through `run_20/`
    - Each run should contain:
      - `results_minute_level.csv`
