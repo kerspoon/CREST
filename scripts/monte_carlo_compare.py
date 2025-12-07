@@ -159,27 +159,12 @@ def report_column_coverage(
     Report column coverage statistics with warnings for missing columns.
 
     Per CLAUDE.md: "programme defensively" and crash/warn rather than fail silently.
+    Only prints warnings for critical issues (<50% coverage).
     """
     total_available = len(available)
-    total_missing = len(missing)
-    total_unmapped = len(unmapped)
-
     coverage_pct = 100 * total_available / total_expected if total_expected > 0 else 0
 
-    print(f"\n  Column coverage for {data_type}:")
-    print(f"    Available: {total_available}/{total_expected} ({coverage_pct:.0f}%)")
-
-    if total_missing > 0:
-        print(f"    ⚠ MISSING from Python output: {total_missing} columns")
-        for col in missing[:5]:  # Show first 5
-            print(f"      - {col}")
-        if len(missing) > 5:
-            print(f"      ... and {len(missing) - 5} more")
-
-    if total_unmapped > 0:
-        print(f"    ℹ Unmapped (None in mapping): {total_unmapped} columns")
-
-    # CRITICAL WARNING if coverage is too low
+    # Only warn if coverage is critically low
     if coverage_pct < 50:
         print(f"\n  ⚠ CRITICAL: Only {coverage_pct:.0f}% column coverage for {data_type}!")
         print(f"    Results may be incomplete or misleading.")
@@ -187,7 +172,7 @@ def report_column_coverage(
 
 def load_python_baseline(python_dir: Path) -> Tuple[Optional[pd.DataFrame], Optional[pd.DataFrame]]:
     """Load Python Monte Carlo baseline (minute-level and daily)."""
-    print(f"\nLoading Python baseline from: {python_dir}")
+    print(f"\nLoading Python: {python_dir.name}")
 
     # Try loading minute-level data (parquet or CSV)
     minute_df = None
@@ -198,13 +183,10 @@ def load_python_baseline(python_dir: Path) -> Tuple[Optional[pd.DataFrame], Opti
                 minute_df = pd.read_parquet(filepath)
             else:
                 minute_df = pd.read_csv(filepath)
-            print(f"  ✓ Loaded minute data: {filename} ({len(minute_df):,} rows)")
             break
 
     if minute_df is None:
         print("  ✗ ERROR: No minute-level data found!")
-        print("    Expected: minute_level.parquet or results_minute_level.csv")
-        print("    Make sure monte_carlo_run.py completed successfully.")
         sys.exit(1)
 
     # Load daily summary
@@ -213,27 +195,26 @@ def load_python_baseline(python_dir: Path) -> Tuple[Optional[pd.DataFrame], Opti
         filepath = python_dir / filename
         if filepath.exists():
             daily_df = pd.read_csv(filepath)
-            print(f"  ✓ Loaded daily data: {filename} ({len(daily_df)} rows)")
             break
 
-    if daily_df is None:
-        print("  ⚠ WARNING: No daily data found")
+    n_runs = len(minute_df['seed'].unique()) if 'seed' in minute_df.columns else len(minute_df) // 1440
+    print(f"       ✓ {n_runs} runs, {len(minute_df):,} minute rows")
 
     return minute_df, daily_df
 
 
 def load_excel_runs(excel_dir: Path) -> List[Dict[str, pd.DataFrame]]:
     """Load Excel runs (expecting run_NN/ subdirectories)."""
-    print(f"\nLoading Excel runs from: {excel_dir}")
+    print(f"Loading Excel:  {excel_dir.name}")
 
     runs = []
+    errors = []
 
     # Look for run subdirectories (run_01/, run_02/, etc.)
     run_dirs = sorted([d for d in excel_dir.iterdir() if d.is_dir() and d.name.startswith('run_')])
 
     if not run_dirs:
         print("  ✗ ERROR: No run_* subdirectories found!")
-        print("  Expected format: excel_dir/run_01/, excel_dir/run_02/, etc.")
         sys.exit(1)
 
     for run_dir in run_dirs:
@@ -254,12 +235,10 @@ def load_excel_runs(excel_dir: Path) -> List[Dict[str, pd.DataFrame]]:
                 # Verify we have the expected columns
                 if 'Dwelling index' in df_minute.columns and 'Time' in df_minute.columns:
                     run_data['minute'] = df_minute
-                    print(f"  ✓ {run_dir.name}: minute data ({len(df_minute)} rows)")
                 else:
-                    print(f"  ⚠ {run_dir.name}: Missing columns in minute data")
-                    print(f"    Found: {list(df_minute.columns[:5])}...")
+                    errors.append(f"{run_dir.name}: missing columns in minute data")
             except Exception as e:
-                print(f"  ⚠ {run_dir.name}: Could not load minute data: {e}")
+                errors.append(f"{run_dir.name}: {e}")
 
         # Load daily summary
         daily_file = run_dir / 'results_daily_summary.csv'
@@ -276,17 +255,17 @@ def load_excel_runs(excel_dir: Path) -> List[Dict[str, pd.DataFrame]]:
                 # Verify we have the expected columns
                 if 'Dwelling index' in df_daily.columns:
                     run_data['daily'] = df_daily
-                    print(f"  ✓ {run_dir.name}: daily data ({len(df_daily)} rows)")
                 else:
-                    print(f"  ⚠ {run_dir.name}: Missing columns in daily data")
-                    print(f"    Found: {list(df_daily.columns[:5])}...")
+                    errors.append(f"{run_dir.name}: missing columns in daily data")
             except Exception as e:
-                print(f"  ⚠ {run_dir.name}: Could not load daily data: {e}")
+                errors.append(f"{run_dir.name}: {e}")
 
         if 'minute' in run_data or 'daily' in run_data:
             runs.append(run_data)
 
-    print(f"\n  ✓ Loaded {len(runs)} Excel runs")
+    print(f"       ✓ {len(runs)} runs loaded")
+    if errors:
+        print(f"       ⚠ {len(errors)} errors loading runs")
     if len(runs) == 0:
         print("  ✗ ERROR: No valid Excel runs found!")
         sys.exit(1)
@@ -304,9 +283,7 @@ def compute_python_iqr_disaggregated(python_minute: pd.DataFrame) -> Tuple[pd.Da
     Returns:
         Tuple of (IQR DataFrame, coverage info dict)
     """
-    print("\n" + "=" * 80)
-    print("COMPUTING PYTHON IQR - DISAGGREGATED DATA")
-    print("=" * 80)
+    print("\n[1/6] Computing Python IQR for disaggregated data...")
 
     # Normalize column names
     time_col = find_column(python_minute, ['Minute', 'minute', 'time', 'timestep', 'Time'])
@@ -370,14 +347,11 @@ def compute_python_iqr_disaggregated(python_minute: pd.DataFrame) -> Tuple[pd.Da
         elif excel_name in python_minute.columns:
             available_vars.append((excel_name, excel_name, desc))
 
-    print(f"\n  Testing {len(available_vars)} variables (out of {len(DISAGGREGATED_COLUMNS)} total)")
-
     stats_list = []
     dwellings = sorted(python_minute['dwelling'].unique())
-    print(f"  Processing {len(dwellings)} dwellings...")
+    print(f"       {len(available_vars)} variables × {len(dwellings)} dwellings × 1440 minutes")
 
     for dwelling in dwellings:
-        print(f"    Dwelling {dwelling}...", end=" ", flush=True)
         d = python_minute[python_minute['dwelling'] == dwelling]
 
         for minute in range(1, 1441):
@@ -391,16 +365,16 @@ def compute_python_iqr_disaggregated(python_minute: pd.DataFrame) -> Tuple[pd.Da
             for excel_name, py_col, desc in available_vars:
                 values = m[py_col].dropna()
                 if len(values) > 0:
+                    row[f'{excel_name}_min'] = np.min(values)
                     row[f'{excel_name}_q1'] = np.percentile(values, 25)
                     row[f'{excel_name}_median'] = np.median(values)
                     row[f'{excel_name}_q3'] = np.percentile(values, 75)
+                    row[f'{excel_name}_max'] = np.max(values)
 
             stats_list.append(row)
 
-        print(f"✓ ({len([r for r in stats_list if r['dwelling'] == dwelling])} minutes)")
-
     df_stats = pd.DataFrame(stats_list)
-    print(f"\n  ✓ Computed IQR for {len(df_stats):,} (dwelling, minute) combinations")
+    print(f"       ✓ Computed IQR and range for {len(df_stats):,} (dwelling, minute) combinations")
 
     return df_stats, coverage_info
 
@@ -410,16 +384,15 @@ def validate_excel_disaggregated(
     python_iqr: pd.DataFrame
 ) -> pd.DataFrame:
     """Validate Excel disaggregated data against Python IQR."""
-    print("\n" + "=" * 80)
-    print("VALIDATING EXCEL DISAGGREGATED DATA")
-    print("=" * 80)
+    print("\n[2/6] Validating Excel disaggregated data against Python IQR...")
 
     results = []
+    skipped = []
 
     for run_data in excel_runs:
         run_name = run_data['run_name']
         if 'minute' not in run_data:
-            print(f"  ⚠ Skipping {run_name} - no minute data")
+            skipped.append(f"{run_name}: no minute data")
             continue
 
         excel_minute = run_data['minute']
@@ -429,7 +402,7 @@ def validate_excel_disaggregated(
         dwelling_col = find_column(excel_minute, ['Dwelling index', 'Dwelling', 'dwelling'])
 
         if not time_col or not dwelling_col:
-            print(f"  ⚠ Skipping {run_name} - missing time/dwelling columns")
+            skipped.append(f"{run_name}: missing time/dwelling columns")
             continue
 
         # Parse time column to minute number (1-1440)
@@ -466,8 +439,6 @@ def validate_excel_disaggregated(
 
         excel_minute['dwelling'] = excel_minute[dwelling_col].astype(int)
 
-        print(f"  {run_name}:", end=" ", flush=True)
-
         # Test each variable for each dwelling
         dwellings = sorted(python_iqr['dwelling'].unique())
 
@@ -490,13 +461,15 @@ def validate_excel_disaggregated(
                 if not excel_col:
                     continue
 
+                min_col = f'{excel_name}_min'
                 q1_col = f'{excel_name}_q1'
                 q3_col = f'{excel_name}_q3'
+                max_col = f'{excel_name}_max'
 
                 if q1_col not in merged.columns or q3_col not in merged.columns:
                     continue
 
-                # Count how many values fall in IQR
+                # Count how many values fall in IQR and in range
                 values = merged[excel_col].dropna()
                 q1 = merged[q1_col].dropna()
                 q3 = merged[q3_col].dropna()
@@ -509,6 +482,14 @@ def validate_excel_disaggregated(
                 in_iqr_count = in_iqr.sum()
                 in_iqr_pct = 100 * in_iqr_count / total if total > 0 else 0
 
+                # Check range (values outside Python min-max)
+                in_range_count = total
+                out_of_range_count = 0
+                if min_col in merged.columns and max_col in merged.columns:
+                    in_range = (merged[excel_col] >= merged[min_col]) & (merged[excel_col] <= merged[max_col])
+                    in_range_count = in_range.sum()
+                    out_of_range_count = total - in_range_count
+
                 results.append({
                     'run': run_name,
                     'dwelling': int(dwelling),
@@ -518,12 +499,15 @@ def validate_excel_disaggregated(
                     'total_minutes': int(total),
                     'in_iqr_count': int(in_iqr_count),
                     'in_iqr_pct': float(in_iqr_pct),
+                    'in_range_count': int(in_range_count),
+                    'out_of_range_count': int(out_of_range_count),
                 })
 
-        print("✓")
-
     df_results = pd.DataFrame(results)
-    print(f"\n  ✓ Validated {len(df_results):,} (run, dwelling, variable) combinations")
+    n_valid_runs = len(excel_runs) - len(skipped)
+    print(f"       ✓ Validated {n_valid_runs} Excel runs ({len(df_results):,} comparisons)")
+    if skipped:
+        print(f"       ⚠ Skipped {len(skipped)} runs")
 
     return df_results
 
@@ -538,9 +522,7 @@ def compute_python_iqr_daily(python_daily: pd.DataFrame) -> Tuple[pd.DataFrame, 
     Returns:
         Tuple of (IQR DataFrame, coverage info dict)
     """
-    print("\n" + "=" * 80)
-    print("COMPUTING PYTHON IQR - DAILY TOTALS")
-    print("=" * 80)
+    print("\n[3/6] Computing Python IQR for daily totals...")
 
     # Normalize column names
     dwelling_col = find_column(python_daily, ['dwelling', 'Dwelling', 'Dwelling_index', 'Dwelling index'])
@@ -577,10 +559,9 @@ def compute_python_iqr_daily(python_daily: pd.DataFrame) -> Tuple[pd.DataFrame, 
         elif excel_name in python_daily.columns:
             available_vars.append((excel_name, excel_name, desc))
 
-    print(f"\n  Testing {len(available_vars)} variables (out of {len(DAILY_COLUMNS)} total)")
-
     stats_list = []
     dwellings = sorted(python_daily['dwelling'].unique())
+    print(f"       {len(available_vars)} variables × {len(dwellings)} dwellings")
 
     for dwelling in dwellings:
         d = python_daily[python_daily['dwelling'] == dwelling]
@@ -590,16 +571,18 @@ def compute_python_iqr_daily(python_daily: pd.DataFrame) -> Tuple[pd.DataFrame, 
         for excel_name, py_col, desc in available_vars:
             values = d[py_col].dropna()
             if len(values) >= 10:  # Need enough samples
+                row[f'{excel_name}_min'] = np.min(values)
                 row[f'{excel_name}_q1'] = np.percentile(values, 25)
                 row[f'{excel_name}_median'] = np.median(values)
                 row[f'{excel_name}_q3'] = np.percentile(values, 75)
+                row[f'{excel_name}_max'] = np.max(values)
                 row[f'{excel_name}_mean'] = np.mean(values)
                 row[f'{excel_name}_std'] = np.std(values)
 
         stats_list.append(row)
 
     df_stats = pd.DataFrame(stats_list)
-    print(f"  ✓ Computed IQR for {len(dwellings)} dwellings")
+    print(f"       ✓ Computed IQR and range for {len(dwellings)} dwellings")
 
     return df_stats, coverage_info
 
@@ -609,16 +592,15 @@ def validate_excel_daily(
     python_iqr: pd.DataFrame
 ) -> pd.DataFrame:
     """Validate Excel daily totals against Python IQR."""
-    print("\n" + "=" * 80)
-    print("VALIDATING EXCEL DAILY TOTALS")
-    print("=" * 80)
+    print("\n[4/6] Validating Excel daily totals against Python IQR...")
 
     results = []
+    skipped = []
 
     for run_data in excel_runs:
         run_name = run_data['run_name']
         if 'daily' not in run_data:
-            print(f"  ⚠ Skipping {run_name} - no daily data")
+            skipped.append(f"{run_name}: no daily data")
             continue
 
         excel_daily = run_data['daily']
@@ -626,19 +608,17 @@ def validate_excel_daily(
         # Normalize dwelling column
         dwelling_col = find_column(excel_daily, ['Dwelling index', 'Dwelling', 'dwelling'])
         if not dwelling_col:
-            print(f"  ⚠ Skipping {run_name} - no dwelling column")
+            skipped.append(f"{run_name}: no dwelling column")
             continue
 
         excel_daily = excel_daily.copy()
         excel_daily['dwelling'] = excel_daily[dwelling_col].astype(int)
 
-        print(f"  {run_name}:", end=" ", flush=True)
-
         # Merge with Python IQR
         merged = excel_daily.merge(python_iqr, on='dwelling', how='inner', suffixes=('_excel', '_py'))
 
         if len(merged) == 0:
-            print("no matches")
+            skipped.append(f"{run_name}: no matches")
             continue
 
         # Check each variable for each dwelling
@@ -654,21 +634,28 @@ def validate_excel_daily(
                 if not excel_col:
                     continue
 
+                min_col = f'{excel_name}_min'
                 q1_col = f'{excel_name}_q1'
                 q3_col = f'{excel_name}_q3'
+                max_col = f'{excel_name}_max'
 
                 if q1_col not in d.columns or q3_col not in d.columns:
                     continue
 
-                # Get value and check if in IQR
+                # Get value and check if in IQR and in range
                 value = d[excel_col].iloc[0]
+                py_min = d[min_col].iloc[0] if min_col in d.columns else np.nan
                 q1 = d[q1_col].iloc[0]
                 q3 = d[q3_col].iloc[0]
+                py_max = d[max_col].iloc[0] if max_col in d.columns else np.nan
 
                 if pd.isna(value) or pd.isna(q1) or pd.isna(q3):
                     continue
 
                 in_iqr = (value >= q1) and (value <= q3)
+                in_range = True
+                if not pd.isna(py_min) and not pd.isna(py_max):
+                    in_range = (value >= py_min) and (value <= py_max)
 
                 results.append({
                     'run': run_name,
@@ -677,16 +664,20 @@ def validate_excel_daily(
                     'python_column': py_col,
                     'units': units,
                     'excel_value': float(value),
+                    'python_min': float(py_min) if not pd.isna(py_min) else np.nan,
                     'python_q1': float(q1),
                     'python_median': float(d[f'{excel_name}_median'].iloc[0]) if f'{excel_name}_median' in d.columns else np.nan,
                     'python_q3': float(q3),
+                    'python_max': float(py_max) if not pd.isna(py_max) else np.nan,
                     'in_iqr': bool(in_iqr),
+                    'in_range': bool(in_range),
                 })
 
-        print("✓")
-
     df_results = pd.DataFrame(results)
-    print(f"\n  ✓ Validated {len(df_results)} (run, dwelling, variable) combinations")
+    n_valid_runs = len(excel_runs) - len(skipped)
+    print(f"       ✓ Validated {n_valid_runs} Excel runs ({len(df_results)} comparisons)")
+    if skipped:
+        print(f"       ⚠ Skipped {len(skipped)} runs")
 
     return df_results
 
@@ -695,51 +686,41 @@ def validate_excel_daily(
 # STATISTICAL VARIANCE ANALYSIS
 # ============================================================================
 
-def compute_expected_iqr_statistics(n_python: int, n_excel: int) -> Dict:
+def compute_expected_iqr_statistics(n_python: int, n_effective: int, quiet: bool = True) -> Dict:
     """Compute expected IQR statistics for given sample sizes.
 
     By definition, 50% of samples should fall within the IQR. But with finite
     sample sizes, there's natural variance. This computes the expected distribution.
+
+    Args:
+        n_python: Number of Python samples (for IQR computation)
+        n_effective: Effective number of independent samples to test against IQR
+                     (e.g., n_excel × n_dwellings for correlated minute data)
+        quiet: If True, don't print (default). Set False for verbose output.
     """
-    print("\n" + "=" * 80)
-    print("EXPECTED IQR STATISTICS")
-    print("=" * 80)
-    print(f"  Python samples: {n_python}")
-    print(f"  Excel samples: {n_excel}")
-    print()
-
-    # For n_excel samples, how many should fall in IQR?
+    # For n_effective independent samples, how many should fall in IQR?
     # This follows a binomial distribution: B(n, p=0.5)
-    expected_mean = n_excel * 0.5
-    expected_std = np.sqrt(n_excel * 0.5 * 0.5)
+    expected_mean = n_effective * 0.5
+    expected_std = np.sqrt(n_effective * 0.5 * 0.5)
 
-    # Confidence intervals
-    ci_68 = (expected_mean - expected_std, expected_mean + expected_std)  # ~68% CI
-    ci_95 = (expected_mean - 2*expected_std, expected_mean + 2*expected_std)  # ~95% CI
-    ci_99 = (expected_mean - 3*expected_std, expected_mean + 3*expected_std)  # ~99.7% CI
+    # Confidence intervals using exact z-scores
+    ci_68 = (expected_mean - 1.0 * expected_std, expected_mean + 1.0 * expected_std)    # 68.27% CI
+    ci_95 = (expected_mean - 1.96 * expected_std, expected_mean + 1.96 * expected_std)  # 95.00% CI
+    ci_99 = (expected_mean - 2.576 * expected_std, expected_mean + 2.576 * expected_std)  # 99.00% CI
 
     # Convert to percentages
-    expected_pct = 100 * expected_mean / n_excel
-    ci_68_pct = (100 * ci_68[0] / n_excel, 100 * ci_68[1] / n_excel)
-    ci_95_pct = (100 * ci_95[0] / n_excel, 100 * ci_95[1] / n_excel)
-    ci_99_pct = (100 * ci_99[0] / n_excel, 100 * ci_99[1] / n_excel)
+    expected_pct = 100 * expected_mean / n_effective if n_effective > 0 else 50.0
+    ci_68_pct = (100 * ci_68[0] / n_effective, 100 * ci_68[1] / n_effective) if n_effective > 0 else (50, 50)
+    ci_95_pct = (100 * ci_95[0] / n_effective, 100 * ci_95[1] / n_effective) if n_effective > 0 else (50, 50)
+    ci_99_pct = (100 * ci_99[0] / n_effective, 100 * ci_99[1] / n_effective) if n_effective > 0 else (50, 50)
 
-    print(f"  Expected: {expected_mean:.1f} / {n_excel} = {expected_pct:.1f}%")
-    print(f"  68% CI: {ci_68_pct[0]:.1f}% - {ci_68_pct[1]:.1f}%")
-    print(f"  95% CI: {ci_95_pct[0]:.1f}% - {ci_95_pct[1]:.1f}%")
-    print(f"  99.7% CI: {ci_99_pct[0]:.1f}% - {ci_99_pct[1]:.1f}%")
-    print()
-
-    # How unlikely is it to be off by various amounts?
-    for delta_pct in [0.1, 1.0, 10.0]:
-        delta_count = delta_pct / 100 * n_excel
-        z_score = abs(delta_count) / expected_std if expected_std > 0 else 0
-        p_value = 2 * (1 - scipy_stats.norm.cdf(z_score))  # Two-tailed
-        print(f"  Probability of being off by ±{delta_pct}%: {p_value:.2%}")
+    if not quiet:
+        print(f"\n  Statistical expectations (n_effective={n_effective}):")
+        print(f"    Expected: {expected_pct:.1f}%, 95% CI: [{ci_95_pct[0]:.1f}%, {ci_95_pct[1]:.1f}%]")
 
     return {
         'n_python': n_python,
-        'n_excel': n_excel,
+        'n_effective': n_effective,
         'expected_mean': expected_mean,
         'expected_std': expected_std,
         'expected_pct': expected_pct,
@@ -758,9 +739,6 @@ def generate_disaggregated_summary_table(validation_results: pd.DataFrame) -> pd
 
     Each cell shows % of timestamps (1440 × 20 = 28,800) in IQR.
     """
-    print("\n" + "=" * 80)
-    print("GENERATING DISAGGREGATED SUMMARY TABLE")
-    print("=" * 80)
 
     # For each (dwelling, variable), compute aggregate IQR percentage
     summary = validation_results.groupby(['variable', 'dwelling']).agg({
@@ -784,16 +762,11 @@ def generate_disaggregated_summary_table(validation_results: pd.DataFrame) -> pd
                       if name in table.index]
     table = table.loc[variable_order]
 
-    print(f"  ✓ Created table: {len(table)} variables × {len(table.columns)} columns")
-
     return table
 
 
 def generate_daily_summary_table(validation_results: pd.DataFrame) -> pd.DataFrame:
     """Generate daily totals summary table."""
-    print("\n" + "=" * 80)
-    print("GENERATING DAILY TOTALS SUMMARY TABLE")
-    print("=" * 80)
 
     # For each (dwelling, variable), count how many runs fall in IQR
     summary = validation_results.groupby(['variable', 'dwelling']).agg({
@@ -818,8 +791,6 @@ def generate_daily_summary_table(validation_results: pd.DataFrame) -> pd.DataFra
                       if name in table.index]
     table = table.loc[variable_order]
 
-    print(f"  ✓ Created table: {len(table)} variables × {len(table.columns)} columns")
-
     return table
 
 
@@ -832,46 +803,26 @@ def generate_comprehensive_report(
     disagg_results: pd.DataFrame,
     daily_table: pd.DataFrame,
     disagg_table: pd.DataFrame,
-    stats_info: Dict,
+    stats_info_daily: Dict,
+    stats_info_disagg: Dict,
     validation_dir: Path,
     daily_coverage: Optional[Dict] = None,
     disagg_coverage: Optional[Dict] = None,
     n_python: int = 0,
     n_excel: int = 0,
-) -> None:
-    """Generate comprehensive validation report."""
-    print("\n" + "=" * 80)
-    print("GENERATING COMPREHENSIVE REPORT")
-    print("=" * 80)
+    n_dwellings: int = 1,
+) -> Dict:
+    """Generate comprehensive validation report.
 
-    # Save detailed results (with warnings for empty files)
+    Returns dict with summary statistics for the executive summary.
+    """
+    print("\n[5/6] Generating reports...")
+
+    # Save detailed results
     daily_results.to_csv(validation_dir / 'daily_totals_detailed.csv', index=False)
     disagg_results.to_csv(validation_dir / 'disaggregated_detailed.csv', index=False)
-
-    # Save summary tables
     daily_table.to_csv(validation_dir / 'daily_totals_summary.csv')
     disagg_table.to_csv(validation_dir / 'disaggregated_summary.csv')
-
-    # Report what was saved, with warnings for empty files
-    if len(daily_results) > 0:
-        print(f"  ✓ Saved: daily_totals_detailed.csv ({len(daily_results)} rows)")
-    else:
-        print(f"  ⚠ Saved: daily_totals_detailed.csv (EMPTY - 0 rows)")
-
-    if len(disagg_results) > 0:
-        print(f"  ✓ Saved: disaggregated_detailed.csv ({len(disagg_results)} rows)")
-    else:
-        print(f"  ⚠ Saved: disaggregated_detailed.csv (EMPTY - 0 rows)")
-
-    if len(daily_table) > 0:
-        print(f"  ✓ Saved: daily_totals_summary.csv ({len(daily_table)} variables)")
-    else:
-        print(f"  ⚠ Saved: daily_totals_summary.csv (EMPTY - no variables matched)")
-
-    if len(disagg_table) > 0:
-        print(f"  ✓ Saved: disaggregated_summary.csv ({len(disagg_table)} variables)")
-    else:
-        print(f"  ⚠ Saved: disaggregated_summary.csv (EMPTY - no variables matched)")
 
     # Generate text report
     report = []
@@ -903,13 +854,15 @@ def generate_comprehensive_report(
     report.append("")
 
     # Statistical expectations
+    n_effective = n_excel * n_dwellings
     report.append("STATISTICAL EXPECTATIONS")
     report.append("-" * 80)
-    report.append(f"With {n_python} Python runs and {n_excel} Excel runs:")
-    report.append(f"  Expected IQR percentage: {stats_info['expected_pct']:.1f}%")
-    report.append(f"  68% confidence interval: {stats_info['ci_68_pct'][0]:.1f}% - {stats_info['ci_68_pct'][1]:.1f}%")
-    report.append(f"  95% confidence interval: {stats_info['ci_95_pct'][0]:.1f}% - {stats_info['ci_95_pct'][1]:.1f}%")
-    report.append(f"  99.7% confidence interval: {stats_info['ci_99_pct'][0]:.1f}% - {stats_info['ci_99_pct'][1]:.1f}%")
+    report.append(f"With {n_python} Python runs and {n_excel} Excel runs × {n_dwellings} dwellings:")
+    report.append(f"  Effective sample size: {n_effective} (runs × dwellings, treating minutes as correlated)")
+    report.append(f"  Expected IQR percentage: {stats_info_daily['expected_pct']:.1f}%")
+    report.append(f"  68% confidence interval: {stats_info_daily['ci_68_pct'][0]:.1f}% - {stats_info_daily['ci_68_pct'][1]:.1f}%")
+    report.append(f"  95% confidence interval: {stats_info_daily['ci_95_pct'][0]:.1f}% - {stats_info_daily['ci_95_pct'][1]:.1f}%")
+    report.append(f"  99% confidence interval: {stats_info_daily['ci_99_pct'][0]:.1f}% - {stats_info_daily['ci_99_pct'][1]:.1f}%")
     report.append("")
     report.append("Interpretation:")
     report.append("  If Python and Excel produce the same distribution, ~50% of Excel")
@@ -917,9 +870,9 @@ def generate_comprehensive_report(
     report.append("  Values outside the 95% CI suggest a potential mismatch.")
     report.append("")
     report.append("Probability of observing deviations (if distributions match):")
-    expected_std = stats_info.get('expected_std', 0)
-    for delta_pct in [0.1, 1.0, 10.0]:
-        delta_count = delta_pct / 100 * n_excel
+    expected_std = stats_info_daily.get('expected_std', 0)
+    for delta_pct in [5.0, 10.0, 20.0]:
+        delta_count = delta_pct / 100 * n_effective
         z_score = abs(delta_count) / expected_std if expected_std > 0 else 0
         p_value = 2 * (1 - scipy_stats.norm.cdf(z_score))  # Two-tailed
         report.append(f"  ±{delta_pct}% deviation: {p_value:.2%} probability")
@@ -927,16 +880,17 @@ def generate_comprehensive_report(
 
     # Daily totals summary
     n_daily_vars = len(daily_coverage['available']) if daily_coverage else 15
-    n_dwellings = len(daily_results['dwelling'].unique()) if len(daily_results) > 0 else 0
-    report.append(f"DAILY TOTALS ({n_daily_vars} variables × {n_dwellings} dwellings × {n_excel} runs)")
+    n_daily_dwellings = len(daily_results['dwelling'].unique()) if len(daily_results) > 0 else 0
+    report.append(f"DAILY TOTALS ({n_daily_vars} variables × {n_daily_dwellings} dwellings × {n_excel} runs)")
     report.append("-" * 80)
+    daily_ci_low, daily_ci_high = stats_info_daily['ci_95_pct']
     if len(daily_results) > 0:
         overall_daily = daily_results.groupby('variable')['in_iqr'].agg(['sum', 'count']).reset_index()
         overall_daily['pct'] = 100 * overall_daily['sum'] / overall_daily['count']
 
         for _, row in overall_daily.iterrows():
             pct = row['pct']
-            status = "✓" if pct >= 40 else "✗"  # Allow some variance from 50%
+            status = "✓" if daily_ci_low <= pct <= daily_ci_high else "✗"
             report.append(f"  {row['variable']:<50} {pct:5.1f}% {status}")
 
         overall_pct = 100 * overall_daily['sum'].sum() / overall_daily['count'].sum()
@@ -948,9 +902,9 @@ def generate_comprehensive_report(
     # Disaggregated summary
     n_disagg_vars = len(disagg_coverage['available']) if disagg_coverage else 37
     n_disagg_dwellings = len(disagg_results['dwelling'].unique()) if len(disagg_results) > 0 else 0
-    total_samples_per_var = 1440 * n_excel  # minutes × Excel runs
     report.append(f"DISAGGREGATED ({n_disagg_vars} variables × {n_disagg_dwellings} dwellings × 1440 minutes × {n_excel} runs)")
     report.append("-" * 80)
+    disagg_ci_low, disagg_ci_high = stats_info_disagg['ci_95_pct']
     if len(disagg_results) > 0:
         overall_disagg = disagg_results.groupby('variable').agg({
             'in_iqr_count': 'sum',
@@ -964,13 +918,13 @@ def generate_comprehensive_report(
         report.append("Top 10 (highest IQR match):")
         for _, row in overall_disagg_sorted.head(10).iterrows():
             pct = row['pct']
-            status = "✓" if pct >= 40 else "✗"
+            status = "✓" if disagg_ci_low <= pct <= disagg_ci_high else "✗"
             report.append(f"  {row['variable']:<50} {pct:5.1f}% {status}")
 
         report.append("\nBottom 10 (lowest IQR match):")
         for _, row in overall_disagg_sorted.tail(10).iterrows():
             pct = row['pct']
-            status = "✓" if pct >= 40 else "✗"
+            status = "✓" if disagg_ci_low <= pct <= disagg_ci_high else "✗"
             report.append(f"  {row['variable']:<50} {pct:5.1f}% {status}")
 
         overall_pct = 100 * overall_disagg['in_iqr_count'].sum() / overall_disagg['total_minutes'].sum()
@@ -986,25 +940,137 @@ def generate_comprehensive_report(
         for dwelling in sorted(disagg_results['dwelling'].unique()):
             d = disagg_results[disagg_results['dwelling'] == dwelling]
             pct = 100 * d['in_iqr_count'].sum() / d['total_minutes'].sum()
-            status = "✓" if pct >= 40 else "✗"
+            status = "✓" if disagg_ci_low <= pct <= disagg_ci_high else "✗"
             report.append(f"  Dwelling {dwelling}: {pct:.1f}% in IQR {status}")
     else:
         report.append("  No disaggregated data available for per-dwelling analysis")
+    report.append("")
+
+    # Range violations - Excel values outside Python's entire min-max range
+    # This is a critical test: P(value outside range) ≈ 2/(n+1) ≈ 0.2% with 1000 samples
+    report.append("RANGE VIOLATIONS (Excel values outside Python min-max)")
+    report.append("-" * 80)
+    report.append("Values outside Python's entire range are statistically very unlikely")
+    report.append(f"(~{200.0/(n_python+1):.2f}% expected with {n_python} Python samples)")
+    report.append("")
+
+    # Daily range violations
+    has_daily_range_violations = False
+    if len(daily_results) > 0 and 'in_range' in daily_results.columns:
+        daily_range = daily_results.groupby('variable')['in_range'].agg(['sum', 'count']).reset_index()
+        daily_range['out_of_range'] = daily_range['count'] - daily_range['sum']
+        violations = daily_range[daily_range['out_of_range'] > 0]
+        if len(violations) > 0:
+            has_daily_range_violations = True
+            report.append("Daily totals:")
+            for _, row in violations.sort_values('out_of_range', ascending=False).iterrows():
+                report.append(f"  ⚠ {row['variable']:<48} {row['out_of_range']:.0f}/{row['count']:.0f} out of range")
+
+    # Disaggregated range violations
+    has_disagg_range_violations = False
+    if len(disagg_results) > 0 and 'out_of_range_count' in disagg_results.columns:
+        disagg_range = disagg_results.groupby('variable').agg({
+            'out_of_range_count': 'sum',
+            'total_minutes': 'sum',
+        }).reset_index()
+        violations = disagg_range[disagg_range['out_of_range_count'] > 0]
+        if len(violations) > 0:
+            has_disagg_range_violations = True
+            if has_daily_range_violations:
+                report.append("")
+            report.append("Disaggregated:")
+            for _, row in violations.sort_values('out_of_range_count', ascending=False).head(10).iterrows():
+                pct = 100 * row['out_of_range_count'] / row['total_minutes']
+                report.append(f"  ⚠ {row['variable']:<48} {row['out_of_range_count']:.0f} ({pct:.2f}%)")
+            if len(violations) > 10:
+                report.append(f"  ... and {len(violations) - 10} more variables with range violations")
+
+    if not has_daily_range_violations and not has_disagg_range_violations:
+        report.append("  ✓ No range violations detected - all Excel values within Python range")
     report.append("")
 
     report.append("=" * 80)
     report.append("END OF REPORT")
     report.append("=" * 80)
 
-    # Save and print report
+    # Save report to file (not to console)
     report_file = validation_dir / 'validation_report.txt'
     with open(report_file, 'w') as f:
         f.write('\n'.join(report))
 
-    print(f"  ✓ Saved: validation_report.txt")
+    # Compute summary statistics for executive summary
+    # Use separate CIs for daily vs disaggregated (same effective n in this implementation)
+    summary = {
+        'n_python': n_python,
+        'n_excel': n_excel,
+        'n_dwellings': n_dwellings,
+        'n_effective': n_excel * n_dwellings,
+        'daily_ci_95_pct': stats_info_daily['ci_95_pct'],
+        'disagg_ci_95_pct': stats_info_disagg['ci_95_pct'],
+        'daily_overall_pct': None,
+        'disagg_overall_pct': None,
+        'daily_outliers': [],
+        'disagg_outliers': [],
+        'daily_range_outliers': [],  # Variables with Excel values outside Python range
+        'disagg_range_outliers': [],
+    }
 
-    # Print to console
-    print("\n" + '\n'.join(report))
+    # Daily totals overall percentage and outliers
+    if len(daily_results) > 0:
+        overall_daily = daily_results.groupby('variable')['in_iqr'].agg(['sum', 'count']).reset_index()
+        overall_daily['pct'] = 100 * overall_daily['sum'] / overall_daily['count']
+        summary['daily_overall_pct'] = 100 * overall_daily['sum'].sum() / overall_daily['count'].sum()
+
+        # Find outliers (outside 95% CI for daily data)
+        ci_low, ci_high = stats_info_daily['ci_95_pct']
+        for _, row in overall_daily.iterrows():
+            if row['pct'] < ci_low or row['pct'] > ci_high:
+                summary['daily_outliers'].append((row['variable'], row['pct']))
+
+        # Find range outliers (Excel values outside Python min-max range)
+        if 'in_range' in daily_results.columns:
+            range_summary = daily_results.groupby('variable')['in_range'].agg(['sum', 'count']).reset_index()
+            range_summary['out_of_range'] = range_summary['count'] - range_summary['sum']
+            for _, row in range_summary.iterrows():
+                if row['out_of_range'] > 0:
+                    summary['daily_range_outliers'].append((
+                        row['variable'],
+                        int(row['out_of_range']),
+                        int(row['count'])
+                    ))
+
+    # Disaggregated overall percentage and outliers
+    if len(disagg_results) > 0:
+        overall_disagg = disagg_results.groupby('variable').agg({
+            'in_iqr_count': 'sum',
+            'total_minutes': 'sum',
+        }).reset_index()
+        overall_disagg['pct'] = 100 * overall_disagg['in_iqr_count'] / overall_disagg['total_minutes']
+        summary['disagg_overall_pct'] = 100 * overall_disagg['in_iqr_count'].sum() / overall_disagg['total_minutes'].sum()
+
+        # Find outliers (outside 95% CI for disaggregated data)
+        ci_low, ci_high = stats_info_disagg['ci_95_pct']
+        for _, row in overall_disagg.iterrows():
+            if row['pct'] < ci_low or row['pct'] > ci_high:
+                summary['disagg_outliers'].append((row['variable'], row['pct']))
+
+        # Find range outliers (Excel values outside Python min-max range)
+        if 'out_of_range_count' in disagg_results.columns:
+            range_summary = disagg_results.groupby('variable').agg({
+                'out_of_range_count': 'sum',
+                'total_minutes': 'sum',
+            }).reset_index()
+            for _, row in range_summary.iterrows():
+                if row['out_of_range_count'] > 0:
+                    summary['disagg_range_outliers'].append((
+                        row['variable'],
+                        int(row['out_of_range_count']),
+                        int(row['total_minutes'])
+                    ))
+
+    print(f"       ✓ Saved 4 CSV files + validation_report.txt")
+
+    return summary
 
 
 def generate_daily_totals_wide_format(
@@ -1027,7 +1093,6 @@ def generate_daily_totals_wide_format(
     Returns:
         DataFrame with wide-format comparison
     """
-    print("\n  Generating daily totals wide-format comparison table...")
 
     # Get list of dwellings
     dwellings = sorted(python_daily_iqr['dwelling'].unique())
@@ -1159,10 +1224,98 @@ def generate_daily_totals_wide_format(
     # Save to CSV
     output_file = validation_dir / 'daily_totals_comparison.csv'
     df_comparison.to_csv(output_file, index=False)
-    print(f"    ✓ Saved: daily_totals_comparison.csv")
-    print(f"      ({len(excel_runs)} Excel runs × {len(dwellings)} dwellings + quartiles + IQR summary)")
+    print(f"       ✓ Saved: daily_totals_comparison.csv")
 
     return df_comparison
+
+
+def print_executive_summary(summary: Dict, validation_dir: Path) -> None:
+    """Print a clear executive summary to stdout."""
+    print("\n" + "=" * 70)
+    print("EXECUTIVE SUMMARY")
+    print("=" * 70)
+
+    n_python = summary['n_python']
+    n_excel = summary['n_excel']
+    n_dwellings = summary.get('n_dwellings', 1)
+    n_effective = summary.get('n_effective', n_excel * n_dwellings)
+
+    # Get separate CIs for daily vs disaggregated
+    daily_ci_low, daily_ci_high = summary['daily_ci_95_pct']
+    disagg_ci_low, disagg_ci_high = summary['disagg_ci_95_pct']
+
+    print(f"\nData: {n_python} Python runs vs {n_excel} Excel runs × {n_dwellings} dwellings")
+    print(f"Effective sample size: {n_effective} (runs × dwellings)")
+    print(f"Expected: 50% in IQR (95% CI: {daily_ci_low:.1f}%-{daily_ci_high:.1f}%)")
+
+    # Overall results
+    daily_pct = summary['daily_overall_pct']
+    disagg_pct = summary['disagg_overall_pct']
+
+    print(f"\nRESULTS:")
+
+    # Daily totals
+    if daily_pct is not None:
+        status = "PASS" if daily_ci_low <= daily_pct <= daily_ci_high else "REVIEW"
+        symbol = "✓" if status == "PASS" else "⚠"
+        print(f"  Daily totals:    {daily_pct:5.1f}% in IQR  {symbol} {status}")
+    else:
+        print(f"  Daily totals:    No data")
+
+    # Disaggregated
+    if disagg_pct is not None:
+        status = "PASS" if disagg_ci_low <= disagg_pct <= disagg_ci_high else "REVIEW"
+        symbol = "✓" if status == "PASS" else "⚠"
+        print(f"  Disaggregated:   {disagg_pct:5.1f}% in IQR  {symbol} {status}")
+    else:
+        print(f"  Disaggregated:   No data")
+
+    # Range violations (critical - Excel values outside Python's entire range)
+    daily_range_outliers = summary.get('daily_range_outliers', [])
+    disagg_range_outliers = summary.get('disagg_range_outliers', [])
+
+    if daily_range_outliers or disagg_range_outliers:
+        print(f"\n⚠ RANGE VIOLATIONS (Excel outside Python min-max):")
+        if daily_range_outliers:
+            print(f"  Daily totals ({len(daily_range_outliers)} variables):")
+            for var, out_count, total in sorted(daily_range_outliers, key=lambda x: x[1], reverse=True)[:5]:
+                print(f"    - {var}: {out_count}/{total} out of range")
+            if len(daily_range_outliers) > 5:
+                print(f"    ... and {len(daily_range_outliers) - 5} more")
+        if disagg_range_outliers:
+            print(f"  Disaggregated ({len(disagg_range_outliers)} variables):")
+            for var, out_count, total in sorted(disagg_range_outliers, key=lambda x: x[1], reverse=True)[:5]:
+                pct = 100 * out_count / total if total > 0 else 0
+                print(f"    - {var}: {out_count} ({pct:.2f}%)")
+            if len(disagg_range_outliers) > 5:
+                print(f"    ... and {len(disagg_range_outliers) - 5} more")
+
+    # IQR outliers (outside 95% CI)
+    daily_outliers = summary['daily_outliers']
+    disagg_outliers = summary['disagg_outliers']
+
+    if daily_outliers or disagg_outliers:
+        print(f"\nIQR OUTLIERS (outside 95% CI):")
+        if daily_outliers:
+            print(f"  Daily totals ({len(daily_outliers)} variables):")
+            for var, pct in sorted(daily_outliers, key=lambda x: abs(x[1] - 50), reverse=True)[:5]:
+                direction = "low" if pct < daily_ci_low else "high"
+                print(f"    - {var}: {pct:.1f}% ({direction})")
+            if len(daily_outliers) > 5:
+                print(f"    ... and {len(daily_outliers) - 5} more")
+        if disagg_outliers:
+            print(f"  Disaggregated ({len(disagg_outliers)} variables):")
+            for var, pct in sorted(disagg_outliers, key=lambda x: abs(x[1] - 50), reverse=True)[:5]:
+                direction = "low" if pct < disagg_ci_low else "high"
+                print(f"    - {var}: {pct:.1f}% ({direction})")
+            if len(disagg_outliers) > 5:
+                print(f"    ... and {len(disagg_outliers) - 5} more")
+
+    if not daily_range_outliers and not disagg_range_outliers and not daily_outliers and not disagg_outliers:
+        print(f"\n✓ No outliers detected - all variables within expected range")
+
+    print(f"\nFull details: {validation_dir}/validation_report.txt")
+    print("=" * 70)
 
 
 # ============================================================================
@@ -1195,21 +1348,33 @@ def main():
         print(f"✗ ERROR: Excel directory not found: {excel_dir}")
         sys.exit(1)
 
-    print("=" * 80)
-    print("CREST MONTE CARLO IQR VALIDATION - COMPREHENSIVE")
-    print("=" * 80)
+    print("CREST Monte Carlo IQR Validation")
+    print("-" * 40)
 
     # Load data
     python_minute, python_daily = load_python_baseline(python_dir)
     excel_runs = load_excel_runs(excel_dir)
 
-    # Detect sample sizes for statistical analysis
+    # Detect sample sizes from loaded data
     n_python = len(python_minute['seed'].unique()) if 'seed' in python_minute.columns else len(python_minute) // 1440
     n_excel = len(excel_runs)
 
-    # Compute statistical expectations
-    stats_info_disagg = compute_expected_iqr_statistics(n_python, n_excel * 1440)  # Each run has 1440 minutes
-    stats_info_daily = compute_expected_iqr_statistics(n_python, n_excel)
+    # Detect n_dwellings from Python data
+    dwelling_col = None
+    for col in ['dwelling', 'Dwelling', 'Dwelling_index', 'Dwelling index']:
+        if col in python_minute.columns:
+            dwelling_col = col
+            break
+    n_dwellings = len(python_minute[dwelling_col].unique()) if dwelling_col else 1
+
+    # Effective sample size: runs × dwellings (minutes within run are correlated)
+    # This is a statistically defensible middle ground between n_excel and n_excel*1440
+    n_effective_daily = n_excel * n_dwellings      # For daily totals (aggregated across dwellings)
+    n_effective_disagg = n_excel * n_dwellings     # For disaggregated (run×dwelling as independent unit)
+
+    # Compute statistical expectations with effective sample sizes
+    stats_info_daily = compute_expected_iqr_statistics(n_python, n_effective_daily)
+    stats_info_disagg = compute_expected_iqr_statistics(n_python, n_effective_disagg)
 
     # DISAGGREGATED ANALYSIS
     python_iqr_disagg, disagg_coverage = compute_python_iqr_disaggregated(python_minute)
@@ -1228,7 +1393,6 @@ def main():
 
     # Create validation directory
     validation_dir = create_validation_dir(str(python_dir), str(excel_dir), "monte_carlo")
-    print(f"\n✓ Validation directory: {validation_dir}")
 
     # Save metadata
     save_metadata(
@@ -1241,27 +1405,31 @@ def main():
         total_disaggregated_comparisons=len(disagg_results)
     )
 
-    # Generate comprehensive report
-    generate_comprehensive_report(
+    # Generate comprehensive report (saves to files, returns summary)
+    summary = generate_comprehensive_report(
         daily_results,
         disagg_results,
         daily_table,
         disagg_table,
-        stats_info_daily,  # Use daily stats for the report (more intuitive than per-minute)
+        stats_info_daily,
+        stats_info_disagg,
         validation_dir,
         daily_coverage=daily_coverage,
         disagg_coverage=disagg_coverage,
         n_python=n_python,
         n_excel=n_excel,
+        n_dwellings=n_dwellings,
     )
 
     # Generate wide-format daily comparison table (user-requested format)
     if python_iqr_daily is not None and len(python_iqr_daily) > 0:
+        print("\n[6/6] Generating daily comparison table...")
         generate_daily_totals_wide_format(excel_runs, python_iqr_daily, validation_dir)
 
-    print("\n" + "=" * 80)
-    print(f"✓ VALIDATION COMPLETE - Results saved to: {validation_dir}")
-    print("=" * 80)
+    # Print executive summary to console
+    print_executive_summary(summary, validation_dir)
+
+    print(f"\n✓ Complete. Results: {validation_dir}")
 
 
 if __name__ == '__main__':
