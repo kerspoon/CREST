@@ -34,7 +34,7 @@ venv/bin/python3 scripts/compare_results.py excel/lcg_fixed/ output/rng_validati
 
 **Minute-level max differences:**
 - Primary heating output: 26.94 W (floating point accumulation at transitions)
-- Appliance demand: 7.0 W (floating point accumulation from summing)
+- Appliance demand: max 4W typical (Excel > Python), one 7W outlier
 
 ---
 
@@ -122,18 +122,23 @@ Note: `active_occupancy` (min of both digits) is still used internally for therm
 
 ## Remaining Acceptable Differences
 
-### Appliance Demand (max 7W, typically 1-3W)
-- **Root cause**: Rounding method difference
-  - VBA `CInt()`: Traditional rounding (0.5 rounds UP) - slight upward bias
-  - Python `round()`: Banker's rounding (0.5 rounds to EVEN) - statistically unbiased
-- **Impact**: Excel consistently ~0.5W higher than Python
-- **Total bias**: 0.22 kWh/day across 20 houses (0.02% of demand)
-- **Verdict**: Python is slightly more accurate; both are valid implementations
+### Appliance Demand (max 4W typical, one 7W outlier)
+- **Root cause**: UNKNOWN (under investigation)
+  - **Verified**: VBA `CInt()` and Python `round()` both use banker's rounding (0.5 rounds to EVEN)
+  - **Verified**: Excel `NormInv` and scipy `norm.ppf` produce identical values
+  - **Verified**: RNG sequences match perfectly (Occupancy, Activity, Lighting all 0.0000 diff)
+- **Observation**: Excel is consistently higher than Python
+  - 8,725 non-zero differences out of 28,800 (30.3%)
+  - 8,724 cases: Excel > Python (by 1-4W)
+  - 1 case: Python > Excel (by 7W - outlier)
+  - Distribution: 4,809 at -1W, 3,082 at -2W, 807 at -3W, 26 at -4W
+- **Note**: The `compare_results.py` script shows absolute values; signed analysis confirms direction
+- **Verdict**: Acceptable difference; investigation ongoing to identify root cause
 
 ### Heating Output (max 27W at transitions)
 - **Root cause chain**:
-  1. Appliance rounding difference (1W)
-  2. → Casual thermal gains differ (1W)
+  1. Appliance demand difference (source unknown)
+  2. → Casual thermal gains differ
   3. → Indoor temperature drifts (0.009°C over 900 minutes)
   4. → Heating demand calculation affected at setpoint transitions
 - Only visible at heating on/off transition points (partial power moments)

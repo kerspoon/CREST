@@ -78,8 +78,8 @@ See [`RNG_DIVERGENCE_INVESTIGATION.md`](./RNG_DIVERGENCE_INVESTIGATION.md) for d
 - Heating/Cooling electricity
 
 **Remaining differences (acceptable):**
-- Appliance demand: max 7W (0.02%) - Python uses banker's rounding (more accurate)
-- Heating output: max 27W at transitions - cascades from appliance rounding through thermal model
+- Appliance demand: max 7W (0.02%) - root cause under investigation (NOT rounding - both use banker's rounding)
+- Heating output: max 27W at transitions - cascades from appliance difference through thermal model
 
 ### VBA Bug Fixes
 
