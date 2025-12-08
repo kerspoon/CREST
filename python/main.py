@@ -695,7 +695,17 @@ def main():
     parser.add_argument(
         "--plot",
         action="store_true",
-        help="Generate summary plots in {output_dir}/plots/"
+        help="Generate multi-dwelling comparison plots in {output_dir}/plots/"
+    )
+    parser.add_argument(
+        "--plot-individual",
+        action="store_true",
+        help="Generate per-dwelling plots (demand, occupancy, temperature, PV) in {output_dir}/plots/"
+    )
+    parser.add_argument(
+        "--verbose", "-v",
+        action="store_true",
+        help="Print detailed per-dwelling simulation info"
     )
 
     args = parser.parse_args()
@@ -841,14 +851,17 @@ def main():
             args.num_dwellings = len(dwelling_configs)
 
         # Simulate all dwellings from config file
+        if not args.verbose:
+            print(f"Simulating {len(dwelling_configs)} dwellings...", end="", flush=True)
         for dwelling_idx, dwelling_config in enumerate(dwelling_configs):
-            print(f"\nSimulating dwelling {dwelling_idx + 1}/{args.num_dwellings}...")
-            print(f"  Config: {dwelling_config.num_residents} residents, "
-                  f"building {dwelling_config.building_index}, "
-                  f"heating {dwelling_config.heating_system_index}, "
-                  f"PV {dwelling_config.pv_system_index}, "
-                  f"solar thermal {dwelling_config.solar_thermal_index}, "
-                  f"cooling {dwelling_config.cooling_system_index}")
+            if args.verbose:
+                print(f"\nSimulating dwelling {dwelling_idx + 1}/{args.num_dwellings}...")
+                print(f"  Config: {dwelling_config.num_residents} residents, "
+                      f"building {dwelling_config.building_index}, "
+                      f"heating {dwelling_config.heating_system_index}, "
+                      f"PV {dwelling_config.pv_system_index}, "
+                      f"solar thermal {dwelling_config.solar_thermal_index}, "
+                      f"cooling {dwelling_config.cooling_system_index}")
 
             # Create and run dwelling simulation
             dwelling = Dwelling(
@@ -860,13 +873,11 @@ def main():
                 validation_logger=validation_logger
             )
 
-            print("  Running simulation...")
+            if args.verbose:
+                print("  Running simulation...")
             dwelling.run_simulation()
 
             dwellings.append(dwelling)
-
-            # Collect results for this dwelling
-            print("  Calculating daily totals...")
 
             mean_active_occupancy = dwelling.occupancy.get_mean_active_occupancy()
             proportion_actively_occupied = dwelling.occupancy.get_proportion_actively_occupied()
@@ -915,12 +926,16 @@ def main():
                 'solar_thermal_kwh': solar_thermal_kwh
             })
 
-            print(f"  Daily electricity: {total_electricity_kwh:.2f} kWh (lighting: {lighting_demand_kwh:.2f}, appliances: {appliance_demand_kwh:.2f})")
-            print(f"  Daily gas: {gas_m3:.2f} m³")
-            print(f"  Daily hot water: {hot_water_litres:.2f} litres")
-            if dwelling.pv_system is not None:
-                print(f"  PV output: {pv_output_kwh:.2f} kWh, Net demand: {net_electricity_kwh:.2f} kWh")
-            print(f"  Indoor temp: {average_indoor_temp:.1f}°C")
+            if args.verbose:
+                print(f"  Daily electricity: {total_electricity_kwh:.2f} kWh (lighting: {lighting_demand_kwh:.2f}, appliances: {appliance_demand_kwh:.2f})")
+                print(f"  Daily gas: {gas_m3:.2f} m³")
+                print(f"  Daily hot water: {hot_water_litres:.2f} litres")
+                if dwelling.pv_system is not None:
+                    print(f"  PV output: {pv_output_kwh:.2f} kWh, Net demand: {net_electricity_kwh:.2f} kWh")
+                print(f"  Indoor temp: {average_indoor_temp:.1f}°C")
+
+        if not args.verbose:
+            print(" done.")
 
     else:
         # Generate dwelling configurations and simulate INTERLEAVED (matches VBA order)
@@ -929,8 +944,11 @@ def main():
         param_rng = rng_module.get_rng()
 
         # IMPORTANT: Generate config and simulate in same loop to match VBA RNG sequence
+        if not args.verbose:
+            print(f"Simulating {args.num_dwellings} dwellings...", end="", flush=True)
         for dwelling_idx in range(args.num_dwellings):
-            print(f"\nSimulating dwelling {dwelling_idx + 1}/{args.num_dwellings}...")
+            if args.verbose:
+                print(f"\nSimulating dwelling {dwelling_idx + 1}/{args.num_dwellings}...")
 
             # Generate dwelling configuration (6 RNG calls)
             # VBA Reference: AssignDwellingParameters (lines 1130-1288)
@@ -966,12 +984,13 @@ def main():
             dwelling_configs.append(dwelling_config)
 
             # Immediately simulate this dwelling (matches VBA order)
-            print(f"  Config: {dwelling_config.num_residents} residents, "
-                  f"building {dwelling_config.building_index}, "
-                  f"heating {dwelling_config.heating_system_index}, "
-                  f"PV {dwelling_config.pv_system_index}, "
-                  f"solar thermal {dwelling_config.solar_thermal_index}, "
-                  f"cooling {dwelling_config.cooling_system_index}")
+            if args.verbose:
+                print(f"  Config: {dwelling_config.num_residents} residents, "
+                      f"building {dwelling_config.building_index}, "
+                      f"heating {dwelling_config.heating_system_index}, "
+                      f"PV {dwelling_config.pv_system_index}, "
+                      f"solar thermal {dwelling_config.solar_thermal_index}, "
+                      f"cooling {dwelling_config.cooling_system_index}")
 
             # Create and run dwelling simulation immediately
             # Pass the global RNG so all dwellings share the same seeded random sequence
@@ -984,7 +1003,8 @@ def main():
                 validation_logger=validation_logger
             )
 
-            print("  Running simulation...")
+            if args.verbose:
+                print("  Running simulation...")
             dwelling.run_simulation()
 
             # Store dwelling for output
@@ -992,7 +1012,6 @@ def main():
 
             # Collect results for this dwelling
             # VBA Reference: DailyTotals (mdlThermalElectricalModel.bas lines 1057-1121)
-            print("  Calculating daily totals...")
 
             # VBA line 1081: GetMeanActiveOccupancy
             mean_active_occupancy = dwelling.occupancy.get_mean_active_occupancy()
@@ -1071,33 +1090,41 @@ def main():
                 'solar_thermal_kwh': solar_thermal_kwh  # Column 17
             })
 
-            print(f"  Daily electricity: {total_electricity_kwh:.2f} kWh (lighting: {lighting_demand_kwh:.2f}, appliances: {appliance_demand_kwh:.2f})")
-            print(f"  Daily gas: {gas_m3:.2f} m³")
-            print(f"  Daily hot water: {hot_water_litres:.2f} litres")
-            if dwelling.pv_system is not None:
-                print(f"  PV output: {pv_output_kwh:.2f} kWh, Net demand: {net_electricity_kwh:.2f} kWh")
-            print(f"  Indoor temp: {average_indoor_temp:.1f}°C")
+            if args.verbose:
+                print(f"  Daily electricity: {total_electricity_kwh:.2f} kWh (lighting: {lighting_demand_kwh:.2f}, appliances: {appliance_demand_kwh:.2f})")
+                print(f"  Daily gas: {gas_m3:.2f} m³")
+                print(f"  Daily hot water: {hot_water_litres:.2f} litres")
+                if dwelling.pv_system is not None:
+                    print(f"  PV output: {pv_output_kwh:.2f} kWh, Net demand: {net_electricity_kwh:.2f} kWh")
+                print(f"  Indoor temp: {average_indoor_temp:.1f}°C")
+
+        if not args.verbose:
+            print(" done.")
 
     # Aggregate results across all dwellings
     # VBA Reference: AggregateResults (lines 810-1048)
     if len(dwellings) > 1:
-        print("\nAggregating results across all dwellings...")
+        if args.verbose:
+            print("\nAggregating results across all dwellings...")
         aggregated = aggregate_results(dwellings)
-        print(f"  Aggregated {len(aggregated)} time series variables (1440 timesteps each)")
-        print(f"  Total population: {sum(d.config.num_residents for d in dwellings)} residents")
-        print(f"  Peak total demand: {np.max(aggregated['P_e']):.2f} kW")
-        print(f"  Average indoor temperature: {np.mean(aggregated['theta_i']):.1f}°C")
+        if args.verbose:
+            print(f"  Aggregated {len(aggregated)} time series variables (1440 timesteps each)")
+            print(f"  Total population: {sum(d.config.num_residents for d in dwellings)} residents")
+            print(f"  Peak total demand: {np.max(aggregated['P_e']):.2f} kW")
+            print(f"  Average indoor temperature: {np.mean(aggregated['theta_i']):.1f}°C")
 
     # Write results to files if requested
     if results_writer:
-        print("\nWriting results to files...")
+        if args.verbose:
+            print("\nWriting results to files...")
         # Format dates to match Excel:
         # - Daily summary: "YYYY-MM-DD HH:MM:SS"
         # - Minute data: "DD/MM/YYYY"
         date_str_daily = f"2015-{args.month:02d}-{args.day:02d} 00:00:00"
         date_str_minute = f"{args.day:02d}/{args.month:02d}/2015"
         for dwelling_idx, dwelling in enumerate(dwellings):
-            print(f"  Writing dwelling {dwelling_idx + 1}/{len(dwellings)}...")
+            if args.verbose:
+                print(f"  Writing dwelling {dwelling_idx + 1}/{len(dwellings)}...")
             if args.save_detailed:
                 results_writer.write_minute_data(dwelling_idx, dwelling, date_str_minute)
             results_writer.write_daily_summary(dwelling_idx, dwelling, date_str_daily)
@@ -1105,15 +1132,19 @@ def main():
         print(f"Results saved to: {args.output_dir}")
 
     # Generate plots if requested
-    if args.plot:
+    if args.plot or args.plot_individual:
         if args.output_dir:
             print("\nGenerating plots...")
             from crest.output.plots import ResultsPlotter
             plotter = ResultsPlotter(args.output_dir)
-            plot_files = plotter.plot_all(dwellings, global_climate)
+            plot_files = plotter.plot_all(
+                dwellings, global_climate,
+                individual=args.plot_individual,
+                multi=args.plot
+            )
             print(f"  Generated {len(plot_files)} plots in {args.output_dir}/plots/")
         else:
-            print("\nWarning: --plot requires --output-dir to be set. Skipping plots.")
+            print("\nWarning: --plot/--plot-individual requires --output-dir to be set. Skipping plots.")
 
     # Summary
     print("\n" + "="*60)

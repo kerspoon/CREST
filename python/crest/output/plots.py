@@ -42,9 +42,9 @@ class ResultsPlotter:
         self.figsize = (12, 6)
         self.dpi = 150
 
-    def plot_all(self, dwellings: list, global_climate) -> list:
+    def plot_all(self, dwellings: list, global_climate, individual: bool = True, multi: bool = True) -> list:
         """
-        Generate all plots for simulation results.
+        Generate plots for simulation results.
 
         Parameters
         ----------
@@ -52,12 +52,28 @@ class ResultsPlotter:
             List of Dwelling objects after simulation
         global_climate : GlobalClimate
             Global climate object after simulation
+        individual : bool
+            Generate per-dwelling plots (default True)
+        multi : bool
+            Generate multi-dwelling comparison plots (default True)
 
         Returns
         -------
         list
             List of paths to generated plot files
         """
+        plot_files = []
+
+        if individual:
+            plot_files.extend(self.plot_individual(dwellings, global_climate))
+
+        if multi and len(dwellings) > 1:
+            plot_files.extend(self.plot_multi(dwellings))
+
+        return [p for p in plot_files if p is not None]
+
+    def plot_individual(self, dwellings: list, global_climate) -> list:
+        """Generate per-dwelling plots plus climate."""
         plot_files = []
 
         # Climate plot (shared across dwellings)
@@ -73,7 +89,16 @@ class ResultsPlotter:
             if dwelling.pv_system:
                 plot_files.append(self.plot_pv(dwelling, idx))
 
-        return [p for p in plot_files if p is not None]
+        return plot_files
+
+    def plot_multi(self, dwellings: list) -> list:
+        """Generate multi-dwelling comparison plots."""
+        plot_files = []
+        plot_files.append(self.plot_multi_spaghetti(dwellings))
+        plot_files.append(self.plot_multi_fan(dwellings))
+        plot_files.append(self.plot_multi_heatmap(dwellings))
+        plot_files.append(self.plot_multi_ridge(dwellings))
+        return plot_files
 
     def plot_demand_profile(self, dwelling, dwelling_idx: int) -> Path:
         """
@@ -376,3 +401,181 @@ class ResultsPlotter:
         plt.close(fig)
 
         return filepath
+
+    def _get_total_electricity(self, dwelling) -> np.ndarray:
+        """Extract total electricity demand array for a dwelling."""
+        lighting = np.array([dwelling.lighting.get_total_demand(t) for t in range(1, 1441)])
+        appliances = np.array([dwelling.appliances.get_total_demand(t) for t in range(1, 1441)])
+        heating_elec = np.array([dwelling.heating_system.get_heating_system_power_demand(t) for t in range(1, 1441)])
+        cooling_elec = np.zeros(1440)
+        if dwelling.cooling_system:
+            cooling_elec = np.array([dwelling.cooling_system.get_cooling_system_power_demand(t) for t in range(1, 1441)])
+        return lighting + appliances + heating_elec + cooling_elec
+
+    def plot_multi_spaghetti(self, dwellings: list) -> Path:
+        """
+        Spaghetti plot: individual dwelling traces in grey, aggregate in bold.
+
+        Shows individual variation while emphasizing the aggregate demand.
+        """
+        fig, ax = plt.subplots(figsize=self.figsize)
+
+        # Get demand arrays for all dwellings
+        demands = [self._get_total_electricity(d) for d in dwellings]
+        aggregate = np.sum(demands, axis=0)
+
+        # Plot individual dwellings in grey
+        for i, demand in enumerate(demands):
+            ax.plot(self.time_axis, demand, color='#808080', alpha=0.3, linewidth=0.8)
+
+        # Plot aggregate in bold
+        ax.plot(self.time_axis, aggregate, color='#DC143C', linewidth=2.5,
+                label=f'Aggregate ({len(dwellings)} dwellings)')
+
+        # Formatting
+        ax.set_xlabel('Time of Day')
+        ax.set_ylabel('Power Demand (W)')
+        ax.set_title(f'Electricity Demand - Spaghetti Plot ({len(dwellings)} Dwellings)')
+        ax.legend(loc='upper left')
+        ax.set_xlim(self.time_axis[0], self.time_axis[-1])
+        ax.set_ylim(bottom=0)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=3))
+
+        # Annotations
+        total_kwh = aggregate.sum() / 60 / 1000
+        peak_kw = aggregate.max() / 1000
+        ax.annotate(f'Total: {total_kwh:.1f} kWh\nPeak: {peak_kw:.2f} kW',
+                    xy=(0.98, 0.98), xycoords='axes fraction',
+                    ha='right', va='top', fontsize=10,
+                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+
+        plt.tight_layout()
+        filepath = self.plot_dir / 'multi_spaghetti.png'
+        fig.savefig(filepath, dpi=self.dpi)
+        plt.close(fig)
+
+        return filepath
+
+    def plot_multi_fan(self, dwellings: list) -> Path:
+        """
+        Fan chart: aggregate with percentile bands showing spread.
+
+        Shows median aggregate with 10-90%, 25-75% percentile bands.
+        """
+        fig, ax = plt.subplots(figsize=self.figsize)
+
+        # Get demand arrays for all dwellings
+        demands = np.array([self._get_total_electricity(d) for d in dwellings])
+        aggregate = np.sum(demands, axis=0)
+
+        # Calculate percentiles across dwellings at each minute
+        p10 = np.percentile(demands, 10, axis=0)
+        p25 = np.percentile(demands, 25, axis=0)
+        p50 = np.percentile(demands, 50, axis=0)
+        p75 = np.percentile(demands, 75, axis=0)
+        p90 = np.percentile(demands, 90, axis=0)
+
+        # Plot percentile bands
+        ax.fill_between(self.time_axis, p10, p90, color='#4169E1', alpha=0.2, label='10-90th percentile')
+        ax.fill_between(self.time_axis, p25, p75, color='#4169E1', alpha=0.4, label='25-75th percentile')
+        ax.plot(self.time_axis, p50, color='#4169E1', linewidth=2, label='Median')
+        ax.plot(self.time_axis, aggregate / len(dwellings), color='#DC143C', linewidth=1.5,
+                linestyle='--', label='Mean', alpha=0.8)
+
+        # Formatting
+        ax.set_xlabel('Time of Day')
+        ax.set_ylabel('Power Demand per Dwelling (W)')
+        ax.set_title(f'Electricity Demand - Fan Chart ({len(dwellings)} Dwellings)')
+        ax.legend(loc='upper left')
+        ax.set_xlim(self.time_axis[0], self.time_axis[-1])
+        ax.set_ylim(bottom=0)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=3))
+
+        plt.tight_layout()
+        filepath = self.plot_dir / 'multi_fan.png'
+        fig.savefig(filepath, dpi=self.dpi)
+        plt.close(fig)
+
+        return filepath
+
+    def plot_multi_heatmap(self, dwellings: list) -> Path:
+        """
+        Heatmap: dwellings on Y-axis, time on X-axis, color = demand.
+
+        Good for spotting patterns across dwellings and time.
+        """
+        fig, ax = plt.subplots(figsize=(14, max(6, len(dwellings) * 0.5)))
+
+        # Get demand arrays for all dwellings
+        demands = np.array([self._get_total_electricity(d) for d in dwellings])
+
+        # Create heatmap (use hourly averages for cleaner display)
+        hourly_demands = demands.reshape(len(dwellings), 24, 60).mean(axis=2)
+
+        # Plot heatmap
+        im = ax.imshow(hourly_demands, aspect='auto', cmap='YlOrRd',
+                       extent=[0, 24, len(dwellings) - 0.5, -0.5])
+
+        # Colorbar
+        cbar = plt.colorbar(im, ax=ax, label='Power Demand (W)')
+
+        # Formatting
+        ax.set_xlabel('Hour of Day')
+        ax.set_ylabel('Dwelling')
+        ax.set_title(f'Electricity Demand Heatmap ({len(dwellings)} Dwellings)')
+        ax.set_xticks(range(0, 25, 3))
+        ax.set_yticks(range(len(dwellings)))
+        ax.set_yticklabels([f'D{d.config.dwelling_index}' for d in dwellings])
+
+        plt.tight_layout()
+        filepath = self.plot_dir / 'multi_heatmap.png'
+        fig.savefig(filepath, dpi=self.dpi)
+        plt.close(fig)
+
+        return filepath
+
+    def plot_multi_ridge(self, dwellings: list) -> Path:
+        """
+        Ridge plot: offset density plots for each dwelling (Joy Division style).
+
+        Shows distribution shape for each dwelling stacked vertically.
+        """
+        fig, ax = plt.subplots(figsize=(12, max(8, len(dwellings) * 0.8)))
+
+        # Get demand arrays for all dwellings
+        demands = [self._get_total_electricity(d) for d in dwellings]
+
+        # Calculate vertical offset for each dwelling
+        max_demand = max(d.max() for d in demands)
+        offset_scale = max_demand * 0.6
+
+        # Plot each dwelling with vertical offset
+        colors = plt.cm.viridis(np.linspace(0.2, 0.8, len(dwellings)))
+        for i, (demand, dwelling) in enumerate(zip(demands, dwellings)):
+            offset = i * offset_scale
+            ax.fill_between(self.time_axis, offset, demand + offset,
+                            color=colors[i], alpha=0.7, linewidth=0)
+            ax.plot(self.time_axis, demand + offset, color='black', linewidth=0.5)
+            # Label on left
+            ax.text(self.time_axis[0], offset + offset_scale * 0.1,
+                    f'D{dwelling.config.dwelling_index}', ha='right', va='bottom', fontsize=9)
+
+        # Formatting
+        ax.set_xlabel('Time of Day')
+        ax.set_ylabel('Dwellings (offset vertically)')
+        ax.set_title(f'Electricity Demand - Ridge Plot ({len(dwellings)} Dwellings)')
+        ax.set_xlim(self.time_axis[0], self.time_axis[-1])
+        ax.set_ylim(bottom=0)
+        ax.xaxis.set_major_formatter(mdates.DateFormatter('%H:%M'))
+        ax.xaxis.set_major_locator(mdates.HourLocator(interval=3))
+        ax.set_yticks([])  # Hide y-axis ticks
+
+        plt.tight_layout()
+        filepath = self.plot_dir / 'multi_ridge.png'
+        fig.savefig(filepath, dpi=self.dpi)
+        plt.close(fig)
+
+        return filepath
+

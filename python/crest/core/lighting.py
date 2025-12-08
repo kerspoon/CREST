@@ -139,7 +139,6 @@ class Lighting:
             irradiance_sd
         ))
 
-        print(f"  Irradiance threshold params: mean={irradiance_mean}, sd={irradiance_sd}, th={self.irradiance_threshold}")
 
         # VBA: Choose a random house from 100 provided (lines 86-87)
         # intBulbConfiguration = Int((100 * Rnd) + 1)  ' 1 to 100
@@ -199,11 +198,6 @@ class Lighting:
             row_idx = 37 + occ - 1  # Row 38-42 (0-indexed: 37-41)
             self.effective_occupancy[occ] = float(light_config_raw.iloc[row_idx, 4])
 
-        print(f"DWELLING {self.dwelling_index}:")
-        print(f"  Calibration scalar: {self.calibration_scalar}")
-        print(f"  Bulb config: {bulb_config_idx}, Num bulbs: {self.num_bulbs}")
-        print(f"  Bulb powers: {self.bulb_powers[:5]}")  # First 5
-        print(f"  Effective occ: {self.effective_occupancy}")
 
         # BUG FIX #5: Load duration ranges from CSV rows 55-63 (0-indexed: 54-62)
         self.duration_ranges = []
