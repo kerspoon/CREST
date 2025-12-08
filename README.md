@@ -55,18 +55,18 @@ Results include:
 
 ## Current Status
 
-**Validation:** COMPLETE - Python implementation matches Excel VBA within statistical expectations.
+**Validation:** Probably identical for practical purposes, but not proven mathematically identical.
 
-### Monte Carlo Validation (1000 Python runs vs 20 Excel runs × 5 dwellings)
+### Monte Carlo Validation (1000 Python runs vs 100 Excel runs × 5 dwellings)
 
-| Metric | Result | Expected |
-|--------|--------|----------|
-| Daily totals in IQR | 51.9% | 50% (95% CI: 40-60%) |
-| Disaggregated in IQR | 78.1% | ~50%+ (many discrete vars) |
-| Range violations (daily) | 3/1500 (0.2%) | ~0.2% |
-| Range violations (disagg) | 1-2% | ~0.2% (solar edge cases) |
+| Metric | Result | Expected | Status |
+|--------|--------|----------|--------|
+| Daily totals in IQR | 52.7% | 50% (95% CI: 45.6-54.4%) | ✓ PASS |
+| Disaggregated in IQR | 77.9% | ~50% | ⚠ High |
+| Range violations (daily) | 9/7500 (0.12%) | ~0.2% | ✓ PASS |
+| Range violations (disagg) | 1-2% | ~0.2% | ⚠ High (solar) |
 
-**Verdict:** PASS - All metrics within acceptable statistical bounds.
+**Verdict:** Daily totals match well. Disaggregated at 77.9% suggests Python may have slightly wider distributions than Excel for some variables. Solar range violations at 10× expected rate indicate minor differences in edge-case handling.
 
 See [`VALIDATION_RANGE_REPORT.md`](./VALIDATION_RANGE_REPORT.md) for detailed analysis of edge cases.
 

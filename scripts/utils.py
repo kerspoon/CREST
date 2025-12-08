@@ -93,12 +93,14 @@ def parse_run_dir(run_dir: str) -> Tuple[str, str]:
     path = Path(run_dir)
     name = path.name
 
-    # Match pattern: prefix_YYYYMMDD_NN
-    match = re.search(r"_(\d{8})_(\d{2})$", name)
+    # Match pattern: prefix_YYYYMMDD_NN or prefix_YYYYMMDD (NN optional)
+    match = re.search(r"_(\d{8})(?:_(\d{2}))?$", name)
     if not match:
         raise ValueError(f"Invalid run directory name: {name}")
 
-    return match.group(1), match.group(2)
+    date = match.group(1)
+    num = match.group(2) if match.group(2) else "00"
+    return date, num
 
 
 def create_validation_dir(

@@ -1,108 +1,106 @@
 # Monte Carlo Validation Range Violations Report
 
-**Date**: 2025-12-07
-**Python runs**: 1000 (python_1000runs_20251207_01)
-**Excel runs**: 20 (excel_20runs_20251206_01)
+**Date**: 2025-12-08
+**Python runs**: 1000 (python_1000runs_20251208_01)
+**Excel runs**: 100 (excel_100runs_20251207)
 **Dwellings**: 5
 
 ## Executive Summary
 
-The Monte Carlo IQR validation shows **excellent overall agreement** between Python and Excel implementations:
+The Monte Carlo IQR validation shows **good practical agreement** between Python and Excel implementations, though not mathematically proven identical:
 
-- **Daily totals**: 51.9% in IQR ✓ PASS (expected 50%, 95% CI: 40.2%-59.8%)
-- **Disaggregated**: 78.1% in IQR (slightly high, but not concerning)
+- **Daily totals**: 52.7% in IQR ✓ PASS (expected 50%, 95% CI: 45.6%-54.4%)
+- **Disaggregated**: 77.9% in IQR ⚠ HIGH (expected ~50% for continuous variables)
 
-Only **3 daily values** out of 1500 comparisons (0.2%) fall outside Python's min-max range - consistent with statistical expectation (~0.2% with 1000 samples).
+**Daily range violations**: 9/7500 (0.12%) - better than the ~0.2% expected.
 
-**Conclusion**: No actual errors detected. The range violations are due to floating-point precision and minor edge-case differences.
+**Disaggregated range violations**: 1-2% for solar variables - 10× higher than expected, indicating minor differences in solar edge-case handling.
 
----
-
-## Daily Range Violations (3 cases)
-
-### 1. Average Indoor Air Temperature (run_05, dwelling 3)
-
-| Metric | Value |
-|--------|-------|
-| Excel value | 11.70°C |
-| Python min | 12.39°C |
-| Python max | 21.74°C |
-| Difference from min | **-0.69°C** |
-
-**Analysis**: The Excel simulation produced a slightly colder average indoor temperature than any of the 1000 Python runs. This is a minor thermal model edge case - a difference of 0.69°C in average daily temperature is within acceptable tolerance for a stochastic simulation. The dwelling likely had very low occupancy and heating demand on this particular run.
-
-**Verdict**: ✓ Not an error - edge case within expected stochastic variation.
+**Conclusion**: Probably identical for practical purposes. Daily totals match well. The elevated disaggregated IQR (77.9%) and solar range violations suggest Python may have slightly wider distributions than Excel for some variables, or there are minor differences in edge-case handling that don't significantly affect aggregate results.
 
 ---
 
-### 2. Mean Active Occupancy (run_18, dwelling 2)
+## Daily Range Violations (9 cases out of 7500)
 
-| Metric | Value |
-|--------|-------|
-| Excel value | 0.729166667 |
-| Python max | 0.7291666666666666 |
-| Difference | **+3.3 × 10⁻¹⁰** |
+With 100 Excel runs × 5 dwellings × 15 variables = 7500 comparisons, 9 values (0.12%) fell outside Python's min-max range. This is better than the expected ~0.2%.
 
-**Analysis**: This is a **floating-point precision issue**. Both values represent the fraction 35/48 ≈ 0.729166666... The Excel value has one extra digit of precision that pushes it infinitesimally above Python's recorded maximum. The actual difference is 0.0000000003 - effectively zero.
+| Variable | Out of Range | Total | Percentage |
+|----------|-------------|-------|------------|
+| Gas demand | 3 | 500 | 0.6% |
+| Lighting demand | 2 | 500 | 0.4% |
+| Total self-consumption | 2 | 500 | 0.4% |
+| Mean active occupancy | 1 | 500 | 0.2% |
+| Proportion of day actively occupied | 1 | 500 | 0.2% |
 
-**Verdict**: ✓ Not an error - floating-point precision artifact.
+**Analysis**: These are minor edge cases:
+- Gas demand and lighting demand violations suggest occasional extreme values in Excel not captured by 1000 Python runs
+- Occupancy violations are floating-point precision artifacts (differences of ~10⁻¹⁰)
 
----
-
-### 3. Proportion of Day Actively Occupied (run_18, dwelling 2)
-
-| Metric | Value |
-|--------|-------|
-| Excel value | 0.729166667 |
-| Python max | 0.7291666666666666 |
-| Difference | **+3.3 × 10⁻¹⁰** |
-
-**Analysis**: Identical to case #2 above. Same run, same dwelling, same floating-point precision issue. The "proportion of day actively occupied" is derived from the same occupancy calculation, so both show the same artifact.
-
-**Verdict**: ✓ Not an error - floating-point precision artifact.
+**Verdict**: ✓ Acceptable - within expected statistical variation.
 
 ---
 
 ## Disaggregated Range Violations
 
-21 variables have some minutes outside Python's range, with the highest being:
+26 variables have some minutes outside Python's range. The highest are all solar-related:
 
 | Variable | Out of Range | Percentage |
 |----------|-------------|------------|
-| Radiation incident on PV array | 2,685 | 1.86% |
-| PV output | 2,685 | 1.86% |
-| Outdoor global radiation (horizontal) | 2,625 | 1.82% |
-| Passive solar gains | 2,517 | 1.75% |
-| Solar power incident on collector | 1,629 | 1.13% |
+| PV output | 15,790 | 2.19% |
+| Radiation incident on PV array | 15,790 | 2.19% |
+| Outdoor global radiation (horizontal) | 15,730 | 2.18% |
+| Passive solar gains | 14,742 | 2.05% |
+| Solar power incident on collector | 9,498 | 1.32% |
 
-**Analysis**: These are all solar/radiation-related variables. The slightly higher-than-expected range violations (1-2% vs ~0.2% expected) are likely due to:
+**Analysis**: These violations are 10× higher than the expected ~0.2%. All trace back to solar irradiance calculations, suggesting:
 
-1. **Discrete solar calculations**: Solar position and radiation calculations involve trigonometric functions that can produce slightly different edge-case values
-2. **Time resolution effects**: Minute-by-minute solar calculations are sensitive to exact timing of sunrise/sunset
-3. **Floating-point accumulation**: Small differences compound across the 1440-minute day
+1. **Edge-case handling differs**: Sunrise/sunset boundary conditions may be handled slightly differently
+2. **Trigonometric precision**: Solar position calculations involve many trig functions where small differences compound
+3. **Stochastic cloud cover**: Random cloud factor may interact differently with edge cases
 
-The affected variables all trace back to solar irradiance calculations, suggesting a minor difference in how edge cases (dawn/dusk, cloudy periods) are handled - not a fundamental algorithm error.
+**Critical note**: While these don't affect daily totals significantly (which pass at 52.7%), the 2% rate indicates the implementations are not mathematically identical for solar calculations. The root cause is not fully understood.
 
-**Verdict**: ✓ Not errors - expected variation in stochastic solar calculations.
+**Verdict**: ⚠ Acceptable for practical use, but indicates minor unresolved differences in solar edge-case handling.
 
 ---
 
 ## IQR Analysis Notes
 
-The disaggregated data shows 78.1% in IQR (higher than the expected 50%). This is because many variables have **discrete or bounded distributions**:
+The disaggregated data shows 77.9% in IQR (higher than the expected 50%). This is partially explained by discrete/binary variables:
 
 - Binary states (heating on/off, cooling on/off): 100% in IQR when both produce mostly 0s
 - Timer settings: Discrete values cluster together
 - Hot water demand: Many zero values
 
-This is expected behavior, not an error.
+**However**, 77.9% is elevated even accounting for discrete variables. This suggests Python may have slightly wider distributions than Excel for some continuous variables. Possible causes:
+
+1. **Different variance in stochastic components**: Random number usage may produce wider spread in Python
+2. **Floating-point accumulation**: Small differences compound differently over 1440 minutes
+3. **Edge-case handling**: Boundary conditions may be handled slightly differently
+
+**Key IQR outliers from daily totals:**
+| Variable | IQR % | Status |
+|----------|-------|--------|
+| Solar thermal collector heat gains | 71.8% | High - discrete, often zero |
+| Space thermostat set point | 60.8% | High - discrete values |
+| Average indoor air temperature | 45.6% | Low - at edge of 95% CI |
+
+The indoor temperature being at the low edge (45.6%) could indicate a slight systematic difference in the thermal model, though it's within acceptable bounds.
 
 ---
 
 ## Conclusion
 
-**No implementation errors detected.** The 3 daily range violations are:
-- 2 cases of floating-point precision (essentially identical values)
-- 1 minor thermal edge case (0.69°C difference)
+**Probably identical for practical purposes, but not proven mathematically identical.**
 
-The Python implementation matches the Excel VBA behavior within expected stochastic and numerical tolerances.
+**What we know:**
+- Daily totals match well (52.7% ≈ 50%)
+- RNG validation with deterministic seed shows 40/40 columns match within floating-point precision
+- Daily range violations are minimal (0.12%)
+
+**What remains unexplained:**
+- Disaggregated IQR at 77.9% (higher than expected ~50%)
+- Solar range violations at 2% (10× expected rate)
+- Average indoor temperature at edge of confidence interval
+
+The Python implementation is suitable for practical use. For applications requiring mathematical equivalence, further investigation of the elevated disaggregated IQR and solar edge cases would be needed.
