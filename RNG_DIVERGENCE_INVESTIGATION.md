@@ -1,7 +1,7 @@
 # RNG Divergence Investigation
 
-**Date**: 2025-12-06
-**Status**: Excellent match - 17 columns perfect (20 houses), daily totals within 0.023 kWh
+**Date**: 2025-12-08
+**Status**: COMPLETE - All 40 columns match within floating-point precision (max diff ~4e-8)
 
 ## Overview
 
@@ -18,27 +18,27 @@ venv/bin/python3 scripts/rng_validation_run.py --validation-log --no-export
 venv/bin/python3 scripts/compare_results.py excel/lcg_fixed/ output/rng_validation/python_20houses_YYYYMMDD_NN
 ```
 
-### Latest Comparison Results (2025-12-06, 20 Houses)
+### Latest Comparison Results (2025-12-08, 20 Houses)
 
-**Perfect matches (17 columns):**
+**All 40 columns match within floating-point precision:**
 - Dwelling index, Occupancy, Activity, Lighting demand, Hot water demand
 - Space/HW heating timer settings, Heating system switched on, HW heating required
-- Solar thermal collector control state
+- Solar thermal collector control state, Solar thermal collector temperature
 - Space cooling timer settings, Cooling system switched on, Cooling output
 - Heating/Cooling thermostat set points, Cooling/Heating electricity
+- Appliance demand, Casual thermal gains
+- Primary heating output, Indoor temperature
+- PV output, Self-consumption, Net electricity demand
 
 **Daily summary max differences:**
-- Net electricity demand: 0.0228 kWh
-- Average indoor temperature: 0.0048°C
-- Total self-consumption: 0.0058 kWh
+- All columns: < 1e-7 (floating-point precision only)
 
 **Minute-level max differences:**
-- Primary heating output: 26.94 W (floating point accumulation at transitions)
-- Appliance demand: max 4W typical (Excel > Python), one 7W outlier
+- All columns: < 1e-7 (floating-point precision only)
 
 ---
 
-## Fixes Applied (2025-12-06)
+## Fixes Applied (2025-12-06 to 2025-12-08)
 
 ### 1. PV/Solar Thermal Location Parameters Not Passed
 
@@ -118,32 +118,67 @@ activity_1min = self._expand_10min_to_1min(
 
 Note: `active_occupancy` (min of both digits) is still used internally for thermal gains calculations.
 
+### 8. Appliance Rated Power Truncation (appliances.py)
+
+**Problem**: Python used `int(float(...))` to load rated power from CSV, which TRUNCATES. VBA uses implicit `CInt()` which ROUNDS.
+
+**Fix**: Changed `appliances.py:181-186` from `int()` to `round()`:
+```python
+# BEFORE (buggy):
+rated_power = int(float(row.iloc[15])) if len(row) > 15 else 100
+
+# AFTER (fixed):
+rated_power = round(float(row.iloc[15])) if len(row) > 15 else 100
+```
+
+Same fix applied to `cycle_length`, `restart_delay`, and `standby_power`.
+
+### 9. Solar Thermal Object Creation (dwelling.py)
+
+**Problem**: Python only created `SolarThermal` objects for dwellings with `solar_thermal_index > 0`. VBA creates SolarThermal for ALL dwellings regardless, initializing `theta_collector` to outdoor temperature.
+
+**Fix**: Modified `dwelling.py:195-211` to always create SolarThermal:
+```python
+# BEFORE (buggy):
+if config.solar_thermal_index > 0:
+    self.solar_thermal = SolarThermal(...)
+    self.solar_thermal.initialize(...)
+else:
+    self.solar_thermal = None
+
+# AFTER (fixed):
+# VBA creates SolarThermal for ALL dwellings
+self.solar_thermal = SolarThermal(data_loader, self.rng)
+self.solar_thermal.initialize(...)
+if config.solar_thermal_index > 0:
+    self.building.set_solar_thermal(self.solar_thermal)
+    self.appliances.set_solar_thermal(self.solar_thermal)
+```
+
 ---
 
-## Remaining Acceptable Differences
+## All Issues Resolved
 
-### Appliance Demand (max 4W typical, one 7W outlier)
-- **Root cause**: UNKNOWN (under investigation)
-  - **Verified**: VBA `CInt()` and Python `round()` both use banker's rounding (0.5 rounds to EVEN)
-  - **Verified**: Excel `NormInv` and scipy `norm.ppf` produce identical values
-  - **Verified**: RNG sequences match perfectly (Occupancy, Activity, Lighting all 0.0000 diff)
-- **Observation**: Excel is consistently higher than Python
-  - 8,725 non-zero differences out of 28,800 (30.3%)
-  - 8,724 cases: Excel > Python (by 1-4W)
-  - 1 case: Python > Excel (by 7W - outlier)
-  - Distribution: 4,809 at -1W, 3,082 at -2W, 807 at -3W, 26 at -4W
-- **Note**: The `compare_results.py` script shows absolute values; signed analysis confirms direction
-- **Verdict**: Acceptable difference; investigation ongoing to identify root cause
+### Appliance Demand - FIXED (2025-12-08)
+- **Root cause**: Python used `int(float(...))` (TRUNCATES) when loading rated power from CSV, but VBA uses implicit `CInt()` (ROUNDS) when assigning to Integer variables
+- **Fix**: Changed `appliances.py:181-186` to use `round()` instead of `int()`
+- **Affected appliances** (had decimal values in CSV):
+  - PC: 140.7 → was 140 (truncated), now 141 (rounded)
+  - VCR_DVD: 33.55 → was 33, now 34
+  - RECEIVER: 26.82 → was 26, now 27
+  - DISH_WASHER: 1130.61 → was 1130, now 1131
+  - WASHING_MACHINE: 405.54 → was 405, now 406
+- **Result**: Appliance demand now has **PERFECT MATCH (max diff = 0)**
 
-### Heating Output (max 27W at transitions)
-- **Root cause chain**:
-  1. Appliance demand difference (source unknown)
-  2. → Casual thermal gains differ
-  3. → Indoor temperature drifts (0.009°C over 900 minutes)
-  4. → Heating demand calculation affected at setpoint transitions
-- Only visible at heating on/off transition points (partial power moments)
-- Mean difference is -0.04W (negligible)
-- Max 27W is 0.12% of 21750W max output
+### Heating Output - FIXED (2025-12-08)
+- **Status**: With appliance demand fixed, all downstream values now match
+- **Cascade effect confirmed**: Appliance demand → casual gains → indoor temp → heating demand all now match within floating-point precision
+
+### Solar Thermal Collector Temperature - FIXED (2025-12-08)
+- **Root cause**: Python only created `SolarThermal` objects for dwellings with `solar_thermal_index > 0`, but VBA creates SolarThermal for ALL dwellings regardless
+- **Symptom**: 3.84°C difference at minute 0 for 7 dwellings that had no solar thermal system (`solar_thermal_index=0`)
+- **Fix**: Changed `dwelling.py:195-211` to always create `SolarThermal` object for all dwellings, matching VBA behavior
+- **Result**: Solar thermal collector temperature now has **PERFECT MATCH**
 
 ---
 

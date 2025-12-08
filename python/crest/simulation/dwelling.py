@@ -192,25 +192,23 @@ class Dwelling:
 
         # VBA Reference: clsSolarThermal initialization (mdlThermalElectricalModel.bas lines 423-429)
         # VBA: intSolarThermalIndex from wsDwellings (clsSolarThermal.cls line 77)
+        # NOTE: VBA creates SolarThermal for ALL dwellings (even those without solar thermal)
+        # and initializes theta_collector to outdoor temp. We match this behavior.
+        self.solar_thermal = SolarThermal(data_loader, self.rng)
+        self.solar_thermal.initialize(
+            dwelling_index=config.dwelling_index,
+            run_number=1,
+            climate=self.local_climate,
+            building=self.building,
+            solar_thermal_index=config.solar_thermal_index,
+            latitude=global_climate.config.latitude,
+            longitude=global_climate.config.longitude,
+            meridian=global_climate.config.meridian,
+            day_of_year=global_climate.day_of_year
+        )
         if config.solar_thermal_index > 0:
-            self.solar_thermal = SolarThermal(data_loader, self.rng)
-            # Use run_number=1 for single dwelling simulation
-            # Pass location parameters from global climate config
-            self.solar_thermal.initialize(
-                dwelling_index=config.dwelling_index,
-                run_number=1,
-                climate=self.local_climate,
-                building=self.building,
-                solar_thermal_index=config.solar_thermal_index,
-                latitude=global_climate.config.latitude,
-                longitude=global_climate.config.longitude,
-                meridian=global_climate.config.meridian,
-                day_of_year=global_climate.day_of_year
-            )
             self.building.set_solar_thermal(self.solar_thermal)
             self.appliances.set_solar_thermal(self.solar_thermal)
-        else:
-            self.solar_thermal = None
 
         # Create cooling system
         # VBA Reference: clsCoolingSystem initialization (mdlThermalElectricalModel.bas lines 384-390)

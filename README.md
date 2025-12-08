@@ -4,6 +4,16 @@ A high-resolution (1-minute) stochastic integrated thermal-electrical domestic e
 
 **Project Goal:** Achieve 100% feature parity with the Excel VBA model - identical outputs for identical inputs (same configurations + same random seeds → same results).
 
+This has been converted by an LLM (Claude Code) with minor handholding but we do know that the differences between the two are minor (as you can confirm with the two tests below) so the functionality is either the same and the differences come only from rounding errors (though both use 64-bit IEEE 754 double-precision floats) or there are bugs that don't make much difference to the output (the recent bugs we found are in how we round numbers up/down). 
+
+The two tests are:
+
+1. modify excel and python to use the same deterministic "random" number generator with the same seed. Thus every output should be exactly the same. This has been run for 20 houses and all 40 output columns now match within floating-point precision (~1e-8). We have also confirmed that the random number generator is called exactly the same number of times from the equivalent functions. 
+
+2. run both excel and python lots of times (1000 for python and 100 for excel). Get the interquartile range for the python and check that 50% of all the excel values all within this range. This also works fairly well.
+
+At this point I'm pretty happy that it's ok to use. Especially as going through this process found 3 bugs in the original excel file. 
+
 
 
 ## Quick Start
@@ -66,20 +76,23 @@ See [`RNG_DIVERGENCE_INVESTIGATION.md`](./RNG_DIVERGENCE_INVESTIGATION.md) for d
 
 | Metric | Value |
 |--------|-------|
-| Perfect match columns | 17 of 40 |
+| Perfect match columns | 40 of 40 |
 | RNG calls verified | 1.6M+ identical |
-| Max daily electricity diff | 0.023 kWh |
-| Max temperature diff | 0.005°C |
+| Max daily electricity diff | ~0 kWh |
+| Max temperature diff | ~0°C |
 
-**17 columns with exact match:**
+**All 40 columns match within floating-point precision:**
 - Occupancy, Activity, Lighting, Hot water demand
+- Appliance demand, Casual thermal gains
 - All timer settings and on/off states
-- All thermostat setpoints
-- Heating/Cooling electricity
+- All thermostat setpoints, Heating/Cooling electricity
+- Primary heating output, Indoor temperature
+- Solar thermal collector temperature, PV output
 
-**Remaining differences (acceptable):**
-- Appliance demand: max 7W (0.02%) - root cause under investigation (NOT rounding - both use banker's rounding)
-- Heating output: max 27W at transitions - cascades from appliance difference through thermal model
+**Issues resolved (2025-12-08):**
+- ~~Appliance demand: max 7W~~ → **FIXED** - Root cause was `int()` vs `round()` when loading rated power from CSV
+- ~~Heating output: max 27W at transitions~~ → **FIXED** - Cascade from appliance fix
+- ~~Solar thermal collector temperature: max 3.8°C~~ → **FIXED** - Python now creates SolarThermal for all dwellings (matching VBA)
 
 ### VBA Bug Fixes
 
@@ -106,17 +119,14 @@ crest/
 │
 ├── excel/                       # Excel/VBA reference implementation
 │   ├── original.xlsm                    # Base v2.3.3 model (has Acos bug)
-│   ├── original_fixed.xlsm              # Bug-fixed version (create using EXCEL_VBA_FIXES.md)
 │   ├── original/                        # Exports from original.xlsm
 │   │   ├── *.cls, *.bas                 # VBA code
 │   │   ├── Dwellings.csv                # Dwelling configurations
 │   │   ├── Main_Sheet.csv               # Run parameters
 │   │   └── *.csv                        # Data sheets (ActivityStats, etc.)
 │   ├── original_100houses.xlsm          # Reference 100-house run
-│   ├── original_100houses/              # Exports from 100-house model
 │   ├── monte_carlo_base.xlsm            # 5 varied test houses (has Acos bug)
 │   ├── monte_carlo_fixed.xlsm           # Bug-fixed version (create using EXCEL_VBA_FIXES.md)
-│   ├── monte_carlo_base/                # export from the monte carlo base
 │   ├── lcg_fixed.xlsm                   # LCG + bug fixes (deterministic comparison)
 │   └── lcg_fixed/                       # Exports from LCG model
 │
@@ -194,7 +204,7 @@ The project has **two primary objectives** for validating that the Python port m
 
 2. **Manually run Excel** (`excel/lcg_fixed.xlsm`):
    - Load `excel/lcg_fixed/Dwellings.csv` (or your test config)
-   - Use seed `12345`
+   - Use seed `42`
    - Save output to: `output/rng_validation/excel_5houses_YYYYMMDD_NN/`
    - Include `rng_calls.log` from VBA
 

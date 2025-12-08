@@ -178,10 +178,12 @@ class Appliances:
                 appliance_name = str(row.iloc[4]) if len(row) > 4 else f'Appliance{i}'
                 ownership = float(row.iloc[5]) if len(row) > 5 else 0.5
                 use_profile = str(row.iloc[6]) if len(row) > 6 else 'ACTIVE_OCC'
-                rated_power = int(float(row.iloc[15])) if len(row) > 15 else 100
-                cycle_length = int(float(row.iloc[17])) if len(row) > 17 else 60
-                restart_delay = int(float(row.iloc[18])) if len(row) > 18 else 0
-                standby_power = int(float(row.iloc[19])) if len(row) > 19 else 0
+                # BUG FIX: VBA uses CInt() which ROUNDS, int() TRUNCATES
+                # Use round() to match VBA behavior when loading values from CSV
+                rated_power = round(float(row.iloc[15])) if len(row) > 15 else 100
+                cycle_length = round(float(row.iloc[17])) if len(row) > 17 else 60
+                restart_delay = round(float(row.iloc[18])) if len(row) > 18 else 0
+                standby_power = round(float(row.iloc[19])) if len(row) > 19 else 0
                 prob_switch_on = float(row.iloc[29]) if len(row) > 29 else 0.01
                 # Heat gains ratio is in Excel column AG (33rd, 1-based) = pandas iloc[32] (0-based)
                 # Headers: Row 4 col[32]="Heat gains ratio", Row 5 col[32]="(for casual", Row 6 col[32]="thermal gains)"
