@@ -692,6 +692,11 @@ def main():
         default=0.0,
         help="Local standard time meridian in degrees (default: 0.0 for UK/Greenwich)"
     )
+    parser.add_argument(
+        "--plot",
+        action="store_true",
+        help="Generate summary plots in {output_dir}/plots/"
+    )
 
     args = parser.parse_args()
 
@@ -1098,6 +1103,17 @@ def main():
             results_writer.write_daily_summary(dwelling_idx, dwelling, date_str_daily)
         results_writer.close()
         print(f"Results saved to: {args.output_dir}")
+
+    # Generate plots if requested
+    if args.plot:
+        if args.output_dir:
+            print("\nGenerating plots...")
+            from crest.output.plots import ResultsPlotter
+            plotter = ResultsPlotter(args.output_dir)
+            plot_files = plotter.plot_all(dwellings, global_climate)
+            print(f"  Generated {len(plot_files)} plots in {args.output_dir}/plots/")
+        else:
+            print("\nWarning: --plot requires --output-dir to be set. Skipping plots.")
 
     # Summary
     print("\n" + "="*60)
