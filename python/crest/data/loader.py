@@ -93,9 +93,18 @@ class CRESTDataLoader:
 
         day_type = "we" if is_weekend else "wd"
         filename = f"tpm{num_residents}_{day_type}.csv"
+
+        # Cache key for processed TPM (different from raw CSV cache)
+        cache_key = f"_processed_tpm_{filename}"
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         # Skip 9 header/description rows (lines 1-9), keep state labels (line 10) as row 0
         # Use dtype=str to preserve state labels as strings (e.g., "00", "01", "10")
-        df = self._load_csv(filename, skiprows=9, header=None, dtype=str)
+        filepath = self.data_dir / filename
+        if not filepath.exists():
+            raise FileNotFoundError(f"Data file not found: {filepath}")
+        df = pd.read_csv(filepath, skiprows=9, header=None, dtype=str)
 
         # Convert data rows (all except row 0) back to float for probabilities
         for i in range(1, len(df)):
@@ -112,6 +121,8 @@ class CRESTDataLoader:
                 except:
                     pass
 
+        # Cache the processed result
+        self._cache[cache_key] = df
         return df
 
     def load_starting_states(self) -> pd.DataFrame:

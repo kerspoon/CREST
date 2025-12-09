@@ -459,9 +459,9 @@ class ResultsPlotter:
 
     def plot_multi_fan(self, dwellings: list) -> Path:
         """
-        Fan chart: aggregate with percentile bands showing spread.
+        Fan chart: gradient showing full percentile distribution.
 
-        Shows median aggregate with 10-90%, 25-75% percentile bands.
+        Shows smooth gradient from 1st to 99th percentile with median line.
         """
         fig, ax = plt.subplots(figsize=self.figsize)
 
@@ -469,19 +469,36 @@ class ResultsPlotter:
         demands = np.array([self._get_total_electricity(d) for d in dwellings])
         aggregate = np.sum(demands, axis=0)
 
-        # Calculate percentiles across dwellings at each minute
-        p10 = np.percentile(demands, 10, axis=0)
-        p25 = np.percentile(demands, 25, axis=0)
-        p50 = np.percentile(demands, 50, axis=0)
-        p75 = np.percentile(demands, 75, axis=0)
-        p90 = np.percentile(demands, 90, axis=0)
+        # Create gradient bands from 1-99 percentile
+        # Plot symmetric bands outward from median for smooth gradient
+        percentile_pairs = [
+            (1, 99), (5, 95), (10, 90), (15, 85), (20, 80),
+            (25, 75), (30, 70), (35, 65), (40, 60), (45, 55)
+        ]
 
-        # Plot percentile bands
-        ax.fill_between(self.time_axis, p10, p90, color='#4169E1', alpha=0.2, label='10-90th percentile')
-        ax.fill_between(self.time_axis, p25, p75, color='#4169E1', alpha=0.4, label='25-75th percentile')
-        ax.plot(self.time_axis, p50, color='#4169E1', linewidth=2, label='Median')
+        # Use a colormap for the gradient (blues)
+        cmap = plt.cm.Blues
+        n_bands = len(percentile_pairs)
+
+        # Plot bands from outermost to innermost
+        for i, (p_low, p_high) in enumerate(percentile_pairs):
+            lower = np.percentile(demands, p_low, axis=0)
+            upper = np.percentile(demands, p_high, axis=0)
+            # Color intensity increases toward median
+            color = cmap(0.3 + 0.6 * (i / n_bands))
+            ax.fill_between(self.time_axis, lower, upper, color=color, linewidth=0)
+
+        # Plot median and mean lines
+        p50 = np.percentile(demands, 50, axis=0)
+        ax.plot(self.time_axis, p50, color='darkblue', linewidth=2, label='Median')
         ax.plot(self.time_axis, aggregate / len(dwellings), color='#DC143C', linewidth=1.5,
                 linestyle='--', label='Mean', alpha=0.8)
+
+        # Add colorbar to show percentile scale
+        sm = plt.cm.ScalarMappable(cmap=cmap, norm=plt.Normalize(vmin=1, vmax=99))
+        sm.set_array([])
+        cbar = plt.colorbar(sm, ax=ax, pad=0.02)
+        cbar.set_label('Percentile', rotation=270, labelpad=15)
 
         # Formatting
         ax.set_xlabel('Time of Day')
